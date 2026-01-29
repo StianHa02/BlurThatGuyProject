@@ -1,0 +1,19 @@
+body {
+  font-family: sans-serif;
+  padding: 20px;
+}
+
+#stage {
+  position: relative;
+  display: inline-block;
+}
+
+#frame {
+  max-width: 640px;
+}
+
+canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}

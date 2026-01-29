@@ -14,3 +14,8 @@ blur-that-guy/
 ├── Dockerfile
 └── README.md
 ```
+### how to run
+```
+docker run -p 8000:8000 blurthatguyproject
+docker build -t BlurThatGuyProject .
+```
