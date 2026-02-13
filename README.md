@@ -1,5 +1,14 @@
 # BlurThatGuy 🙈
 
+
+## TODO
+
+docker compose up --build
+
+Option 3: Batch Detection (Best, but requires frontend changes)
+Instead of 300 separate requests, send frames in batches:
+
+
 AI-powered face detection and selective blurring for videos. Protect privacy with one click.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)

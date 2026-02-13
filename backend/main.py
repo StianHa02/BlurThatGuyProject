@@ -513,7 +513,7 @@ def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
     return best if best_diff <= 15 else None
 
 @app.post("/detect")
-@limiter.limit("500/minute")
+@limiter.limit("100/second")
 async def detect_endpoint(
     request: Request,
     image_request: ImageRequest,
