@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-
-const API_URL = 'http://localhost:8000';
+import { API_URL } from '@/lib/config';
 
 interface UseExportOptions {
   videoId: string | null;
@@ -26,9 +25,12 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, on
     setExportProgress(10);
 
     try {
+      // Use the proxied API route
       const response = await fetch(`${API_URL}/export/${videoId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           tracks,
           selectedTrackIds,
@@ -40,7 +42,8 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, on
       setExportProgress(80);
 
       if (!response.ok) {
-        throw new Error('Export failed');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Export failed');
       }
 
       const blob = await response.blob();
@@ -58,7 +61,7 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, on
       return true;
     } catch (error) {
       console.error('Export error:', error);
-      onError('Failed to export video. Make sure the backend is running.');
+      onError(error instanceof Error ? error.message : 'Failed to export video. Make sure the backend is running.');
       return false;
     } finally {
       setExporting(false);

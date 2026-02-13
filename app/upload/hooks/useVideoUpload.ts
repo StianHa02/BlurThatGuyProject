@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-
-const API_URL = 'http://localhost:8000';
+import { API_URL } from '@/lib/config';
 
 export function useVideoUpload() {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -23,7 +22,7 @@ export function useVideoUpload() {
     const url = URL.createObjectURL(f);
     setFileUrl(url);
 
-    // Upload video to backend for later export
+    // Upload video to backend for later export (via API proxy)
     try {
       const formData = new FormData();
       formData.append('file', f);
@@ -34,6 +33,9 @@ export function useVideoUpload() {
       if (response.ok) {
         const data = await response.json();
         setVideoId(data.videoId);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Upload failed:', errorData.error || response.statusText);
       }
     } catch (err) {
       console.error('Failed to upload video to backend:', err);

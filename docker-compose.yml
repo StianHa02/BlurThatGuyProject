@@ -6,7 +6,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      # Server-side API URL (inside Docker network, use service name)
+      API_URL: http://backend:8000
+      # No API key for local dev (optional)
+      # API_KEY: your-api-key
     depends_on:
       - backend
     restart: unless-stopped
@@ -17,6 +20,9 @@ services:
       dockerfile: Dockerfile.backend
     ports:
       - "8000:8000"
+    # environment:
+      # API_KEY: your-api-key
+      # ALLOWED_ORIGINS: http://localhost:3000
     volumes:
       - video_uploads:/tmp/blurthatguy
     restart: unless-stopped

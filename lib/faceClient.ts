@@ -1,14 +1,19 @@
 // lib/faceClient.ts
 // Face detection using Python backend with OpenCV DNN (YuNet)
+// Now using Next.js API routes as proxy (API key stays server-side)
 
-const API_URL = 'http://localhost:8000';
+import { API_URL } from './config';
 
 let isReady = false;
 
+/**
+ * Initialize connection to the face detection backend
+ * @throws Error if backend is not responding
+ */
 export async function loadModels(): Promise<void> {
   if (isReady) return;
 
-  // Check if backend is running
+  // Check if backend is running via our API proxy
   try {
     const response = await fetch(`${API_URL}/health`);
     if (!response.ok) {
@@ -24,6 +29,11 @@ export async function loadModels(): Promise<void> {
   }
 }
 
+/**
+ * Detect faces in a canvas element
+ * @param canvas - The canvas containing the video frame
+ * @returns Array of detected faces with bounding boxes and confidence scores
+ */
 export async function detectFacesInCanvas(
   canvas: HTMLCanvasElement
 ): Promise<{ bbox: [number, number, number, number]; score: number }[]> {
@@ -58,6 +68,11 @@ export async function detectFacesInCanvas(
   }
 }
 
+/**
+ * Reset face trackers (no-op, tracking state is managed in tracker.ts)
+ */
 export function resetTrackers(): void {
   // No-op - tracking state is managed in tracker.ts
 }
+
+

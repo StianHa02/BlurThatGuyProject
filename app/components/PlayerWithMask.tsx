@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EyeOff, Users } from 'lucide-react';
 
 export type BBox = [number, number, number, number];
@@ -22,10 +22,67 @@ export interface Track {
 interface Props {
   videoUrl: string;
   tracks: Track[];
-  selectedTrackIds: number[]; // Changed to array for multiple selections
-  onToggleTrack: (trackId: number) => void; // Callback to toggle track selection
+  selectedTrackIds: number[];
+  onToggleTrack: (trackId: number) => void;
   blur: boolean;
   sampleRate: number;
+}
+
+// Pre-create reusable canvas for pixelation (performance optimization)
+let pixelCanvas: HTMLCanvasElement | null = null;
+let pixelCtx: CanvasRenderingContext2D | null = null;
+
+function getPixelCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+  if (!pixelCanvas) {
+    pixelCanvas = document.createElement('canvas');
+    pixelCtx = pixelCanvas.getContext('2d');
+  }
+  if (!pixelCtx) return null;
+
+  if (pixelCanvas.width !== w || pixelCanvas.height !== h) {
+    pixelCanvas.width = w;
+    pixelCanvas.height = h;
+  }
+  return { canvas: pixelCanvas, ctx: pixelCtx };
+}
+
+/**
+ * Find detection for frame - simplified for speed
+ */
+function findDetectionForFrame(
+  frames: Detection[],
+  frameIndex: number,
+  sampleRate: number
+): { bbox: BBox; score: number } | null {
+  if (!frames || frames.length === 0) return null;
+
+  const firstFrame = frames[0].frameIndex;
+  const lastFrame = frames[frames.length - 1].frameIndex;
+  const tolerance = sampleRate * 2;
+
+  if (frameIndex < firstFrame - tolerance || frameIndex > lastFrame + tolerance) {
+    return null;
+  }
+
+  // Quick binary-ish search for nearest frame
+  let best: Detection | null = null;
+  let bestDiff = Infinity;
+
+  for (const f of frames) {
+    const diff = Math.abs(f.frameIndex - frameIndex);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = f;
+    }
+    // Early exit if we found exact match
+    if (diff === 0) break;
+  }
+
+  if (best && bestDiff <= sampleRate * 2) {
+    return { bbox: best.bbox, score: best.score };
+  }
+
+  return null;
 }
 
 export default function PlayerWithMask({
@@ -39,70 +96,56 @@ export default function PlayerWithMask({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
-  const tracksMapRef = useRef<Map<number, Track>>(new Map());
-  const [visibleFaces, setVisibleFaces] = useState<{trackId: number, bbox: BBox}[]>([]);
+  const lastFrameRef = useRef<number>(-1);
+  const [visibleFaces, setVisibleFaces] = useState<{trackId: number, bbox: BBox, isSelected: boolean}[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
 
-  useEffect(() => {
+  // Memoize tracks map
+  const tracksMap = useMemo(() => {
     const m = new Map<number, Track>();
     for (const t of tracks) m.set(t.id, t);
-    tracksMapRef.current = m;
+    return m;
   }, [tracks]);
 
-  // Handle click on canvas to select/deselect faces
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    if (!canvas || !video) return;
+  // Memoize selected set for O(1) lookup
+  const selectedSet = useMemo(() => new Set(selectedTrackIds), [selectedTrackIds]);
 
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = video.videoWidth / rect.width;
-    const scaleY = video.videoHeight / rect.height;
-
-    const clickX = (e.clientX - rect.left) * scaleX;
-    const clickY = (e.clientY - rect.top) * scaleY;
-
-    // Check if click is inside any visible face
-    for (const face of visibleFaces) {
-      const [x, y, w, h] = face.bbox;
-      // Add padding to make clicking easier
-      const padding = 0.2;
-      const px = x - w * padding;
-      const py = y - h * padding;
-      const pw = w * (1 + padding * 2);
-      const ph = h * (1 + padding * 2);
-
-      if (clickX >= px && clickX <= px + pw && clickY >= py && clickY <= py + ph) {
-        onToggleTrack(face.trackId);
-        return;
-      }
-    }
-  };
-
+  // Main drawing effect
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
 
     const syncCanvasSize = () => {
+      if (video.videoWidth === 0 || video.videoHeight === 0) return;
       const rect = video.getBoundingClientRect();
       canvas.style.width = rect.width + 'px';
       canvas.style.height = rect.height + 'px';
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      setVideoReady(true);
     };
+
+    const handlePlay = () => { syncCanvasSize(); setIsPlaying(true); };
+    const handlePause = () => setIsPlaying(false);
+    const handleEnded = () => setIsPlaying(false);
 
     video.addEventListener('loadedmetadata', syncCanvasSize);
     video.addEventListener('resize', syncCanvasSize);
+    video.addEventListener('canplay', syncCanvasSize);
     window.addEventListener('resize', syncCanvasSize);
-    video.addEventListener('play', () => { syncCanvasSize(); setIsPlaying(true); });
-    video.addEventListener('pause', () => setIsPlaying(false));
-    video.addEventListener('ended', () => setIsPlaying(false));
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('ended', handleEnded);
+
+    if (video.readyState >= 1) syncCanvasSize();
 
     function draw() {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      if (!video || !canvas) {
+
+      if (!video || !canvas || video.videoWidth === 0) {
         rafRef.current = requestAnimationFrame(draw);
         return;
       }
@@ -113,61 +156,67 @@ export default function PlayerWithMask({
         return;
       }
 
+      const frameIndex = Math.round(video.currentTime * 30);
+
+      // Skip if same frame (optimization)
+      const frameChanged = frameIndex !== lastFrameRef.current;
+      lastFrameRef.current = frameIndex;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const currentTime = video.currentTime;
-      const frameRate = 30;
-      const frameIndex = Math.round(currentTime * frameRate);
+      const currentVisibleFaces: {trackId: number, bbox: BBox, isSelected: boolean}[] = [];
+      const padding = 0.4;
+      const blurAmount = 12;
 
-      const currentVisibleFaces: {trackId: number, bbox: BBox}[] = [];
-
-      // Go through all tracks
-      for (const [trackId, track] of tracksMapRef.current) {
-        const det = findDetectionForFrame(track.frames, frameIndex);
+      // Process all tracks
+      for (const [trackId, track] of tracksMap) {
+        const det = findDetectionForFrame(track.frames, frameIndex, sampleRate);
         if (!det) continue;
 
-        const isSelected = selectedTrackIds.includes(trackId);
-        const padding = 0.4;
+        const isSelected = selectedSet.has(trackId);
         const [ox, oy, ow, oh] = det.bbox;
         const x = Math.max(0, ox - ow * padding);
         const y = Math.max(0, oy - oh * padding);
-        const w = ow * (1 + padding * 2);
-        const h = oh * (1 + padding * 2);
+        const w = Math.min(ow * (1 + padding * 2), canvas.width - x);
+        const h = Math.min(oh * (1 + padding * 2), canvas.height - y);
 
-        // Store visible face for click detection
-        currentVisibleFaces.push({ trackId, bbox: [x, y, w, h] });
+        currentVisibleFaces.push({ trackId, bbox: [x, y, w, h], isSelected });
 
         if (isSelected) {
-          // Draw blur or black box for selected faces
+          // Draw blur/pixelation for selected faces
           if (!blur) {
             ctx.fillStyle = 'black';
             ctx.fillRect(x, y, w, h);
           } else {
-            const tmp = document.createElement('canvas');
-            const blurAmount = 12;
-            tmp.width = Math.max(1, Math.floor(w / blurAmount));
-            tmp.height = Math.max(1, Math.floor(h / blurAmount));
-            const tctx = tmp.getContext('2d');
-            if (tctx) {
+            const tmpW = Math.max(1, Math.floor(w / blurAmount));
+            const tmpH = Math.max(1, Math.floor(h / blurAmount));
+
+            const pixel = getPixelCanvas(tmpW, tmpH);
+            if (pixel) {
               try {
-                tctx.drawImage(video, x, y, w, h, 0, 0, tmp.width, tmp.height);
+                pixel.ctx.drawImage(video, x, y, w, h, 0, 0, tmpW, tmpH);
                 ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(tmp, 0, 0, tmp.width, tmp.height, x, y, w, h);
-              } catch (e) {
+                ctx.drawImage(pixel.canvas, 0, 0, tmpW, tmpH, x, y, w, h);
+              } catch {
                 ctx.fillStyle = 'black';
                 ctx.fillRect(x, y, w, h);
               }
             }
           }
         } else {
-          // Draw red frame for unselected faces (so user can click to select)
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 3;
-          ctx.strokeRect(x, y, w, h);
+          // Draw subtle cyan/teal outline for unselected faces (visible but not harsh)
+          ctx.strokeStyle = 'rgba(6, 182, 212, 0.7)'; // cyan-500 with opacity
+          ctx.lineWidth = 2;
+          ctx.setLineDash([]);
+          ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
         }
       }
 
-      setVisibleFaces(currentVisibleFaces);
+      // Only update state if faces changed (reduces re-renders)
+      if (frameChanged) {
+        setVisibleFaces(currentVisibleFaces);
+      }
+
       rafRef.current = requestAnimationFrame(draw);
     }
 
@@ -177,9 +226,31 @@ export default function PlayerWithMask({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       video.removeEventListener('loadedmetadata', syncCanvasSize);
       video.removeEventListener('resize', syncCanvasSize);
+      video.removeEventListener('canplay', syncCanvasSize);
       window.removeEventListener('resize', syncCanvasSize);
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('ended', handleEnded);
     };
-  }, [selectedTrackIds, blur, sampleRate]);
+  }, [tracksMap, selectedSet, blur, sampleRate]);
+
+  // Calculate scale for overlay positioning
+  const getOverlayStyle = useCallback((bbox: BBox) => {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0) return null;
+
+    const rect = video.getBoundingClientRect();
+    const scaleX = rect.width / video.videoWidth;
+    const scaleY = rect.height / video.videoHeight;
+    const [x, y, w, h] = bbox;
+
+    return {
+      left: x * scaleX,
+      top: y * scaleY,
+      width: w * scaleX,
+      height: h * scaleY,
+    };
+  }, []);
 
   return (
     <div className="relative rounded-xl overflow-hidden bg-black">
@@ -188,92 +259,58 @@ export default function PlayerWithMask({
         src={videoUrl}
         controls
         className="w-full block"
+        playsInline
       />
       <canvas
         ref={canvasRef}
-        onClick={handleCanvasClick}
         style={{
           position: 'absolute',
           left: 0,
           top: 0,
-          pointerEvents: 'none', // Allow video controls to work
+          pointerEvents: 'none',
           width: '100%',
           height: '100%'
         }}
       />
-      {/* Invisible click layer only over face areas */}
-      {visibleFaces.map((face, i) => {
-        const video = videoRef.current;
-        if (!video) return null;
-        const rect = video.getBoundingClientRect?.() || { width: 1, height: 1 };
-        const scaleX = rect.width / (video.videoWidth || 1);
-        const scaleY = rect.height / (video.videoHeight || 1);
-        const [x, y, w, h] = face.bbox;
-        const isSelected = selectedTrackIds.includes(face.trackId);
+
+      {/* Clickable face overlays */}
+      {videoReady && visibleFaces.map((face, i) => {
+        const style = getOverlayStyle(face.bbox);
+        if (!style) return null;
+
         return (
           <div
-            key={i}
+            key={`${face.trackId}-${i}`}
             onClick={() => onToggleTrack(face.trackId)}
-            className={`absolute transition-all duration-150 ${
-              isSelected 
-                ? 'ring-2 ring-indigo-500/50 bg-indigo-500/10' 
-                : 'hover:bg-white/5 cursor-pointer'
-            }`}
+            className="absolute cursor-pointer"
             style={{
-              left: x * scaleX,
-              top: y * scaleY,
-              width: w * scaleX,
-              height: h * scaleY,
+              ...style,
               borderRadius: '4px',
             }}
-            title={isSelected ? 'Click to unblur' : 'Click to blur'}
+            title={face.isSelected ? 'Click to unblur' : 'Click to blur'}
           />
         );
       })}
-      {/* Status overlay */}
+
+      {/* Status: Blurred faces count */}
       {selectedTrackIds.length > 0 && (
         <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm pointer-events-none border border-white/10">
           <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
-          <span>{selectedTrackIds.length === 1 ? '1 face blurred' : `${selectedTrackIds.length} faces blurred`}</span>
+          <span>
+            {selectedTrackIds.length === 1
+              ? '1 face blurred'
+              : `${selectedTrackIds.length} faces blurred`}
+          </span>
         </div>
       )}
-      {/* Face count overlay */}
+
+      {/* Status: Visible faces count (when paused) */}
       {visibleFaces.length > 0 && !isPlaying && (
         <div className="absolute top-3 right-3 flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm pointer-events-none border border-white/10">
           <Users className="w-3.5 h-3.5 text-green-400" />
-          <span>{visibleFaces.length} visible</span>
+          <span>{visibleFaces.length} face{visibleFaces.length !== 1 ? 's' : ''} visible</span>
         </div>
       )}
     </div>
   );
-}
-
-function findDetectionForFrame(frames: Detection[], frameIndex: number): Detection | null {
-  if (!frames || frames.length === 0) return null;
-
-  const firstFrame = frames[0].frameIndex;
-  const lastFrame = frames[frames.length - 1].frameIndex;
-
-  const tolerance = 5;
-  if (frameIndex < firstFrame - tolerance || frameIndex > lastFrame + tolerance) {
-    return null;
-  }
-
-  let best: Detection | null = null;
-  let bestDiff = Infinity;
-
-  for (const f of frames) {
-    const diff = Math.abs(f.frameIndex - frameIndex);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = f;
-    }
-  }
-
-  const maxGap = 15;
-  if (bestDiff > maxGap) {
-    return null;
-  }
-
-  return best;
 }
