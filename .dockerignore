@@ -1,0 +1,53 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build outputs
+.next
+out
+dist
+build
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Test videos (optional - comment out if you want to include them)
+Test video/
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.Python
+venv
+.venv
+env
+
+# Temp files
+*.tmp
+*.temp
+
+# Documentation
+*.md
+*.pdf
+!README.md
