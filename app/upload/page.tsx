@@ -8,7 +8,6 @@ import {
   Users,
   UserX,
   Settings,
-  X,
   Film,
   Download,
   Loader2,
@@ -23,7 +22,6 @@ type Step = 'upload' | 'detect' | 'select';
 
 export default function UploadPage() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
-  const [showSettings, setShowSettings] = useState(false);
   const [sampleRate, setSampleRate] = useState(3);
 
   // Video upload hook
@@ -79,38 +77,7 @@ export default function UploadPage() {
     <div className="min-h-screen bg-zinc-950 bg-grid">
       <Header
         currentStep={currentStep}
-        onSettingsClick={() => setShowSettings(!showSettings)}
       />
-
-      {/* Settings panel */}
-      {showSettings && (
-        <div className="border-b border-zinc-800 bg-zinc-900/50">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-3">
-                  <label className="text-sm text-zinc-400">Sample rate:</label>
-                  <div className="flex items-center gap-2 bg-zinc-800 rounded-lg px-3 py-1.5">
-                    <input
-                      type="range"
-                      min={1}
-                      max={10}
-                      value={sampleRate}
-                      onChange={e => setSampleRate(Number(e.target.value))}
-                      className="w-20 accent-indigo-500"
-                    />
-                    <span className="text-sm font-mono w-6 text-zinc-300">{sampleRate}</span>
-                  </div>
-                  <span className="text-xs text-zinc-500">frames (lower = more accurate, slower)</span>
-                </div>
-              </div>
-              <button onClick={() => setShowSettings(false)} className="text-zinc-500 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Error alert */}
@@ -179,12 +146,20 @@ export default function UploadPage() {
                   <div className="flex items-center gap-2 text-sm text-zinc-400">
                     <Settings className="w-4 h-4" />
                     <span>Sample every <strong className="text-zinc-300">{sampleRate}</strong> frames</span>
-                    <button
-                      onClick={() => setShowSettings(true)}
-                      className="ml-auto text-indigo-400 hover:text-indigo-300 text-xs"
-                    >
-                      Adjust
-                    </button>
+                    <span className="ml-2 text-xs text-zinc-500">(higher = less accurate, faster)</span>
+                  </div>
+                  <div className="mt-4 flex items-center gap-3 bg-zinc-800 rounded-lg px-3 py-2">
+                    <label className="text-xs text-zinc-400">Sample rate:</label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={10}
+                      value={sampleRate}
+                      onChange={e => setSampleRate(Number(e.target.value))}
+                      className="w-24 accent-indigo-500"
+                    />
+                    <span className="text-xs font-mono w-6 text-zinc-300">{sampleRate}</span>
+                    <span className="text-xs text-zinc-500">frames</span>
                   </div>
                 </div>
               </div>

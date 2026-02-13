@@ -1,18 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, EyeOff, CheckCircle, Settings } from 'lucide-react';
+import { ArrowLeft, EyeOff, CheckCircle } from 'lucide-react';
 
 type Step = 'upload' | 'detect' | 'select';
 
 interface HeaderProps {
   currentStep: Step;
-  onSettingsClick: () => void;
 }
 
 const STEPS: Step[] = ['upload', 'detect', 'select'];
 
-export function Header({ currentStep, onSettingsClick }: HeaderProps) {
+export function Header({ currentStep }: HeaderProps) {
   const currentIndex = STEPS.indexOf(currentStep);
 
   return (
@@ -54,13 +53,6 @@ export function Header({ currentStep, onSettingsClick }: HeaderProps) {
             </div>
           ))}
         </div>
-
-        <button
-          onClick={onSettingsClick}
-          className="p-2 rounded-lg hover:bg-zinc-800 transition-colors text-zinc-400 hover:text-white"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
       </div>
     </header>
   );
