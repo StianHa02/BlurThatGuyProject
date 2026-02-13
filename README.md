@@ -2,16 +2,32 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+### 1. Start the Python Backend
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+cd backend
+
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the server
+python main.py
+```
+
+The backend runs on http://localhost:8000 and uses OpenCV DNN with YuNet for face detection.
+
+### 2. Start the Frontend
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start dev server
 pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
@@ -39,22 +55,23 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 # Blur That Guy
 
-Upload a video, detect faces using **OpenCV.js**, track them across frames, select a face, and blur/hide it during playback.
+Upload a video, detect faces using **OpenCV DNN (YuNet)**, track them across frames, select a face, and blur/hide it during playback.
 
 ## Quick start
 
 ```bash
-# Install dependencies
+# 1. Start backend
+cd backend
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+
+# 2. In another terminal, start frontend
 pnpm install
-
-# Download the Haar cascade model (optional - loads from CDN if missing)
-bash scripts/download-models.sh
-
-# Start dev server
 pnpm dev
 ```
 
-Open **http://localhost:3000/upload** in Chrome.
+Open **http://localhost:3000/upload** in your browser.
 
 ## How to use
 
@@ -65,16 +82,17 @@ Open **http://localhost:3000/upload** in Chrome.
 
 ## Features
 
-- **OpenCV.js Haar Cascade** — Classic, reliable face detection
-- **Client-side** — All processing in browser, no server needed
+- **OpenCV DNN with YuNet** — Modern deep learning face detection
+- **Python backend** — Fast, accurate server-side processing
 - **Face tracking** — IOU + distance-based tracking across frames
 - **Auto-select** — Automatically picks the main face (most frames)
 - **Blur or black box** — Toggle between pixelated blur or solid black
 
 ## Tech stack
 
-- Next.js 16 + React 19
-- OpenCV.js (Haar Cascade face detector)
+- Next.js + React
+- Python/FastAPI backend
+- OpenCV DNN (YuNet model)
 - Tailwind CSS
 
 License: MIT
