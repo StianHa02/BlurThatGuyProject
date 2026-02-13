@@ -1,13 +1,17 @@
 # Face Detection API with OpenCV DNN (YuNet)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import cv2
 import numpy as np
 import base64
 from pathlib import Path
 import urllib.request
+import tempfile
+import os
+import uuid
 
 app = FastAPI(title="Face Detection API")
 
@@ -98,9 +102,125 @@ class ImageRequest(BaseModel):
     image: str  # base64 encoded image
 
 
+class ExportRequest(BaseModel):
+    tracks: list[dict]  # List of tracks with frames containing bbox data
+    selectedTrackIds: list[int]  # IDs of tracks to blur
+    padding: float = 0.4  # Padding around face
+    blurAmount: int = 12  # Pixelation amount
+
+
+# Store for temporary files
+TEMP_DIR = Path(tempfile.gettempdir()) / "blurthatguy"
+TEMP_DIR.mkdir(exist_ok=True)
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": "YuNet"}
+
+
+@app.post("/upload-video")
+async def upload_video(file: UploadFile = File(...)):
+    """Upload a video file and return an ID for later processing"""
+    video_id = str(uuid.uuid4())
+    video_path = TEMP_DIR / f"{video_id}.mp4"
+
+    with open(video_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+
+    return {"videoId": video_id}
+
+
+@app.post("/export/{video_id}")
+async def export_video(video_id: str, request: ExportRequest):
+    """Process video with blurred faces and return the result"""
+    input_path = TEMP_DIR / f"{video_id}.mp4"
+
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found. Please upload again.")
+
+    output_path = TEMP_DIR / f"{video_id}_blurred.mp4"
+
+    try:
+        # Build lookup for selected tracks
+        tracks_map = {t["id"]: t for t in request.tracks if t["id"] in request.selectedTrackIds}
+
+        # Open video
+        cap = cv2.VideoCapture(str(input_path))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        # Create video writer with H.264 codec
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+
+        frame_idx = 0
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            # Apply blur to faces in selected tracks
+            for track_id, track in tracks_map.items():
+                det = find_detection_for_frame(track["frames"], frame_idx)
+                if det is None:
+                    continue
+
+                bbox = det["bbox"]
+                ox, oy, ow, oh = bbox
+                padding = request.padding
+
+                x = max(0, int(ox - ow * padding))
+                y = max(0, int(oy - oh * padding))
+                w = min(int(ow * (1 + padding * 2)), width - x)
+                h = min(int(oh * (1 + padding * 2)), height - y)
+
+                if w > 0 and h > 0:
+                    # Extract face region
+                    face_region = frame[y:y+h, x:x+w]
+
+                    # Pixelate by downscaling and upscaling
+                    blur_amt = request.blurAmount
+                    small = cv2.resize(face_region, (max(1, w // blur_amt), max(1, h // blur_amt)), interpolation=cv2.INTER_LINEAR)
+                    pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+
+                    # Put back
+                    frame[y:y+h, x:x+w] = pixelated
+
+            out.write(frame)
+            frame_idx += 1
+
+        cap.release()
+        out.release()
+
+        return FileResponse(
+            str(output_path),
+            media_type="video/mp4",
+            filename="blurred-video.mp4"
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
+    """Find the closest detection for a given frame index"""
+    if not frames:
+        return None
+
+    best = None
+    best_diff = float('inf')
+
+    for f in frames:
+        diff = abs(f["frameIndex"] - frame_idx)
+        if diff < best_diff:
+            best_diff = diff
+            best = f
+
+    return best if best_diff <= 15 else None
 
 
 @app.post("/detect")

@@ -4,8 +4,8 @@ import React, { useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { loadModels, detectFacesInCanvas, resetTrackers } from '@/lib/faceClient';
 import { trackDetections } from '@/lib/tracker';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+
+const API_URL = 'http://localhost:8000';
 
 const PlayerWithMask = dynamic(() => import('../components/PlayerWithMask'), { ssr: false });
 
@@ -18,6 +18,7 @@ export default function UploadPage() {
   const [sampleRate, setSampleRate] = useState(3);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [videoId, setVideoId] = useState<string | null>(null);
 
   const fileRef = useRef<File | null>(null);
 
@@ -29,7 +30,23 @@ export default function UploadPage() {
     setFileUrl(url);
     setTracks([]);
     setSelectedTrackIds([]);
+    setVideoId(null);
 
+    // Upload video to backend for later export
+    try {
+      const formData = new FormData();
+      formData.append('file', f);
+      const response = await fetch(`${API_URL}/upload-video`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setVideoId(data.videoId);
+      }
+    } catch (err) {
+      console.error('Failed to upload video to backend:', err);
+    }
   }
 
   // Toggle track selection (add or remove from selected list)
@@ -53,152 +70,43 @@ export default function UploadPage() {
     setSelectedTrackIds([]);
   }
 
-  // Helper to find detection for a frame
-  function findDetectionForFrame(frames: any[], frameIndex: number): any | null {
-    if (!frames || frames.length === 0) return null;
-    let best: any = null;
-    let bestDiff = Infinity;
-    for (const f of frames) {
-      const diff = Math.abs(f.frameIndex - frameIndex);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = f;
-      }
-    }
-    return bestDiff <= 15 ? best : null;
-  }
-
-  // Export video with blurred faces
+  // Export video with blurred faces (using backend)
   async function exportVideo() {
-    if (!fileUrl || selectedTrackIds.length === 0) {
+    if (!videoId || selectedTrackIds.length === 0) {
       alert('Please select at least one face to blur before exporting.');
       return;
     }
 
     setExporting(true);
     setExportProgress(0);
+    setStatus('Processing video on server...');
 
     try {
-      const video = document.createElement('video');
-      video.src = fileUrl;
-      video.muted = true;
+      setExportProgress(10);
 
-      await new Promise<void>((resolve) => {
-        video.addEventListener('loadedmetadata', () => resolve(), { once: true });
+      const response = await fetch(`${API_URL}/export/${videoId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tracks: tracks,
+          selectedTrackIds: selectedTrackIds,
+          padding: 0.4,
+          blurAmount: 12,
+        }),
       });
 
-      const width = video.videoWidth;
-      const height = video.videoHeight;
-      const duration = video.duration;
-      const frameRate = 30;
-      const totalFrames = Math.ceil(duration * frameRate);
+      setExportProgress(80);
 
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d')!;
-
-      // Create MediaRecorder to capture canvas as video
-      const stream = canvas.captureStream(frameRate);
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'video/webm;codecs=vp9',
-        videoBitsPerSecond: 5000000
-      });
-
-      const chunks: Blob[] = [];
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
-
-      mediaRecorder.start();
-
-      // Build tracks map for quick lookup
-      const tracksMap = new Map<number, any>();
-      for (const t of tracks) tracksMap.set(t.id, t);
-
-      // Process each frame
-      for (let fi = 0; fi < totalFrames; fi++) {
-        await new Promise<void>((resolve) => {
-          video.currentTime = fi / frameRate;
-          video.onseeked = () => {
-            // Draw video frame
-            ctx.drawImage(video, 0, 0, width, height);
-
-            // Apply blur to selected faces
-            for (const trackId of selectedTrackIds) {
-              const track = tracksMap.get(trackId);
-              if (!track) continue;
-
-              const det = findDetectionForFrame(track.frames, fi);
-              if (!det) continue;
-
-              const padding = 0.4;
-              const [ox, oy, ow, oh] = det.bbox;
-              const x = Math.max(0, ox - ow * padding);
-              const y = Math.max(0, oy - oh * padding);
-              const w = ow * (1 + padding * 2);
-              const h = oh * (1 + padding * 2);
-
-              // Pixelated blur effect
-              const blurAmount = 12;
-              const tmp = document.createElement('canvas');
-              tmp.width = Math.max(1, Math.floor(w / blurAmount));
-              tmp.height = Math.max(1, Math.floor(h / blurAmount));
-              const tctx = tmp.getContext('2d');
-              if (tctx) {
-                tctx.drawImage(canvas, x, y, w, h, 0, 0, tmp.width, tmp.height);
-                ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(tmp, 0, 0, tmp.width, tmp.height, x, y, w, h);
-              }
-            }
-
-            resolve();
-          };
-        });
-
-        // Small delay to let MediaRecorder capture the frame
-        await new Promise(r => setTimeout(r, 1000 / frameRate));
-
-        setExportProgress(Math.round((fi / totalFrames) * 80)); // 0-80% for recording
+      if (!response.ok) {
+        throw new Error('Export failed');
       }
 
-      // Stop recording
-      mediaRecorder.stop();
+      // Download the file
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
 
-      await new Promise<void>((resolve) => {
-        mediaRecorder.onstop = () => resolve();
-      });
-
-      const webmBlob = new Blob(chunks, { type: 'video/webm' });
-
-      // Convert WebM to MP4 using FFmpeg
-      setStatus('Converting to MP4...');
-      setExportProgress(85);
-
-      const ffmpeg = new FFmpeg();
-      await ffmpeg.load({
-        coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.js',
-        wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm/ffmpeg-core.wasm',
-      });
-
-      setExportProgress(90);
-
-      // Write WebM to FFmpeg filesystem
-      await ffmpeg.writeFile('input.webm', await fetchFile(webmBlob));
-
-      setExportProgress(92);
-
-      // Convert to MP4
-      await ffmpeg.exec(['-i', 'input.webm', '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', 'output.mp4']);
-
-      setExportProgress(98);
-
-      // Read the output file
-      const data = await ffmpeg.readFile('output.mp4') as Uint8Array;
-      const mp4Blob = new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' });
-      const url = URL.createObjectURL(mp4Blob);
-
-      // Trigger download
       const a = document.createElement('a');
       a.href = url;
       a.download = 'blurred-video.mp4';
@@ -211,7 +119,7 @@ export default function UploadPage() {
       setStatus('Export complete!');
     } catch (error) {
       console.error('Export error:', error);
-      alert('Failed to export video. Please try again.');
+      alert('Failed to export video. Make sure the backend is running.');
     } finally {
       setExporting(false);
     }
