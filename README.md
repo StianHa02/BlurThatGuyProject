@@ -128,18 +128,27 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ```
 blurthatguy/
-├── app/                    # Next.js frontend
-│   ├── components/         # Reusable UI components
-│   ├── upload/            # Upload page with hooks & components
-│   └── page.tsx           # Landing page
-├── backend/               # Python FastAPI backend
-│   ├── main.py           # API endpoints
-│   ├── models/           # YuNet face detection model
-│   └── requirements.txt
-├── lib/                   # Shared utilities
-├── docker-compose.yml     # Production Docker config
-├── docker-compose.dev.yml # Development Docker config
-└── Dockerfile.*          # Docker build files
+├── app/                    # Next.js frontend (App Router)
+│   ├── components/         # Shared React UI components
+│   ├── upload/             # Upload page, hooks, and upload-specific components
+│   │   ├── components/     # Upload page UI components (DropZone, ProgressBar, etc.)
+│   │   └── hooks/          # Custom React hooks for upload, detection, export
+│   └── api/                # Next.js API routes (proxy to backend)
+├── backend/                # Python FastAPI backend
+│   ├── main.py             # API endpoints (face detection, video export)
+│   ├── models/             # YuNet ONNX face detection model
+│   └── requirements.txt    # Python dependencies
+├── lib/                    # Shared TypeScript utilities (frontend)
+├── public/                 # Static assets (test videos, favicon, etc.)
+├── docker-compose.yml      # Production Docker Compose config
+├── docker-compose.dev.yml  # Development Docker Compose config (hot reload)
+├── Dockerfile.frontend     # Docker build for Next.js frontend
+├── Dockerfile.backend      # Docker build for FastAPI backend
+├── README.md               # Project documentation
+├── package.json            # Frontend dependencies and scripts
+├── pnpm-workspace.yaml     # pnpm monorepo config
+├── tsconfig.json           # TypeScript config
+└── ...                     # Other config and dotfiles
 ```
 
 ---
@@ -392,7 +401,7 @@ sudo systemctl restart blurthatguy
 | Vercel | `NEXT_PUBLIC_API_URL` | `https://your-ec2-domain.com` |
 | Vercel | `NEXT_PUBLIC_API_KEY` | Your API key |
 | EC2 Backend | `API_KEY` | Same API key as frontend |
-| EC2 Backend | CORS origins | Add your Vercel URL |
+| EC2 Backend | CORS origins | Add your Vercel URL in `backend/main.py` |
 
 ---
 

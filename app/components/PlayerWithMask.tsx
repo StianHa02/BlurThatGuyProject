@@ -291,26 +291,6 @@ export default function PlayerWithMask({
           />
         );
       })}
-
-      {/* Status: Blurred faces count */}
-      {selectedTrackIds.length > 0 && (
-        <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm pointer-events-none border border-white/10">
-          <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
-          <span>
-            {selectedTrackIds.length === 1
-              ? '1 face blurred'
-              : `${selectedTrackIds.length} faces blurred`}
-          </span>
-        </div>
-      )}
-
-      {/* Status: Visible faces count (when paused) */}
-      {visibleFaces.length > 0 && !isPlaying && (
-        <div className="absolute top-3 right-3 flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm pointer-events-none border border-white/10">
-          <Users className="w-3.5 h-3.5 text-green-400" />
-          <span>{visibleFaces.length} face{visibleFaces.length !== 1 ? 's' : ''} visible</span>
-        </div>
-      )}
     </div>
   );
 }
