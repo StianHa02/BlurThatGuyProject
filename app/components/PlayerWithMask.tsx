@@ -204,8 +204,8 @@ export default function PlayerWithMask({
             }
           }
         } else {
-          // Draw subtle cyan/teal outline for unselected faces (visible but not harsh)
-          ctx.strokeStyle = 'rgba(6, 182, 212, 0.7)'; // cyan-500 with opacity
+          // Draw red outline for unselected faces (visible but not harsh)
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)'; // red-500 with opacity
           ctx.lineWidth = 2;
           ctx.setLineDash([]);
           ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);

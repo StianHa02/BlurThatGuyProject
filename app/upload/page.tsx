@@ -141,10 +141,13 @@ export default function UploadPage() {
                 <div className="flex items-center gap-2 text-sm text-zinc-400">
                   <Film className="w-4 h-4" />
                   <span className="truncate">{upload.fileName}</span>
-                  <button onClick={handleReset} className="ml-auto text-zinc-500 hover:text-white text-xs">
-                    Change video
-                  </button>
                 </div>
+                <button
+                  onClick={handleReset}
+                  className="mt-4 w-full text-sm text-zinc-500 hover:text-white border border-zinc-700 rounded-lg py-2 transition-colors"
+                >
+                  ← Upload another video
+                </button>
               </div>
 
               {/* Detection panel */}
@@ -189,9 +192,9 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Step 3: Select */}
+        {/* Step 3: Select & Export */}
         {currentStep === 'select' && upload.fileUrl && (
-          <div>
+          <div className="max-w-4xl mx-auto">
             {/* Status bar */}
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
               <div className="flex items-center gap-4">
@@ -270,7 +273,7 @@ export default function UploadPage() {
             {/* Action bar */}
             <div className="mt-6 flex items-center justify-between">
               <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-white transition-colors">
-                ← Upload different video
+                ← Upload another video
               </button>
               <div className="text-sm text-zinc-500">{upload.fileName}</div>
             </div>
