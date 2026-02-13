@@ -111,7 +111,7 @@ export default function UploadPage() {
                 </div>
                 <button
                   onClick={handleReset}
-                  className="mt-4 w-full text-sm text-zinc-500 hover:text-white border border-zinc-700 rounded-lg py-2 transition-colors"
+                  className="mt-4 w-full text-sm text-zinc-500 hover:text-white border border-zinc-700 rounded-lg py-2 transition-colors cursor-pointer"
                 >
                   ← Upload another video
                 </button>
@@ -134,7 +134,7 @@ export default function UploadPage() {
                   ) : (
                     <button
                       onClick={handleStartDetection}
-                      className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 font-semibold text-white transition-all flex items-center justify-center gap-2"
+                      className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 font-semibold text-white transition-all flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Eye className="w-5 h-5" />
                       Start Detection
@@ -197,14 +197,14 @@ export default function UploadPage() {
               <div className="flex flex-row items-center gap-x-2 shrink-0 whitespace-nowrap">
                 <button
                   onClick={detection.selectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors whitespace-nowrap"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors whitespace-nowrap cursor-pointer"
                 >
                   <UserX className="w-4 h-4" />
                   Blur All
                 </button>
                 <button
                   onClick={detection.deselectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors whitespace-nowrap"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors whitespace-nowrap cursor-pointer"
                 >
                   <Eye className="w-4 h-4" />
                   Clear
@@ -212,7 +212,7 @@ export default function UploadPage() {
                 <button
                   onClick={handleExport}
                   disabled={exportHook.exporting || detection.selectedTrackIds.length === 0}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 font-medium text-white transition-all text-xs sm:text-sm whitespace-nowrap"
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 font-medium text-white transition-all text-xs sm:text-sm whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
                 >
                   {exportHook.exporting ? (
                     <>
@@ -252,7 +252,7 @@ export default function UploadPage() {
 
             {/* Action bar */}
             <div className="mt-6 flex items-center justify-between">
-              <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-white transition-colors">
+              <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-white transition-colors cursor-pointer">
                 ← Upload another video
               </button>
               <div className="text-sm text-zinc-500">{upload.fileName}</div>
