@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { EyeOff } from 'lucide-react';
+import { EyeOff, ExternalLink } from 'lucide-react';
 
 interface NavbarProps {
   ctaText?: string;
@@ -17,12 +17,23 @@ export function Navbar({ ctaText = 'Launch App', ctaHref = '/upload' }: NavbarPr
         </div>
         <span className="font-semibold text-lg">BlurThatGuy</span>
       </Link>
-      <Link
-        href={ctaHref}
-        className="px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors text-sm font-medium"
-      >
-        {ctaText}
-      </Link>
+      <div className="flex items-center gap-3">
+        <a
+          href="https://stianha.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-indigo-400 hover:text-indigo-300 border border-indigo-500/30 hover:border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 transition-all"
+        >
+          My Portfolio
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+        <Link
+          href={ctaHref}
+          className="px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all text-sm font-medium text-white"
+        >
+          {ctaText}
+        </Link>
+      </div>
     </nav>
   );
 }
