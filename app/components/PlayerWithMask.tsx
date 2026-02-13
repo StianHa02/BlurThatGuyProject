@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { EyeOff, Users } from 'lucide-react';
 
 export type BBox = [number, number, number, number];
 
@@ -40,6 +41,7 @@ export default function PlayerWithMask({
   const rafRef = useRef<number | null>(null);
   const tracksMapRef = useRef<Map<number, Track>>(new Map());
   const [visibleFaces, setVisibleFaces] = useState<{trackId: number, bbox: BBox}[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     const m = new Map<number, Track>();
@@ -93,7 +95,9 @@ export default function PlayerWithMask({
     video.addEventListener('loadedmetadata', syncCanvasSize);
     video.addEventListener('resize', syncCanvasSize);
     window.addEventListener('resize', syncCanvasSize);
-    video.addEventListener('play', syncCanvasSize);
+    video.addEventListener('play', () => { syncCanvasSize(); setIsPlaying(true); });
+    video.addEventListener('pause', () => setIsPlaying(false));
+    video.addEventListener('ended', () => setIsPlaying(false));
 
     function draw() {
       const video = videoRef.current;
@@ -173,14 +177,18 @@ export default function PlayerWithMask({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       video.removeEventListener('loadedmetadata', syncCanvasSize);
       video.removeEventListener('resize', syncCanvasSize);
-      video.removeEventListener('play', syncCanvasSize);
       window.removeEventListener('resize', syncCanvasSize);
     };
   }, [selectedTrackIds, blur, sampleRate]);
 
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <video ref={videoRef} src={videoUrl} controls style={{ maxWidth: '100%', display: 'block' }} />
+    <div className="relative rounded-xl overflow-hidden bg-black">
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        className="w-full block"
+      />
       <canvas
         ref={canvasRef}
         onClick={handleCanvasClick}
@@ -201,26 +209,39 @@ export default function PlayerWithMask({
         const scaleX = rect.width / (video.videoWidth || 1);
         const scaleY = rect.height / (video.videoHeight || 1);
         const [x, y, w, h] = face.bbox;
+        const isSelected = selectedTrackIds.includes(face.trackId);
         return (
           <div
             key={i}
             onClick={() => onToggleTrack(face.trackId)}
+            className={`absolute transition-all duration-150 ${
+              isSelected 
+                ? 'ring-2 ring-indigo-500/50 bg-indigo-500/10' 
+                : 'hover:bg-white/5 cursor-pointer'
+            }`}
             style={{
-              position: 'absolute',
               left: x * scaleX,
               top: y * scaleY,
               width: w * scaleX,
               height: h * scaleY,
-              cursor: 'pointer',
-              // Uncomment below to debug click areas:
-              // backgroundColor: 'rgba(255,0,0,0.2)',
+              borderRadius: '4px',
             }}
+            title={isSelected ? 'Click to unblur' : 'Click to blur'}
           />
         );
       })}
+      {/* Status overlay */}
       {selectedTrackIds.length > 0 && (
-        <div className="absolute top-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-sm pointer-events-none">
-          {selectedTrackIds.length === 1 ? '1 person blurred' : `${selectedTrackIds.length} people blurred`}
+        <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm pointer-events-none border border-white/10">
+          <EyeOff className="w-3.5 h-3.5 text-indigo-400" />
+          <span>{selectedTrackIds.length === 1 ? '1 face blurred' : `${selectedTrackIds.length} faces blurred`}</span>
+        </div>
+      )}
+      {/* Face count overlay */}
+      {visibleFaces.length > 0 && !isPlaying && (
+        <div className="absolute top-3 right-3 flex items-center gap-2 bg-black/80 backdrop-blur-sm text-white px-3 py-1.5 rounded-lg text-sm pointer-events-none border border-white/10">
+          <Users className="w-3.5 h-3.5 text-green-400" />
+          <span>{visibleFaces.length} visible</span>
         </div>
       )}
     </div>

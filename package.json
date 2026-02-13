@@ -11,6 +11,8 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "framer-motion": "^12.34.0",
+    "lucide-react": "^0.563.0",
     "next": "16.1.6",
     "opencv.js": "^1.2.1",
     "react": "19.2.3",
