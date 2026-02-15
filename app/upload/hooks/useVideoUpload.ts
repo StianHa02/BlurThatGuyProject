@@ -41,18 +41,17 @@ export function useVideoUpload() {
       if (response.ok) {
         const data = await response.json();
         setVideoId(data.videoId);
-        return true; // FIXED: Return true only on success
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Upload failed:', errorData.error || response.statusText);
         setError(errorData.error || 'Upload failed');
-        return false; // FIXED: Return false on upload failure
       }
     } catch (err) {
       console.error('Failed to upload video to backend:', err);
       setError('Failed to upload video to backend');
-      return false; // FIXED: Return false on network error
     }
+
+    return true;
   }, []);
 
   const reset = useCallback(() => {
