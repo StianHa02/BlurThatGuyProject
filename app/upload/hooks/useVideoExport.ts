@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { API_URL } from '@/lib/config';
 
 interface UseExportOptions {
@@ -15,8 +15,21 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, on
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
 
+  // Use refs to always get the latest values (fixes stale closure bug)
+  const selectedTrackIdsRef = useRef(selectedTrackIds);
+  const tracksRef = useRef(tracks);
+
+  useEffect(() => {
+    selectedTrackIdsRef.current = selectedTrackIds;
+    tracksRef.current = tracks;
+  }, [selectedTrackIds, tracks]);
+
   const exportVideo = useCallback(async () => {
-    if (!videoId || selectedTrackIds.length === 0) {
+    // Get the latest values from refs (not from closure)
+    const currentSelectedIds = selectedTrackIdsRef.current;
+    const currentTracks = tracksRef.current;
+
+    if (!videoId || currentSelectedIds.length === 0) {
       onError('Please select at least one face to blur before exporting.');
       return false;
     }
@@ -32,8 +45,8 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, on
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          tracks,
-          selectedTrackIds,
+          tracks: currentTracks,
+          selectedTrackIds: currentSelectedIds,
           padding: 0.4,
           blurAmount: 12,
         }),
@@ -66,7 +79,7 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, on
     } finally {
       setExporting(false);
     }
-  }, [videoId, fileName, tracks, selectedTrackIds, onError]);
+  }, [videoId, fileName, onError]); // Don't include tracks/selectedTrackIds in deps - we use refs instead
 
   return {
     exporting,
