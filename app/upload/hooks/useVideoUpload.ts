@@ -10,7 +10,7 @@ export function useVideoUpload() {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<File | null>(null);
 
-  const MAX_UPLOAD_SIZE_MB = 100; // Client-side cap (must match server-side)
+  const MAX_UPLOAD_SIZE_MB = 100;
 
   const handleFile = useCallback(async (f: File) => {
     if (!f.type.startsWith('video/')) {
@@ -18,7 +18,6 @@ export function useVideoUpload() {
       return false;
     }
 
-    // Client-side size check to provide immediate feedback
     if (f.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
       setError(`File is too large. Maximum allowed size is ${MAX_UPLOAD_SIZE_MB}MB.`);
       return false;
@@ -30,7 +29,7 @@ export function useVideoUpload() {
     const url = URL.createObjectURL(f);
     setFileUrl(url);
 
-    // Upload video to backend for later export (via API proxy)
+    // Upload video to backend (via API proxy)
     try {
       const formData = new FormData();
       formData.append('file', f);
@@ -38,6 +37,7 @@ export function useVideoUpload() {
         method: 'POST',
         body: formData,
       });
+
       if (response.ok) {
         const data = await response.json();
         setVideoId(data.videoId);
@@ -45,10 +45,12 @@ export function useVideoUpload() {
         const errorData = await response.json().catch(() => ({}));
         console.error('Upload failed:', errorData.error || response.statusText);
         setError(errorData.error || 'Upload failed');
+        return false;
       }
     } catch (err) {
       console.error('Failed to upload video to backend:', err);
       setError('Failed to upload video to backend');
+      return false;
     }
 
     return true;
