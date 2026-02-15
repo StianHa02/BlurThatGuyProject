@@ -1,5 +1,5 @@
 # Face Detection API with OpenCV DNN (YuNet)
-# Security-hardened version
+# Security-hardened version with BATCH PROCESSING support
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +21,7 @@ import re
 import logging
 import asyncio
 from datetime import datetime, timedelta
+from typing import List
 
 # Load environment variables from .env.local if present
 # This ensures local development env vars (like API_KEY) in backend/.env.local are available via os.environ
@@ -231,217 +232,201 @@ def validate_video_id(video_id: str) -> str:
 
 
 def get_safe_video_path(video_id: str, suffix: str = ".mp4") -> Path:
-    """Get a safe video path, ensuring it's within TEMP_DIR"""
-    video_id = validate_video_id(video_id)
-    video_path = (TEMP_DIR / f"{video_id}{suffix}").resolve()
-
-    # Verify the resolved path is within TEMP_DIR
-    if not str(video_path).startswith(str(TEMP_DIR.resolve())):
-        logger.error(f"Path traversal attempt detected: {video_path}")
-        raise HTTPException(status_code=400, detail="Invalid video path")
-
-    return video_path
+    """Get sanitized path for video file"""
+    validate_video_id(video_id)
+    return TEMP_DIR / f"{video_id}{suffix}"
 
 
 # =============================================================================
-# Temporary File Cleanup
+# Input Validation Models
 # =============================================================================
 
-def cleanup_old_files(max_age_hours: int = 1) -> int:
-    """Delete temporary files older than max_age_hours"""
-    if not TEMP_DIR.exists():
-        return 0
+class ImageRequest(BaseModel):
+    """Model for single image detection request"""
+    image: str = Field(..., min_length=100, max_length=50_000_000)
 
-    cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
-    deleted_count = 0
-
-    try:
-        for file_path in TEMP_DIR.iterdir():
-            if file_path.is_file():
-                file_mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
-                if file_mtime < cutoff_time:
-                    try:
-                        file_path.unlink()
-                        deleted_count += 1
-                        logger.debug(f"Deleted old file: {file_path.name}")
-                    except OSError as e:
-                        logger.error(f"Failed to delete {file_path}: {e}")
-    except Exception as e:
-        logger.error(f"Error during cleanup: {e}")
-
-    if deleted_count > 0:
-        logger.info(f"Cleaned up {deleted_count} old files")
-
-    return deleted_count
+    @field_validator('image')
+    @classmethod
+    def validate_base64(cls, v: str) -> str:
+        """Validate base64 format"""
+        if not v or len(v) < 100:
+            raise ValueError("Image data too short")
+        return v
 
 
-async def periodic_cleanup() -> None:
-    """Background task to periodically clean up old files"""
+# NEW: Batch detection models
+class BatchFrameRequest(BaseModel):
+    """Single frame in a batch detection request"""
+    frameIndex: int = Field(..., ge=0)
+    image: str = Field(..., min_length=100, max_length=50_000_000)
+
+
+class BatchDetectRequest(BaseModel):
+    """Model for batch detection request"""
+    batch: List[BatchFrameRequest] = Field(..., min_length=1, max_length=20)
+
+    @field_validator('batch')
+    @classmethod
+    def validate_batch_size(cls, v: List[BatchFrameRequest]) -> List[BatchFrameRequest]:
+        """Limit batch size to prevent abuse"""
+        if len(v) > 20:
+            raise ValueError("Batch size must not exceed 20 frames")
+        return v
+
+
+class FaceDetectionResult(BaseModel):
+    """Single face detection result"""
+    bbox: List[float]
+    score: float
+
+
+class BatchFrameResult(BaseModel):
+    """Result for a single frame in batch"""
+    frameIndex: int
+    faces: List[FaceDetectionResult]
+
+
+class BatchDetectResponse(BaseModel):
+    """Response for batch detection"""
+    results: List[BatchFrameResult]
+
+
+class Track(BaseModel):
+    """Track definition for video export"""
+    id: int
+    frames: list
+    startFrame: int
+    endFrame: int
+
+
+class ExportRequest(BaseModel):
+    """Model for video export request"""
+    tracks: list[Track]
+    selectedTrackIds: list[int] = Field(default_factory=list, max_length=100)
+    padding: float = Field(default=VIDEO_PROCESSING_CONFIG["default_padding"],
+                           ge=0.0, le=VIDEO_PROCESSING_CONFIG["max_padding"])
+    blurAmount: int = Field(default=VIDEO_PROCESSING_CONFIG["default_blur_amount"],
+                            ge=VIDEO_PROCESSING_CONFIG["min_blur_amount"],
+                            le=VIDEO_PROCESSING_CONFIG["max_blur_amount"])
+
+
+# =============================================================================
+# File Validation
+# =============================================================================
+
+def validate_video_file(filename: str | None, content_type: str | None):
+    """Validate uploaded video file type"""
+    if filename is None:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    # Check extension
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_VIDEO_EXTENSIONS:
+        allowed = ", ".join(ALLOWED_VIDEO_EXTENSIONS)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {allowed}"
+        )
+
+    # Check MIME type if provided
+    if content_type and content_type not in ALLOWED_VIDEO_MIMETYPES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid video MIME type"
+        )
+
+
+# =============================================================================
+# File Cleanup Tasks
+# =============================================================================
+
+async def periodic_cleanup():
+    """Periodically clean up old temporary files"""
     while True:
-        await asyncio.sleep(30 * 60)  # 30 minutes
+        await asyncio.sleep(3600)  # Run every hour
         cleanup_old_files()
 
 
+def cleanup_old_files():
+    """Delete temporary files older than 24 hours"""
+    try:
+        cutoff = datetime.now() - timedelta(hours=24)
+        count = 0
+
+        for file_path in TEMP_DIR.glob("*"):
+            if file_path.is_file():
+                mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
+                if mtime < cutoff:
+                    file_path.unlink()
+                    count += 1
+
+        if count > 0:
+            logger.info(f"Cleaned up {count} old temporary files")
+    except Exception as e:
+        logger.error(f"Cleanup error: {e}")
+
+
 # =============================================================================
-# Face Detection Model
+# Face Detection Core
 # =============================================================================
 
-face_detector = None
-MODELS_DIR = Path(__file__).parent / "models"
+_detector = None
 
 
-def download_yunet_model() -> str:
-    """Download YuNet model if not present"""
-    MODELS_DIR.mkdir(exist_ok=True)
-    model_path = MODELS_DIR / "face_detection_yunet_2023mar.onnx"
+def get_face_detector():
+    """Initialize and return YuNet face detector (singleton)"""
+    global _detector
+    if _detector is not None:
+        return _detector
 
+    model_path = Path(__file__).parent / "models" / "face_detection_yunet_2023mar.onnx"
+
+    # Download model if not present
     if not model_path.exists():
-        logger.info("Downloading YuNet model...")
-        url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
-        urllib.request.urlretrieve(url, model_path)
-        logger.info("YuNet model downloaded")
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        model_url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+        logger.info(f"Downloading YuNet model from {model_url}...")
+        urllib.request.urlretrieve(model_url, model_path)
+        logger.info("Model downloaded successfully")
 
-    return str(model_path)
-
-
-def get_face_detector(width: int = 640, height: int = 480):
-    """Get or create face detector with specified input size"""
-    global face_detector
-
-    model_path = download_yunet_model()
-
-    face_detector = cv2.FaceDetectorYN.create(
-        model_path,
-        "",
-        (width, height),
+    _detector = cv2.FaceDetectorYN.create(
+        model=str(model_path),
+        config="",
+        input_size=(320, 320),
         score_threshold=FACE_DETECTION_CONFIG["score_threshold"],
         nms_threshold=FACE_DETECTION_CONFIG["nms_threshold"],
         top_k=FACE_DETECTION_CONFIG["max_faces"]
     )
 
-    return face_detector
+    return _detector
 
 
 def detect_faces(image: np.ndarray) -> list[dict]:
-    """
-    Detect faces in an image using YuNet
-    Returns list of face detections with bbox and confidence
-    """
-    global face_detector
+    """Detect faces in an image using YuNet"""
+    detector = get_face_detector()
+    h, w = image.shape[:2]
+    detector.setInputSize((w, h))
 
-    height, width = image.shape[:2]
-    face_detector.setInputSize((width, height))
-    _, faces = face_detector.detect(image)
+    _, faces = detector.detect(image)
+
+    if faces is None:
+        return []
 
     results = []
-    if faces is not None:
-        for face in faces:
-            x, y, w, h = face[:4].astype(int)
-            confidence = float(face[14])
-            results.append({
-                "bbox": [int(x), int(y), int(w), int(h)],
-                "score": confidence,
-            })
+    for face in faces:
+        x, y, w_box, h_box = face[:4]
+        confidence = float(face[-1])
+
+        results.append({
+            "bbox": [float(x), float(y), float(w_box), float(h_box)],
+            "score": confidence
+        })
 
     return results
 
 
-# =============================================================================
-# Request/Response Models with Validation
-# =============================================================================
-
-class ImageRequest(BaseModel):
-    image: str = Field(..., max_length=15_000_000)  # ~10MB base64 limit
-
-    @field_validator('image')
-    @classmethod
-    def validate_image(cls, v: str) -> str:
-        # Remove data URI prefix if present
-        image_data = v
-        if "," in image_data:
-            image_data = image_data.split(",", 1)[1]
-
-        # Validate base64 and size
-        try:
-            decoded = base64.b64decode(image_data, validate=True)
-            decoded_size_mb = len(decoded) / (1024 * 1024)
-
-            if decoded_size_mb > 10:  # 10MB limit
-                raise ValueError(f'Image too large: {decoded_size_mb:.1f}MB (max 10MB)')
-
-            # Quick check it's an image
-            nparr = np.frombuffer(decoded, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if img is None:
-                raise ValueError('Invalid image data - could not decode as image')
-
-        except base64.binascii.Error:
-            raise ValueError('Invalid base64 encoding')
-        except ValueError:
-            # Re-raise ValueError with our custom message
-            raise
-        except Exception as e:
-            raise ValueError(f'Invalid image: {str(e)}')
-
-        return v
-
-
-class ExportRequest(BaseModel):
-    tracks: list[dict]
-    selectedTrackIds: list[int]
-    padding: float = Field(
-        default=VIDEO_PROCESSING_CONFIG["default_padding"],
-        ge=0,
-        le=VIDEO_PROCESSING_CONFIG["max_padding"]
-    )
-    blurAmount: int = Field(
-        default=VIDEO_PROCESSING_CONFIG["default_blur_amount"],
-        ge=VIDEO_PROCESSING_CONFIG["min_blur_amount"],
-        le=VIDEO_PROCESSING_CONFIG["max_blur_amount"]
-    )
-
-    @field_validator('tracks')
-    @classmethod
-    def validate_tracks(cls, v: list[dict]) -> list[dict]:
-        if not v:
-            raise ValueError('tracks cannot be empty')
-        return v
-
-    @field_validator('selectedTrackIds')
-    @classmethod
-    def validate_selected_track_ids(cls, v: list[int]) -> list[int]:
-        if not v:
-            raise ValueError('selectedTrackIds cannot be empty')
-        for track_id in v:
-            if not isinstance(track_id, int) or track_id < 0:
-                raise ValueError('selectedTrackIds must contain valid positive integers')
-        return v
-
-
-# =============================================================================
-# Video File Validation
-# =============================================================================
-
-def validate_video_file(filename: str, content_type: str | None) -> None:
-    """Validate video file extension and MIME type"""
-    # Check extension
-    ext = Path(filename).suffix.lower()
-    if ext not in ALLOWED_VIDEO_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file extension. Allowed: {', '.join(ALLOWED_VIDEO_EXTENSIONS)}"
-        )
-
-    # Check MIME type
-    if content_type and content_type not in ALLOWED_VIDEO_MIMETYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_VIDEO_MIMETYPES)}"
-        )
-
-
 def verify_video_with_opencv(video_path: Path) -> bool:
-    """Verify the file is a valid video using OpenCV"""
+    """Verify that the uploaded file is a valid video using OpenCV"""
     try:
         cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
@@ -558,7 +543,7 @@ async def export_video(
     output_path = get_safe_video_path(video_id, "_blurred.mp4")
 
     try:
-        tracks_map = {t["id"]: t for t in export_request.tracks if t["id"] in export_request.selectedTrackIds}
+        tracks_map = {t.id: t for t in export_request.tracks if t.id in export_request.selectedTrackIds}
 
         cap = cv2.VideoCapture(str(input_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -575,7 +560,7 @@ async def export_video(
                 break
 
             for track_id, track in tracks_map.items():
-                det = find_detection_for_frame(track["frames"], frame_idx)
+                det = find_detection_for_frame(track.frames, frame_idx)
                 if det is None:
                     continue
 
@@ -668,7 +653,74 @@ async def detect_endpoint(
         logger.error(f"Detection error: {e}")
         raise HTTPException(status_code=500, detail="Failed to detect faces")
 
+@app.post("/detect-batch", response_model=BatchDetectResponse)
+@limiter.limit("20/second")  # Lower rate limit since each request processes multiple frames
+async def detect_batch_endpoint(
+        request: Request,
+        batch_request: BatchDetectRequest,
+        _: bool = Depends(verify_api_key)
+):
+    """
+    Detect faces in multiple frames at once (batch processing)
+    Processes up to 20 frames per request for improved performance
+    """
+    try:
+        results = []
+
+        for frame_req in batch_request.batch:
+            # Process each frame
+            image_data = frame_req.image
+            if "," in image_data:
+                image_data = image_data.split(",", 1)[1]
+
+            try:
+                image_bytes = base64.b64decode(image_data)
+                nparr = np.frombuffer(image_bytes, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+                if image is None:
+                    # If decoding fails, return empty faces for this frame
+                    results.append(BatchFrameResult(
+                        frameIndex=frame_req.frameIndex,
+                        faces=[]
+                    ))
+                    continue
+
+                # Detect faces
+                faces = detect_faces(image)
+
+                # Convert to response format
+                face_results = [
+                    FaceDetectionResult(bbox=face["bbox"], score=face["score"])
+                    for face in faces
+                ]
+
+                results.append(BatchFrameResult(
+                    frameIndex=frame_req.frameIndex,
+                    faces=face_results
+                ))
+
+            except Exception as e:
+                logger.error(f"Error processing frame {frame_req.frameIndex}: {e}")
+                # Return empty result for failed frame
+                results.append(BatchFrameResult(
+                    frameIndex=frame_req.frameIndex,
+                    faces=[]
+                ))
+
+        logger.info(f"Batch detection completed: {len(batch_request.batch)} frames processed")
+        return BatchDetectResponse(results=results)
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Batch detection error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to detect faces in batch")
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

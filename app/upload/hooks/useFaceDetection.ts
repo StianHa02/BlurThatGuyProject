@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { loadModels, detectFacesInCanvas, resetTrackers } from '@/lib/faceClient';
+import { loadModels, detectFacesInBatch, resetTrackers } from '@/lib/faceClient';
 import { trackDetections } from '@/lib/tracker';
 
 interface UseDetectionOptions {
@@ -64,29 +64,55 @@ export function useFaceDetection({ sampleRate, fileUrl, fileRef, onError }: UseD
     const ctx = canvas.getContext('2d')!;
 
     const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
+
+    // BATCH PROCESSING: Process 10 frames at a time
+    const BATCH_SIZE = 10;
+    const frameIndices: number[] = [];
+    for (let fi = 0; fi < totalFrames; fi += sampleRate) {
+      frameIndices.push(fi);
+    }
+
     let framesProcessed = 0;
 
-    for (let fi = 0; fi < totalFrames; fi += sampleRate) {
-      await new Promise<void>((resolve) => {
-        video.currentTime = fi / frameRate;
-        const onSeek = async () => {
-          try {
+    // Process in batches
+    for (let batchStart = 0; batchStart < frameIndices.length; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, frameIndices.length);
+      const batchFrames = frameIndices.slice(batchStart, batchEnd);
+
+      // Extract frames for this batch
+      const batch: { frameIndex: number; image: string }[] = [];
+
+      for (const fi of batchFrames) {
+        await new Promise<void>((resolve) => {
+          video.currentTime = fi / frameRate;
+          const onSeek = () => {
             ctx.drawImage(video, 0, 0, width, height);
-            const dets = await detectFacesInCanvas(canvas);
-            if (dets && dets.length > 0) {
-              detectionsPerFrame[fi] = dets.map(d => ({
-                bbox: d.bbox as [number, number, number, number],
-                score: d.score
-              }));
-            }
-          } catch (e) {
-            console.error('Detection error at frame', fi, e);
+            const imageData = canvas.toDataURL('image/jpeg', 0.8); // Slightly lower quality for speed
+            batch.push({ frameIndex: fi, image: imageData });
+            resolve();
+          };
+          video.addEventListener('seeked', onSeek, { once: true });
+        });
+      }
+
+      // Send batch to backend
+      try {
+        const results = await detectFacesInBatch(batch);
+
+        // Store results
+        for (const result of results) {
+          if (result.faces && result.faces.length > 0) {
+            detectionsPerFrame[result.frameIndex] = result.faces.map(d => ({
+              bbox: d.bbox as [number, number, number, number],
+              score: d.score
+            }));
           }
-          framesProcessed++;
-          resolve();
-        };
-        video.addEventListener('seeked', onSeek, { once: true });
-      });
+        }
+      } catch (e) {
+        console.error('Batch detection error:', e);
+      }
+
+      framesProcessed += batchFrames.length;
       const currentProgress = Math.round((framesProcessed / framesToScan) * 100);
       setProgress(currentProgress);
       setStatus(`Analyzing video... ${currentProgress}%`);
