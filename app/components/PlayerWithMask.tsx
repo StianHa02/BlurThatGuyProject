@@ -282,10 +282,11 @@ export default function PlayerWithMask({
           <div
             key={`${face.trackId}-${i}`}
             onClick={() => onToggleTrack(face.trackId)}
-            className="absolute cursor-pointer"
+            className="absolute cursor-pointer hover:bg-white/10 transition-colors"
             style={{
               ...style,
               borderRadius: '4px',
+              zIndex: 10,
             }}
             title={face.isSelected ? 'Click to unblur' : 'Click to blur'}
           />
