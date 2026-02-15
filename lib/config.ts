@@ -7,9 +7,3 @@
 // For client-side: use relative paths to Next.js API routes
 export const API_URL = '/api';
 
-// No auth headers needed on client-side anymore
-// API key is handled server-side in the API routes
-export function getAuthHeaders(): HeadersInit {
-  return {};
-}
-

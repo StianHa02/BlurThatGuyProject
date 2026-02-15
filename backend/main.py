@@ -1,7 +1,7 @@
 # Face Detection API with OpenCV DNN (YuNet)
 # Security-hardened version
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
@@ -21,7 +21,20 @@ import re
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from typing import Any
+
+# Load environment variables from .env.local if present
+# This ensures local development env vars (like API_KEY) in backend/.env.local are available via os.environ
+try:
+    import importlib
+
+    spec = importlib.util.find_spec("dotenv")
+    if spec is not None:
+        dotenv = importlib.import_module("dotenv")
+        _env_path = Path(__file__).parent / ".env.local"
+        dotenv.load_dotenv(dotenv_path=_env_path)
+except Exception:
+    # If python-dotenv is not installed, continue without crashing; environment must be provided by system
+    pass
 
 # =============================================================================
 # Configuration Constants
@@ -54,6 +67,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 # =============================================================================
 # Environment Variable Validation
 # =============================================================================
@@ -61,32 +75,39 @@ logger = logging.getLogger(__name__)
 def validate_environment() -> None:
     """Validate required environment variables on startup"""
     api_key = os.environ.get("API_KEY", "")
-    allowed_origins = os.environ.get("ALLOWED_ORIGINS", "")
-    max_upload_mb = os.environ.get("MAX_UPLOAD_SIZE_MB", "100")
 
-    warnings = []
-
+    # CRITICAL: Fail fast if no API key in production
+    # Only allow missing API key in explicit development mode
     if not api_key:
-        warnings.append("WARNING: API_KEY not set - API will be unprotected!")
+        is_dev = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
+        if is_dev:
+            logger.warning("⚠️  WARNING: Running in DEV_MODE without API_KEY - API is UNPROTECTED!")
+        else:
+            raise RuntimeError(
+                "FATAL: API_KEY environment variable is required!\n"
+                "Set it in /etc/blurthatguy.env (production) or backend/.env.local (development)\n"
+                "To run without API_KEY for testing, set DEV_MODE=true (NOT recommended for production)"
+            )
 
+    allowed_origins = os.environ.get("ALLOWED_ORIGINS", "")
     if not allowed_origins:
-        warnings.append("WARNING: ALLOWED_ORIGINS not set - using localhost only")
+        logger.warning("WARNING: ALLOWED_ORIGINS not set - using localhost only")
 
+    max_upload_mb = os.environ.get("MAX_UPLOAD_SIZE_MB", "100")
     try:
         max_size = int(max_upload_mb)
-        if max_size < 1 or max_size > 500:
-            warnings.append(f"WARNING: MAX_UPLOAD_SIZE_MB={max_size} is outside reasonable range (1-500)")
+        if max_size < 1 or max_size > 100:
+            logger.warning(f"WARNING: MAX_UPLOAD_SIZE_MB={max_size} is outside reasonable range (1-100)")
     except ValueError:
-        warnings.append(f"WARNING: MAX_UPLOAD_SIZE_MB={max_upload_mb} is not a valid integer")
+        logger.warning(f"WARNING: MAX_UPLOAD_SIZE_MB={max_upload_mb} is not a valid integer")
 
-    for warning in warnings:
-        logger.warning(warning)
 
 # =============================================================================
 # Rate Limiting Setup
 # =============================================================================
 
 limiter = Limiter(key_func=get_remote_address)
+
 
 # =============================================================================
 # Lifespan Context Manager (replaces deprecated on_event)
@@ -114,9 +135,28 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
 
+
 app = FastAPI(title="Face Detection API", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# =============================================================================
+# Security Middleware
+# =============================================================================
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to all responses"""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # Only add HSTS if running over HTTPS
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 
 # =============================================================================
 # Security Configuration
@@ -125,12 +165,14 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # API Key authentication
 API_KEY = os.environ.get("API_KEY", "")
 
+
 async def verify_api_key(x_api_key: str = Header(default=None)) -> bool:
     """Verify API key if one is configured"""
     if API_KEY and x_api_key != API_KEY:
         logger.warning("Invalid API key attempt")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return True
+
 
 # CORS Configuration - read from environment
 def get_allowed_origins() -> list[str]:
@@ -148,6 +190,7 @@ def get_allowed_origins() -> list[str]:
     # Default to localhost only for development
     return ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
@@ -163,7 +206,13 @@ app.add_middleware(
 TEMP_DIR = Path(tempfile.gettempdir()) / "blurthatguy"
 TEMP_DIR.mkdir(exist_ok=True)
 
-MAX_UPLOAD_SIZE_MB = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+# Enforce a hard cap of 100MB server-side regardless of environment value
+try:
+    _max_upload_env = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
+except Exception:
+    _max_upload_env = 100
+# Clamp to 1..100 MB to avoid unexpectedly large uploads
+MAX_UPLOAD_SIZE_MB = max(1, min(_max_upload_env, 100))
 CHUNK_SIZE = 8192  # 8KB chunks for streaming
 
 # =============================================================================
@@ -172,12 +221,14 @@ CHUNK_SIZE = 8192  # 8KB chunks for streaming
 
 UUID_PATTERN = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
 
+
 def validate_video_id(video_id: str) -> str:
     """Validate video ID format to prevent path traversal"""
     if not UUID_PATTERN.match(video_id):
         logger.warning(f"Invalid video ID format attempted: {video_id}")
         raise HTTPException(status_code=400, detail="Invalid video ID format")
     return video_id
+
 
 def get_safe_video_path(video_id: str, suffix: str = ".mp4") -> Path:
     """Get a safe video path, ensuring it's within TEMP_DIR"""
@@ -190,6 +241,7 @@ def get_safe_video_path(video_id: str, suffix: str = ".mp4") -> Path:
         raise HTTPException(status_code=400, detail="Invalid video path")
 
     return video_path
+
 
 # =============================================================================
 # Temporary File Cleanup
@@ -222,11 +274,13 @@ def cleanup_old_files(max_age_hours: int = 1) -> int:
 
     return deleted_count
 
+
 async def periodic_cleanup() -> None:
     """Background task to periodically clean up old files"""
     while True:
         await asyncio.sleep(30 * 60)  # 30 minutes
         cleanup_old_files()
+
 
 # =============================================================================
 # Face Detection Model
@@ -234,6 +288,7 @@ async def periodic_cleanup() -> None:
 
 face_detector = None
 MODELS_DIR = Path(__file__).parent / "models"
+
 
 def download_yunet_model() -> str:
     """Download YuNet model if not present"""
@@ -247,6 +302,7 @@ def download_yunet_model() -> str:
         logger.info("YuNet model downloaded")
 
     return str(model_path)
+
 
 def get_face_detector(width: int = 640, height: int = 480):
     """Get or create face detector with specified input size"""
@@ -264,6 +320,7 @@ def get_face_detector(width: int = 640, height: int = 480):
     )
 
     return face_detector
+
 
 def detect_faces(image: np.ndarray) -> list[dict]:
     """
@@ -288,12 +345,46 @@ def detect_faces(image: np.ndarray) -> list[dict]:
 
     return results
 
+
 # =============================================================================
 # Request/Response Models with Validation
 # =============================================================================
 
 class ImageRequest(BaseModel):
-    image: str  # base64 encoded image
+    image: str = Field(..., max_length=15_000_000)  # ~10MB base64 limit
+
+    @field_validator('image')
+    @classmethod
+    def validate_image(cls, v: str) -> str:
+        # Remove data URI prefix if present
+        image_data = v
+        if "," in image_data:
+            image_data = image_data.split(",", 1)[1]
+
+        # Validate base64 and size
+        try:
+            decoded = base64.b64decode(image_data, validate=True)
+            decoded_size_mb = len(decoded) / (1024 * 1024)
+
+            if decoded_size_mb > 10:  # 10MB limit
+                raise ValueError(f'Image too large: {decoded_size_mb:.1f}MB (max 10MB)')
+
+            # Quick check it's an image
+            nparr = np.frombuffer(decoded, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise ValueError('Invalid image data - could not decode as image')
+
+        except base64.binascii.Error:
+            raise ValueError('Invalid base64 encoding')
+        except ValueError:
+            # Re-raise ValueError with our custom message
+            raise
+        except Exception as e:
+            raise ValueError(f'Invalid image: {str(e)}')
+
+        return v
+
 
 class ExportRequest(BaseModel):
     tracks: list[dict]
@@ -326,6 +417,7 @@ class ExportRequest(BaseModel):
                 raise ValueError('selectedTrackIds must contain valid positive integers')
         return v
 
+
 # =============================================================================
 # Video File Validation
 # =============================================================================
@@ -347,6 +439,7 @@ def validate_video_file(filename: str, content_type: str | None) -> None:
             detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_VIDEO_MIMETYPES)}"
         )
 
+
 def verify_video_with_opencv(video_path: Path) -> bool:
     """Verify the file is a valid video using OpenCV"""
     try:
@@ -361,27 +454,55 @@ def verify_video_with_opencv(video_path: Path) -> bool:
     except Exception:
         return False
 
+
 # =============================================================================
 # API Endpoints
 # =============================================================================
 
 @app.get("/health")
-@limiter.limit("60/minute")
-async def health(request: Request, _: bool = Depends(verify_api_key)):
-    """Health check endpoint"""
+@limiter.limit("30/minute")
+async def health(request: Request):
+    """Public health check endpoint - no authentication required"""
     return {"status": "ok", "model": "YuNet"}
+
+
+@app.get("/health/auth")
+@limiter.limit("60/minute")
+async def health_authenticated(request: Request, _: bool = Depends(verify_api_key)):
+    """Authenticated health check with full status"""
+    return {
+        "status": "ok",
+        "model": "YuNet",
+        "authenticated": True,
+        "max_upload_mb": MAX_UPLOAD_SIZE_MB,
+        "temp_dir": str(TEMP_DIR)
+    }
+
 
 @app.post("/upload-video")
 @limiter.limit("10/minute")
 async def upload_video(
-    request: Request,
-    file: UploadFile = File(...),
-    _: bool = Depends(verify_api_key)
+        request: Request,
+        file: UploadFile = File(...),
+        _: bool = Depends(verify_api_key)
 ):
     """Upload a video file and return an ID for later processing"""
     try:
         # Validate file type
         validate_video_file(file.filename or "video.mp4", file.content_type)
+
+        # Early reject if Content-Length header exists and is over the limit
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                cl = int(content_length)
+                if cl > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                    logger.warning(f"Upload rejected via Content-Length: {cl} bytes")
+                    raise HTTPException(status_code=413,
+                                        detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
+            except ValueError:
+                # ignore invalid header and proceed to streaming check
+                pass
 
         video_id = str(uuid.uuid4())
         video_path = TEMP_DIR / f"{video_id}.mp4"
@@ -419,13 +540,14 @@ async def upload_video(
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload video")
 
+
 @app.post("/export/{video_id}")
 @limiter.limit("10/minute")
 async def export_video(
-    request: Request,
-    video_id: str,
-    export_request: ExportRequest,
-    _: bool = Depends(verify_api_key)
+        request: Request,
+        video_id: str,
+        export_request: ExportRequest,
+        _: bool = Depends(verify_api_key)
 ):
     """Process video with blurred faces and return the result"""
     input_path = get_safe_video_path(video_id, ".mp4")
@@ -467,7 +589,7 @@ async def export_video(
                 h = min(int(oh * (1 + padding * 2)), height - y)
 
                 if w > 0 and h > 0:
-                    face_region = frame[y:y+h, x:x+w]
+                    face_region = frame[y:y + h, x:x + w]
                     blur_amt = export_request.blurAmount
                     small = cv2.resize(
                         face_region,
@@ -475,7 +597,7 @@ async def export_video(
                         interpolation=cv2.INTER_LINEAR
                     )
                     pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
-                    frame[y:y+h, x:x+w] = pixelated
+                    frame[y:y + h, x:x + w] = pixelated
 
             out.write(frame)
             frame_idx += 1
@@ -496,6 +618,7 @@ async def export_video(
         logger.error(f"Export error for {video_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to process video")
 
+
 def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
     """Find the closest detection for a given frame index"""
     if not frames:
@@ -512,12 +635,13 @@ def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
 
     return best if best_diff <= 15 else None
 
+
 @app.post("/detect")
 @limiter.limit("100/second")
 async def detect_endpoint(
-    request: Request,
-    image_request: ImageRequest,
-    _: bool = Depends(verify_api_key)
+        request: Request,
+        image_request: ImageRequest,
+        _: bool = Depends(verify_api_key)
 ):
     """Detect faces in a base64-encoded image"""
     try:
@@ -537,6 +661,9 @@ async def detect_endpoint(
 
     except HTTPException:
         raise
+    except ValueError as e:
+        # Catch validation errors from ImageRequest
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Detection error: {e}")
         raise HTTPException(status_code=500, detail="Failed to detect faces")

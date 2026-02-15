@@ -10,9 +10,17 @@ export function useVideoUpload() {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<File | null>(null);
 
+  const MAX_UPLOAD_SIZE_MB = 100; // Client-side cap (must match server-side)
+
   const handleFile = useCallback(async (f: File) => {
     if (!f.type.startsWith('video/')) {
       setError('Please upload a video file (MP4, WebM, etc.)');
+      return false;
+    }
+
+    // Client-side size check to provide immediate feedback
+    if (f.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
+      setError(`File is too large. Maximum allowed size is ${MAX_UPLOAD_SIZE_MB}MB.`);
       return false;
     }
 
@@ -36,9 +44,11 @@ export function useVideoUpload() {
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Upload failed:', errorData.error || response.statusText);
+        setError(errorData.error || 'Upload failed');
       }
     } catch (err) {
       console.error('Failed to upload video to backend:', err);
+      setError('Failed to upload video to backend');
     }
 
     return true;

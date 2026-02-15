@@ -195,11 +195,42 @@ MIT
    - Configure the project:
      - **Framework Preset**: Next.js
      - **Root Directory**: `./` (leave default)
-   - Add environment variable:
-     - `NEXT_PUBLIC_API_URL` = `https://your-ec2-domain.com` (your backend URL)
+   - Add environment variables (server-side only, not NEXT_PUBLIC):
+     - `API_URL` = `https://your-domain.com` (your backend URL)
+     - `API_KEY` = `your-api-key-from-step-3` (same key from backend)
    - Click "Deploy"
 
 3. **After deployment**, Vercel gives you a URL like `https://blurthatguy.vercel.app`
+
+**🔒 Security Note**: We use server-side `API_URL` and `API_KEY` (not `NEXT_PUBLIC_*`) so the API key never exposes to the browser. Your Next.js API routes will proxy requests to the backend.
+
+---
+
+#### 10. Configure Frontend to Use Backend
+
+Your Next.js app should have API routes in `app/api/` that proxy requests to your backend. Ensure these routes read from environment variables:
+
+```typescript
+// Example: app/api/upload-video/route.ts
+const API_URL = process.env.API_URL; // Server-side only
+const API_KEY = process.env.API_KEY;
+
+export async function POST(request: Request) {
+  const formData = await request.formData();
+  
+  const response = await fetch(`${API_URL}/upload-video`, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': API_KEY,
+    },
+    body: formData,
+  });
+  
+  return response;
+}
+```
+
+**Important**: Your frontend code should call `/api/upload-video` (relative path), NOT the backend directly. This keeps your API key secure.
 
 ---
 
@@ -239,10 +270,8 @@ If you don't have an AWS account yet:
    - **Allow SSH traffic**: ✅ Yes (from "My IP" for security)
    - **Allow HTTPS traffic**: ✅ Yes
    - **Allow HTTP traffic**: ✅ Yes
-   - Click **"Add security group rule"** to add port 8000:
-     - Type: **Custom TCP**
-     - Port range: **8000**
-     - Source: **Anywhere (0.0.0.0/0)**
+   
+   > **🔒 Security Note**: Do NOT open port 8000 to the internet. Nginx will handle all public traffic on ports 80/443 and proxy to port 8000 internally.
 
 7. **Configure Storage**:
    - Change to **20 GB** gp3 (default 8GB is too small for video processing)
@@ -266,6 +295,7 @@ ssh -i ~/Downloads/blurthatguy-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
 
 Once connected, run these commands on the EC2 server:
 
+```bash
 # Update system
 sudo apt update && sudo apt upgrade -y
 
@@ -276,7 +306,20 @@ sudo apt install -y python3.11 python3.11-venv python3-pip nginx certbot python3
 sudo apt install -y libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev
 ```
 
-#### 3. Deploy Backend
+#### 3. Generate API Key
+
+First, generate a strong API key that will be used for authentication:
+
+```bash
+# Generate a secure API key
+openssl rand -hex 32
+```
+
+This outputs something like: `03de579acf69eb4a94b446dd082a36350a131d52d89c9c91ef30f93187e61ac6`
+
+**💾 Save this key** - you'll need it for both the backend configuration and Vercel environment variables.
+
+#### 4. Deploy Backend
 
 ```bash
 # Create app directory
@@ -291,14 +334,39 @@ git clone https://github.com/yourusername/blurthatguy.git .
 cd backend
 python3.11 -m venv venv
 source venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 
 # Test it works
-python main.py
-# Press Ctrl+C to stop
+uvicorn main:app --host 127.0.0.1 --port 8000
+# Press Ctrl+C to stop after verifying it starts
 ```
 
-#### 4. Create Systemd Service
+#### 5. Create Environment File
+
+Create a secure environment file for your backend configuration:
+
+```bash
+sudo nano /etc/blurthatguy.env
+```
+
+Add the following (replace with your actual values):
+
+```ini
+# Backend API configuration
+API_KEY=03de579acf69eb4a94b446dd082a36350a131d52d89c9c91ef30f93187e61ac6
+ALLOWED_ORIGINS=https://blurthatguy.vercel.app,https://your-custom-domain.com
+MAX_UPLOAD_SIZE_MB=500
+```
+
+Secure the file:
+
+```bash
+sudo chown root:root /etc/blurthatguy.env
+sudo chmod 600 /etc/blurthatguy.env
+```
+
+#### 6. Create Systemd Service
 
 ```bash
 sudo nano /etc/systemd/system/blurthatguy.service
@@ -307,19 +375,24 @@ sudo nano /etc/systemd/system/blurthatguy.service
 Paste this:
 ```ini
 [Unit]
-Description=BlurThatGuy Backend API
+Description=BlurThatGuy FastAPI Backend
 After=network.target
 
 [Service]
 User=ubuntu
+Group=ubuntu
 WorkingDirectory=/opt/blurthatguy/backend
-Environment="PATH=/opt/blurthatguy/backend/venv/bin"
-ExecStart=/opt/blurthatguy/backend/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
-Restart=always
+EnvironmentFile=/etc/blurthatguy.env
+ExecStart=/opt/blurthatguy/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2 --timeout-keep-alive 30
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+**Note**: We bind to `127.0.0.1:8000` (localhost only) for security. Nginx will handle public traffic.
 
 Enable and start:
 ```bash
@@ -329,19 +402,27 @@ sudo systemctl start blurthatguy
 
 # Check status
 sudo systemctl status blurthatguy
+
+# View logs
+sudo journalctl -u blurthatguy -f
 ```
 
-#### 5. Setup Nginx Reverse Proxy
+#### 7. Setup Nginx Reverse Proxy
 
 ```bash
 sudo nano /etc/nginx/sites-available/blurthatguy
 ```
 
-Paste this:
+Paste this configuration:
 ```nginx
 server {
     listen 80;
-    server_name your-domain.com;  # Or use EC2 public IP
+    server_name your-domain.com;  # Replace with your actual domain
+
+    # Increase upload size for video files
+    client_max_body_size 500M;
+    client_body_buffer_size 16M;
+    client_body_timeout 300s;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -352,8 +433,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Timeouts for video processing
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
         proxy_read_timeout 300s;
-        client_max_body_size 500M;  # Allow large video uploads
     }
 }
 ```
@@ -365,126 +449,78 @@ sudo nginx -t
 sudo systemctl restart nginx
 ```
 
-#### 6. (Optional) Add HTTPS with Let's Encrypt
+#### 8. Add HTTPS with Let's Encrypt
+
+**⚠️ Important**: You must have a domain name pointing to your EC2 IP for this to work.
 
 ```bash
 # Point your domain to EC2 IP first, then:
 sudo certbot --nginx -d your-domain.com
+
+# Follow the prompts
+# Certbot will automatically update your nginx config
 ```
 
-#### 7. Update CORS in Backend
-
-Edit `backend/main.py` to allow your Vercel domain:
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://blurthatguy.vercel.app",  # Add your Vercel URL
-        "https://your-custom-domain.com",   # If using custom domain
-    ],
-    # ...
-)
-```
-
-Restart the service:
+Test auto-renewal:
 ```bash
-sudo systemctl restart blurthatguy
+sudo certbot renew --dry-run
 ```
+
+#### 9. Test the Backend
+
+```bash
+# Test from EC2 (should work without API key on localhost)
+curl http://127.0.0.1:8000/health
+
+# Test from your computer (requires API key)
+curl -H "X-API-Key: your-api-key-here" https://your-domain.com/health
+```
+
+Expected response: `{"status":"ok","model":"YuNet"}`
 
 ---
 
 ### Environment Variables Summary
 
-| Location | Variable | Value |
-|----------|----------|-------|
-| Vercel | `NEXT_PUBLIC_API_URL` | `https://your-ec2-domain.com` |
-| Vercel | `NEXT_PUBLIC_API_KEY` | Your API key |
-| EC2 Backend | `API_KEY` | Same API key as frontend |
-| EC2 Backend | CORS origins | Add your Vercel URL in `backend/main.py` |
+| Location | Variable | Value | Scope |
+|----------|----------|-------|-------|
+| **Vercel** | `API_URL` | `https://your-domain.com` | Server-side (secure) |
+| **Vercel** | `API_KEY` | Your generated API key | Server-side (secure) |
+| **EC2** | `API_KEY` | Same API key as Vercel | Via `/etc/blurthatguy.env` |
+| **EC2** | `ALLOWED_ORIGINS` | `https://blurthatguy.vercel.app,https://your-custom-domain.com` | Via `/etc/blurthatguy.env` |
+| **EC2** | `MAX_UPLOAD_SIZE_MB` | `500` | Via `/etc/blurthatguy.env` |
+
+**🔒 Security Best Practice**: Never use `NEXT_PUBLIC_*` environment variables for API keys or backend URLs. These expose values to the browser. Instead, use server-side env vars and proxy requests through Next.js API routes.
 
 ---
 
-### 🔐 API Key Setup (Step-by-Step)
+### 🔐 API Key Setup Summary
 
-The API key protects your backend from unauthorized access.
+The API key is now configured in the deployment steps above. Here's a quick reference:
 
-#### Step 1: Generate an API Key (if you haven't already)
+#### Where the API Key is Used:
 
-```bash
-openssl rand -hex 32
-```
+1. **Backend (EC2)**: 
+   - Stored in `/etc/blurthatguy.env`
+   - Read by the systemd service
+   - Validates incoming requests via `X-API-Key` header
 
-This outputs something like: `03de579acf69eb4a94b446dd082a36350a131d52d89c9c91ef30f93187e61ac6`
+2. **Frontend (Vercel)**:
+   - Stored as `API_KEY` environment variable (server-side only)
+   - Used by Next.js API routes to authenticate with backend
+   - Never exposed to browser
 
-**Save this key** - you'll use it in both frontend and backend.
-
----
-
-#### Step 2: Add API Key to Vercel (Frontend)
-
-1. Go to your project on [vercel.com](https://vercel.com)
-2. Click **Settings** → **Environment Variables**
-3. Add these two variables:
-
-   | Name | Value |
-   |------|-------|
-   | `NEXT_PUBLIC_API_URL` | `https://your-ec2-domain.com` |
-   | `NEXT_PUBLIC_API_KEY` | `03de579acf69eb4a94b446dd082a36350a131d52d89c9c91ef30f93187e61ac6` |
-
-4. Click **Save**
-5. Go to **Deployments** → Click the three dots on latest → **Redeploy**
-
----
-
-#### Step 3: Add API Key to EC2 (Backend)
-
-1. SSH into your EC2 instance:
-   ```bash
-   ssh -i your-key.pem ubuntu@your-ec2-ip
-   ```
-
-2. Edit the systemd service file:
-   ```bash
-   sudo nano /etc/systemd/system/blurthatguy.service
-   ```
-
-3. Add the `API_KEY` environment variable (update the `[Service]` section):
-   ```ini
-   [Service]
-   User=ubuntu
-   WorkingDirectory=/opt/blurthatguy/backend
-   Environment="PATH=/opt/blurthatguy/backend/venv/bin"
-   Environment="API_KEY=03de579acf69eb4a94b446dd082a36350a131d52d89c9c91ef30f93187e61ac6"
-   ExecStart=/opt/blurthatguy/backend/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
-   Restart=always
-   ```
-
-4. Save the file (`Ctrl+X`, then `Y`, then `Enter`)
-
-5. Reload and restart the service:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl restart blurthatguy
-   ```
-
-6. Verify it's running:
-   ```bash
-   sudo systemctl status blurthatguy
-   ```
-
----
-
-#### Step 4: Test the Connection
+#### Testing the Connection
 
 1. Visit your Vercel frontend URL
 2. Upload a video and click "Start Detection"
 3. If it connects successfully, API key authentication is working!
 
 **If you get errors:**
-- Make sure the API key is exactly the same on both frontend and backend
-- Check the backend logs: `sudo journalctl -u blurthatguy -f`
-- Verify CORS includes your Vercel URL in `backend/main.py`
+- Verify API key is identical on both backend and frontend
+- Check backend logs: `sudo journalctl -u blurthatguy -f`
+- Ensure `ALLOWED_ORIGINS` in `/etc/blurthatguy.env` includes your Vercel URL
+- Test backend directly: `curl -H "X-API-Key: your-key" https://your-domain.com/health`
 
 ---
 
