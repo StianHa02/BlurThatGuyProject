@@ -81,6 +81,26 @@ export async function detectFacesInBatch(
     throw new Error('Face detector not loaded. Call loadModels() first.');
   }
 
+  // Client-side validation to avoid predictable 422 errors
+  if (!Array.isArray(batch) || batch.length === 0) {
+    throw new Error('Batch must be a non-empty array');
+  }
+  if (batch.length > 50) {
+    throw new Error('Batch size must not exceed 50 frames');
+  }
+
+  for (const item of batch) {
+    if (typeof item.frameIndex !== 'number' || item.frameIndex < 0) {
+      throw new Error('Each batch item must include a non-negative numeric frameIndex');
+    }
+    if (typeof item.image !== 'string' || item.image.length < 100) {
+      throw new Error('Each batch item must include a base64 image string (min length 100)');
+    }
+    if (item.image.length > 50_000_000) {
+      throw new Error('Image in batch item exceeds maximum allowed size');
+    }
+  }
+
   try {
     const response = await fetch(`${API_URL}/detect-batch`, {
       method: 'POST',
