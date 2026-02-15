@@ -284,13 +284,11 @@ If you don't have an AWS account yet:
 
 ```bash
 # First, fix key file permissions (required on Mac/Linux)
-chmod 400 ~/Downloads/blurthatguy-key.pem
+chmod 400 ~/.ssh/blurthatguy-key.pem
 
 # Connect to EC2 (replace with your EC2 public IP)
-ssh -i ~/Downloads/blurthatguy-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
+ssh -i ~/.ssh/blurthatguy-key.pem ubuntu@16.171.22.137
 
-# Example:
-# ssh -i ~/Downloads/blurthatguy-key.pem ubuntu@54.123.45.67
 ```
 
 Once connected, run these commands on the EC2 server:
