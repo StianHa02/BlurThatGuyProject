@@ -287,7 +287,7 @@ If you don't have an AWS account yet:
 chmod 400 ~/.ssh/blurthatguy-key.pem
 
 # Connect to EC2 (replace with your EC2 public IP)
-ssh -i ~/.ssh/blurthatguy-key.pem ubuntu@16.171.22.137
+ssh -i ~/.ssh/blurthatguy-key.pem ubuntu@13.61.41.5 
 
 ```
 
