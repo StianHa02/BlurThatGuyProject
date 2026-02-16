@@ -5,9 +5,6 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, R
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
 import cv2
 import numpy as np
@@ -104,13 +101,6 @@ def validate_environment() -> None:
 
 
 # =============================================================================
-# Rate Limiting Setup
-# =============================================================================
-
-limiter = Limiter(key_func=get_remote_address)
-
-
-# =============================================================================
 # Lifespan Context Manager (replaces deprecated on_event)
 # =============================================================================
 
@@ -138,8 +128,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Face Detection API", lifespan=lifespan)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # =============================================================================
@@ -461,14 +449,12 @@ def verify_video_with_opencv(video_path: Path) -> bool:
 # =============================================================================
 
 @app.get("/health")
-@limiter.limit("30/minute")
 async def health(request: Request):
     """Public health check endpoint - no authentication required"""
     return {"status": "ok", "model": "YuNet"}
 
 
 @app.get("/health/auth")
-@limiter.limit("60/minute")
 async def health_authenticated(request: Request, _: bool = Depends(verify_api_key)):
     """Authenticated health check with full status"""
     return {
@@ -481,7 +467,6 @@ async def health_authenticated(request: Request, _: bool = Depends(verify_api_ke
 
 
 @app.post("/upload-video")
-@limiter.limit("10/minute")
 async def upload_video(
         request: Request,
         file: UploadFile = File(...),
@@ -543,7 +528,6 @@ async def upload_video(
 
 
 @app.post("/export/{video_id}")
-@limiter.limit("10/minute")
 async def export_video(
         request: Request,
         video_id: str,
@@ -638,7 +622,6 @@ def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
 
 
 @app.post("/detect")
-@limiter.limit("150/second")
 async def detect_endpoint(
         request: Request,
         image_request: ImageRequest,
@@ -670,7 +653,6 @@ async def detect_endpoint(
         raise HTTPException(status_code=500, detail="Failed to detect faces")
 
 @app.post("/detect-batch", response_model=BatchDetectResponse)
-@limiter.limit("150/second")  # Lower rate limit since each request processes multiple frames
 async def detect_batch_endpoint(
         request: Request,
         batch_request: BatchDetectRequest,
@@ -740,4 +722,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
