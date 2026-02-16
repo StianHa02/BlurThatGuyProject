@@ -31,8 +31,6 @@ Thumbs.db
 npm-debug.log*
 pnpm-debug.log*
 
-# Test videos (optional - comment out if you want to include them)
-Test video/
 
 # Python
 __pycache__
