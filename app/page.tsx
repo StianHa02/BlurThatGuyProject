@@ -110,7 +110,7 @@ export default function Home() {
       </div>
 
       {/* Benefits Section - New! */}
-      <section className="py-16 px-6 border-t border-zinc-800/50">
+      <section className="py-16 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-3 gap-8">
             {BENEFITS.map((benefit) => {
