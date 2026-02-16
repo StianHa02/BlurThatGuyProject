@@ -23,15 +23,15 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import List
 
-# Load environment variables from .env.local if present
-# This ensures local development env vars (like API_KEY) in backend/.env.local are available via os.environ
+# Load environment variables from ..env.local if present
+# This ensures local development env vars (like API_KEY) in backend/..env.local are available via os.environ
 try:
     import importlib
 
     spec = importlib.util.find_spec("dotenv")
     if spec is not None:
         dotenv = importlib.import_module("dotenv")
-        _env_path = Path(__file__).parent / ".env.local"
+        _env_path = Path(__file__).parent / "..env.local"
         dotenv.load_dotenv(dotenv_path=_env_path)
 except Exception:
     # If python-dotenv is not installed, continue without crashing; environment must be provided by system
@@ -86,7 +86,7 @@ def validate_environment() -> None:
         else:
             raise RuntimeError(
                 "FATAL: API_KEY environment variable is required!\n"
-                "Set it in /etc/blurthatguy.env (production) or backend/.env.local (development)\n"
+                "Set it in /etc/blurthatguy.env (production) or backend/..env.local (development)\n"
                 "To run without API_KEY for testing, set DEV_MODE=true (NOT recommended for production)"
             )
 
@@ -166,9 +166,24 @@ async def add_security_headers(request: Request, call_next):
 # API Key authentication
 API_KEY = os.environ.get("API_KEY", "")
 
+# Log current API/DEV mode status for debugging (do not log actual key)
+_dev_mode_env = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
+logger.info(f"Startup env: DEV_MODE={_dev_mode_env}, API_KEY_set={bool(API_KEY)}")
+
 
 async def verify_api_key(x_api_key: str = Header(default=None)) -> bool:
-    """Verify API key if one is configured"""
+    """Verify API key if one is configured
+
+    In DEV_MODE we allow bypassing API key checks for developer convenience. If DEV_MODE is set
+    to true, this function will accept requests without a matching X-API-Key header but will log
+    a warning so this behavior is visible in logs.
+    """
+    # If running in development mode, skip strict API key enforcement
+    dev_mode = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
+    if dev_mode:
+        logger.info("DEV_MODE enabled: skipping API key enforcement (requests are NOT authenticated)")
+        return True
+
     if API_KEY and x_api_key != API_KEY:
         logger.warning("Invalid API key attempt")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
@@ -263,15 +278,15 @@ class BatchFrameRequest(BaseModel):
 
 class BatchDetectRequest(BaseModel):
     """Model for batch detection request"""
-    # Allow larger batches for improved throughput (client may send up to 50 frames)
-    batch: List[BatchFrameRequest] = Field(..., min_length=1, max_length=50)
+    # Allow larger batches for improved throughput (client may send up to 150 frames)
+    batch: List[BatchFrameRequest] = Field(..., min_length=1, max_length=150)
 
     @field_validator('batch')
     @classmethod
     def validate_batch_size(cls, v: List[BatchFrameRequest]) -> List[BatchFrameRequest]:
         """Limit batch size to prevent abuse"""
-        if len(v) > 50:
-            raise ValueError("Batch size must not exceed 50 frames")
+        if len(v) > 150:
+            raise ValueError("Batch size must not exceed 150 frames")
         return v
 
 
@@ -623,7 +638,7 @@ def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
 
 
 @app.post("/detect")
-@limiter.limit("100/second")
+@limiter.limit("150/second")
 async def detect_endpoint(
         request: Request,
         image_request: ImageRequest,
@@ -655,7 +670,7 @@ async def detect_endpoint(
         raise HTTPException(status_code=500, detail="Failed to detect faces")
 
 @app.post("/detect-batch", response_model=BatchDetectResponse)
-@limiter.limit("20/second")  # Lower rate limit since each request processes multiple frames
+@limiter.limit("150/second")  # Lower rate limit since each request processes multiple frames
 async def detect_batch_endpoint(
         request: Request,
         batch_request: BatchDetectRequest,
@@ -663,7 +678,7 @@ async def detect_batch_endpoint(
 ):
     """
     Detect faces in multiple frames at once (batch processing)
-    Processes up to 50 frames per request for improved performance
+    Processes up to 150 frames per request for improved performance
     """
     try:
         results = []

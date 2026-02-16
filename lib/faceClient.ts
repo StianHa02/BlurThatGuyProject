@@ -85,8 +85,8 @@ export async function detectFacesInBatch(
   if (!Array.isArray(batch) || batch.length === 0) {
     throw new Error('Batch must be a non-empty array');
   }
-  if (batch.length > 50) {
-    throw new Error('Batch size must not exceed 50 frames');
+  if (batch.length > 150) {
+    throw new Error('Batch size must not exceed 150 frames');
   }
 
   for (const item of batch) {
@@ -111,7 +111,20 @@ export async function detectFacesInBatch(
     });
 
     if (!response.ok) {
-      throw new Error(`Batch detection failed: ${response.statusText}`);
+      // Read response body (JSON or text) to include validation detail
+      let body: any = null;
+      try {
+        body = await response.json();
+      } catch (err) {
+        try {
+          body = await response.text();
+        } catch (_) {
+          body = null;
+        }
+      }
+      console.error('Batch detection failed', { status: response.status, statusText: response.statusText, body });
+      const detail = body && (body.detail || body.error || JSON.stringify(body));
+      throw new Error(`Batch detection failed: ${response.status} ${response.statusText}${detail ? ' - ' + detail : ''}`);
     }
 
     const data = await response.json();

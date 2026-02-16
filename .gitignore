@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# Ignore EC2 documentation file
+EC2_docs.md
+
 # vercel
 .vercel
 

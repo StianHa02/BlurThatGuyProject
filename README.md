@@ -29,9 +29,17 @@ AI-powered face detection and selective blurring for videos. Protect privacy wit
 **Terminal 1 - Start Backend:**
 ```bash
 cd backend
+
+# First time: Create environment file for local development
+cp ..env.local.example ..env.local
+# This enables DEV_MODE which makes API key optional for local development
+
+# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+
+# Run the server
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -42,6 +50,8 @@ pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) ✨
+
+> **Note**: Local development runs in `DEV_MODE` which disables API key requirements. For production deployment, set a secure API key in your environment configuration.
 
 ---
 
@@ -97,6 +107,52 @@ Open [http://localhost:3000](http://localhost:3000) ✨
 4. **Download**
    - Click "Download Video"
    - Your processed video will download with selected faces permanently blurred
+
+---
+
+## 🔐 Environment Configuration
+
+### Local Development (No API Key Required)
+
+For local development, the app runs in **DEV_MODE** which disables API key authentication:
+
+**Backend** (`backend/.env.local`):
+```bash
+DEV_MODE=true
+ALLOWED_ORIGINS=http://localhost:3000
+MAX_UPLOAD_SIZE_MB=100
+```
+
+**Frontend**: No environment variables needed for local development.
+
+### Production Deployment (API Key Required)
+
+For production (EC2, VPS, etc.), you need to configure API keys for security:
+
+**Backend** (`.env.prod` or environment file):
+```bash
+API_KEY=your-secure-random-api-key-here
+ALLOWED_ORIGINS=http://your-domain.com
+MAX_UPLOAD_SIZE_MB=100
+```
+
+**Frontend** (`.env.prod`):
+```bash
+API_URL=http://backend:8000
+API_KEY=same-api-key-as-backend
+BACKEND_URL=http://backend:8000
+```
+
+**Generate a secure API key:**
+```bash
+# On Mac/Linux
+openssl rand -hex 32
+
+# Or use Python
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+> ⚠️ **Important**: Never commit `.env.local` or `.env.prod` files to git. Only commit `.env.local.example` as a template.
 
 ---
 

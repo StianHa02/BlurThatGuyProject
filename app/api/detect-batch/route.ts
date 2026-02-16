@@ -37,18 +37,29 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
 
+    const text = await response.text();
+
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Batch detection failed' }));
-      return NextResponse.json(
-        { error: error.detail || 'Batch detection failed' },
-        { status: response.status }
-      );
+      // Try to parse JSON, otherwise return text. Forward backend status and body as-is.
+      console.error('Upstream /detect-batch returned non-OK', { status: response.status, body: text });
+      try {
+        const json = JSON.parse(text);
+        return NextResponse.json(json, { status: response.status });
+      } catch (e) {
+        return new NextResponse(text || 'Batch detection failed', { status: response.status });
+      }
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    // Success - forward parsed JSON
+    try {
+      const data = JSON.parse(text);
+      return NextResponse.json(data);
+    } catch (e) {
+      // Unexpected non-JSON success body
+      return new NextResponse(text, { status: 200 });
+    }
   } catch (error) {
-    console.error('Batch detection error:', error);
+    console.error('Batch detection proxy error:', error);
     return NextResponse.json(
       { error: 'Failed to detect faces in batch' },
       { status: 500 }
