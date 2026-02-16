@@ -30,10 +30,6 @@ AI-powered face detection and selective blurring for videos. Protect privacy wit
 ```bash
 cd backend
 
-# First time: Create environment file for local development
-cp ..env.local.example ..env.local
-# This enables DEV_MODE which makes API key optional for local development
-
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
@@ -45,13 +41,14 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 **Terminal 2 - Start Frontend:**
 ```bash
+# Install and run
 pnpm install
 pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) ✨
 
-> **Note**: Local development runs in `DEV_MODE` which disables API key requirements. For production deployment, set a secure API key in your environment configuration.
+> **Note**: Local development runs in `DEV_MODE` which disables API key requirements. The frontend `.env.local` points to `http://localhost:8000` for the backend connection.
 
 ---
 
@@ -116,31 +113,43 @@ Open [http://localhost:3000](http://localhost:3000) ✨
 
 For local development, the app runs in **DEV_MODE** which disables API key authentication:
 
-**Backend** (`backend/.env.local`):
+**Frontend** (`.env.local` in project root):
 ```bash
-DEV_MODE=true
-ALLOWED_ORIGINS=http://localhost:3000
-MAX_UPLOAD_SIZE_MB=100
+# Backend API URL for Next.js API routes
+API_URL=http://localhost:8000
+
+# No API key needed for local dev
+API_KEY=
 ```
 
-**Frontend**: No environment variables needed for local development.
+**Backend** (`backend/.env.local`):
+```bash
+# Enable dev mode (disables API key requirement)
+DEV_MODE=true
+
+# Allowed origins
+ALLOWED_ORIGINS=http://localhost:3000
+
+# Max upload size
+MAX_UPLOAD_SIZE_MB=100
+```
 
 ### Production Deployment (API Key Required)
 
 For production (EC2, VPS, etc.), you need to configure API keys for security:
 
-**Backend** (`.env.prod` or environment file):
-```bash
-API_KEY=your-secure-random-api-key-here
-ALLOWED_ORIGINS=http://your-domain.com
-MAX_UPLOAD_SIZE_MB=100
-```
-
 **Frontend** (`.env.prod`):
 ```bash
 API_URL=http://backend:8000
-API_KEY=same-api-key-as-backend
+API_KEY=your-secure-random-api-key-here
 BACKEND_URL=http://backend:8000
+```
+
+**Backend** (`.env.prod` or environment file):
+```bash
+API_KEY=same-api-key-as-frontend
+ALLOWED_ORIGINS=http://your-domain.com
+MAX_UPLOAD_SIZE_MB=100
 ```
 
 **Generate a secure API key:**
@@ -152,7 +161,10 @@ openssl rand -hex 32
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-> ⚠️ **Important**: Never commit `.env.local` or `.env.prod` files to git. Only commit `.env.local.example` as a template.
+> ⚠️ **Important**: 
+> - Never commit `.env.local` or `.env.prod` files to git
+> - Only commit `.env.local.example` files as templates
+> - Use the same API key for both frontend and backend in production
 
 ---
 

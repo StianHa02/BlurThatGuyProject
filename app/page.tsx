@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { Shield, Zap, Upload, Download, MousePointerClick } from 'lucide-react';
-import { Navbar, FeatureCard, StatsGrid, Footer, CTASection } from './components';
+import { Shield, Zap, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
+import { Navbar, FeatureCard, Footer, CTASection } from './components';
 
 const FEATURES = [
   {
@@ -26,11 +26,22 @@ const FEATURES = [
   },
 ];
 
-const STATS = [
-  { value: '100%', label: 'Local Processing' },
-  { value: 'AI', label: 'Powered Detection' },
-  { value: 'Fast', label: 'Processing Speed' },
-  { value: 'Free', label: 'Open Source' },
+const BENEFITS = [
+  {
+    icon: Lock,
+    title: 'Privacy First',
+    description: 'All processing happens on your machine. Videos never leave your device.',
+  },
+  {
+    icon: Gauge,
+    title: 'Lightning Fast',
+    description: 'Batch processing technology analyzes 50 frames at once for maximum speed.',
+  },
+  {
+    icon: Eye,
+    title: 'Selective Blurring',
+    description: 'Choose exactly which faces to blur. Full control over your content.',
+  },
 ];
 
 export default function Home() {
@@ -38,55 +49,95 @@ export default function Home() {
     <div className="min-h-screen bg-zinc-950 bg-grid">
       {/* Hero Section */}
       <div className="relative overflow-hidden">
-        {/* Gradient orbs */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl" />
-        <div className="absolute top-20 right-1/4 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl" />
-
         <Navbar />
 
         <main className="relative z-10 max-w-7xl mx-auto px-6 pt-20 pb-32">
-          <div className="text-center max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-sm mb-8">
+          <div className="text-center max-w-4xl mx-auto">
+            {/* Badge */}
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-sm font-medium mb-8 backdrop-blur-sm">
               <Shield className="w-4 h-4" />
               Privacy-First Video Processing
             </div>
 
-            <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6">
+            {/* Hero Headline */}
+            <h1 className="text-5xl sm:text-7xl font-bold tracking-tight mb-6 leading-tight">
               <span className="gradient-text">Blur faces</span> in your videos
-              <br />with one click
+              <br />
+              <span className="text-white">with one click</span>
             </h1>
 
-            <p className="text-lg text-zinc-400 mb-10 max-w-xl mx-auto">
+            {/* Subheadline */}
+            <p className="text-xl text-zinc-400 mb-12 max-w-2xl mx-auto leading-relaxed">
               AI-powered face detection and selective blurring.
               Protect privacy, comply with regulations, and maintain anonymity
-              in your video content.
+              in your video content — all processed locally.
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            {/* CTA Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
               <Link
                 href="/upload"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white glow-indigo"
+                className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
               >
-                <Upload className="w-5 h-5" />
+                <Upload className="w-5 h-5 group-hover:scale-110 transition-transform" />
                 Start Blurring
               </Link>
               <a
                 href="#how-it-works"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700 transition-all font-medium"
+                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all font-medium backdrop-blur-sm"
               >
                 Learn More
               </a>
+            </div>
+
+            {/* Social Proof / Quick Stats */}
+            <div className="flex flex-wrap items-center justify-center gap-8 text-sm text-zinc-500">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                No installation required
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                Works in your browser
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                100% free & open source
+              </div>
             </div>
           </div>
         </main>
       </div>
 
-      {/* Features Section */}
+      {/* Benefits Section - New! */}
+      <section className="py-16 px-6 border-t border-zinc-800/50">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-8">
+            {BENEFITS.map((benefit) => {
+              const Icon = benefit.icon;
+              return (
+                <div
+                  key={benefit.title}
+                  className="group p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all hover:bg-zinc-900/80"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <Icon className="w-6 h-6 text-indigo-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2">{benefit.title}</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed">{benefit.description}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works Section */}
       <section id="how-it-works" className="py-24 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">How it works</h2>
-            <p className="text-zinc-400 max-w-lg mx-auto">
+            <h2 className="text-4xl font-bold mb-4">How it works</h2>
+            <p className="text-zinc-400 text-lg max-w-2xl mx-auto">
               Three simple steps to anonymize faces in your videos
             </p>
           </div>
@@ -99,12 +150,10 @@ export default function Home() {
         </div>
       </section>
 
-      <StatsGrid stats={STATS} />
-
       <CTASection
         icon={Zap}
         title="Ready to protect privacy?"
-        description="Start anonymizing faces in your videos today. No account needed."
+        description="Start anonymizing faces in your videos today. No account or installation needed."
         buttonText="Upload Your First Video"
         buttonIcon={Upload}
         buttonHref="/upload"
