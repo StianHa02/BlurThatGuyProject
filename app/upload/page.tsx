@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Eye,
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
-import { Header, DropZone, ProgressBar, ErrorAlert } from './components';
+import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery } from './components';
 
 const PlayerWithMask = dynamic(() => import('../components/PlayerWithMask'), { ssr: false });
 
@@ -146,7 +146,7 @@ export default function UploadPage() {
                   <div className="flex items-center gap-2 text-sm text-zinc-400">
                     <Settings className="w-4 h-4" />
                     <span>Sample every <strong className="text-zinc-300">{sampleRate}</strong> frames</span>
-                    <span className="ml-2 text-xs text-zinc-500">(higher = less accurate, faster)</span>
+                    <span className="ml-2 text-xs text-zinc-500">(higher = faster, less accurate)</span>
                   </div>
                   <div className="mt-4 flex items-center gap-3 bg-zinc-800 rounded-lg px-3 py-2">
                     <label className="text-xs text-zinc-400">Sample rate:</label>
@@ -169,7 +169,7 @@ export default function UploadPage() {
 
         {/* Step 3: Select & Export */}
         {currentStep === 'select' && upload.fileUrl && (
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             {/* Status bar */}
             <div className="flex flex-row items-center justify-between gap-x-2 overflow-x-auto whitespace-nowrap mb-6">
               <div className="flex flex-row items-center gap-x-2 flex-1 min-w-0">
@@ -232,14 +232,14 @@ export default function UploadPage() {
             {/* Instructions */}
             <div className="mb-6 p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
               <p className="text-sm text-zinc-400">
-                <strong className="text-indigo-400">Tip:</strong> Play the video and click on faces with{' '}
+                <strong className="text-indigo-400">Tip:</strong> Click faces in the gallery below or play the video and click on faces with{' '}
                 <span className="text-red-400">red frames</span> to blur them.
-                Click blurred faces to unblur. Selected faces will appear pixelated.
+                Selected faces will appear pixelated.
               </p>
             </div>
 
             {/* Video Player */}
-            <div className="glass rounded-2xl p-2">
+            <div className="glass rounded-2xl p-2 mb-6">
               <PlayerWithMask
                 videoUrl={upload.fileUrl}
                 tracks={detection.tracks}
@@ -247,6 +247,16 @@ export default function UploadPage() {
                 onToggleTrack={detection.toggleTrack}
                 blur={true}
                 sampleRate={sampleRate}
+              />
+            </div>
+
+            {/* NEW: Face Gallery */}
+            <div className="glass rounded-2xl p-6">
+              <FaceGallery
+                tracks={detection.tracks}
+                selectedTrackIds={detection.selectedTrackIds}
+                onToggleTrack={detection.toggleTrack}
+                videoUrl={upload.fileUrl}
               />
             </div>
 

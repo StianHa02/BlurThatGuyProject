@@ -8,8 +8,7 @@ services:
     environment:
       # Server-side API URL (inside Docker network, use service name)
       API_URL: http://backend:8000
-      # No API key for local dev (optional)
-      # API_KEY: your-api-key
+      API_KEY: ""
     depends_on:
       - backend
     restart: unless-stopped
@@ -20,9 +19,10 @@ services:
       dockerfile: Dockerfile.backend
     ports:
       - "8000:8000"
-    # environment:
-      # API_KEY: your-api-key
-      # ALLOWED_ORIGINS: http://localhost:3000
+    environment:
+      DEV_MODE: "true"
+      ALLOWED_ORIGINS: http://localhost:3000
+      MAX_UPLOAD_SIZE_MB: "100"
     volumes:
       - video_uploads:/tmp/blurthatguy
     restart: unless-stopped
