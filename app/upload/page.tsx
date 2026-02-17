@@ -179,14 +179,12 @@ export default function UploadPage() {
                     <strong className="text-white">{detection.tracks.length}</strong> people detected
                   </span>
                 </div>
-                {detection.selectedTrackIds.length > 0 && (
                   <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs sm:text-sm">
                     <EyeOff className="w-4 h-4 text-indigo-400" />
                     <span className="text-indigo-400 truncate">
                       <strong>{detection.selectedTrackIds.length}</strong> selected for blur
                     </span>
                   </div>
-                )}
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20 text-xs sm:text-sm">
                   <Eye className="w-4 h-4 text-green-400" />
                   <span className="text-green-400 truncate">
@@ -250,7 +248,7 @@ export default function UploadPage() {
               />
             </div>
 
-            {/* NEW: Face Gallery */}
+            {/* Face Gallery */}
             <div className="glass rounded-2xl p-6">
               <FaceGallery
                 tracks={detection.tracks}

@@ -266,15 +266,15 @@ class BatchFrameRequest(BaseModel):
 
 class BatchDetectRequest(BaseModel):
     """Model for batch detection request"""
-    # Allow larger batches for improved throughput (client may send up to 150 frames)
-    batch: List[BatchFrameRequest] = Field(..., min_length=1, max_length=150)
+    # Allow larger batches for improved throughput (client may send up to 300 frames)
+    batch: List[BatchFrameRequest] = Field(..., min_length=1, max_length=200)
 
     @field_validator('batch')
     @classmethod
     def validate_batch_size(cls, v: List[BatchFrameRequest]) -> List[BatchFrameRequest]:
         """Limit batch size to prevent abuse"""
-        if len(v) > 150:
-            raise ValueError("Batch size must not exceed 150 frames")
+        if len(v) > 200:
+            raise ValueError("Batch size must not exceed 200 frames")
         return v
 
 
@@ -660,7 +660,7 @@ async def detect_batch_endpoint(
 ):
     """
     Detect faces in multiple frames at once (batch processing)
-    Processes up to 150 frames per request for improved performance
+    Processes up to 300 frames per request for improved performance
     """
     try:
         results = []

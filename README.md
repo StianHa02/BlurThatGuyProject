@@ -11,7 +11,7 @@ AI-powered face detection and selective blurring for videos. Protect privacy wit
 - 🎯 **AI Face Detection** - Powered by YuNet for accurate face detection
 - 🎬 **Video Processing** - Upload MP4, WebM, or MOV files up to 100MB
 - 👆 **Click to Blur** - Select which faces to anonymize
-- ⚡ **Batch Processing** - Process 50 frames at once for maximum speed
+- ⚡ **Batch Processing** - Process 300 frames at once for maximum speed
 - 📥 **Export** - Download processed video with faces permanently blurred
 - 🔒 **Privacy First** - All processing happens on your computer
 

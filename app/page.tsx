@@ -38,7 +38,7 @@ const BENEFITS = [
 	{
 		icon: Gauge,
 		title: 'Lightning Fast',
-		description: 'Batch processing technology analyzes 50 frames at once for maximum speed.',
+		description: 'Batch processing technology analyzes 200 frames at once for maximum speed.',
 	},
 	{
 		icon: Eye,

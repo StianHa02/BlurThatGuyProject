@@ -31,7 +31,7 @@ export function CTASection({
             <p className="text-zinc-400 mb-8 max-w-md mx-auto">{description}</p>
             <Link
               href={buttonHref}
-              className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white glow-indigo"
+              className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white glow-indigo"
             >
               <ButtonIcon className="w-5 h-5" />
               {buttonText}

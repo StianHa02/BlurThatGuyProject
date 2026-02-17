@@ -85,8 +85,8 @@ export async function detectFacesInBatch(
   if (!Array.isArray(batch) || batch.length === 0) {
     throw new Error('Batch must be a non-empty array');
   }
-  if (batch.length > 150) {
-    throw new Error('Batch size must not exceed 150 frames');
+  if (batch.length > 200) {
+    throw new Error('Batch size must not exceed 300 frames');
   }
 
   for (const item of batch) {
