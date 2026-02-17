@@ -80,7 +80,7 @@ export default function Home() {
 						{/* Subheadline */}
 						<p className="text-xl text-zinc-400 mb-8 max-w-2xl mx-auto leading-relaxed">
 							AI-powered face detection and selective blurring built with OpenCV.
-							Protect privacy, comply with regulations, and maintain anonymity with secure processing on AWS EC2 via HTTPS.
+							Protect privacy, and maintain anonymity with secure processing on AWS EC2 via HTTPS.
 						</p>
 
 						{/* CTA Buttons */}
