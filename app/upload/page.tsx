@@ -7,7 +7,7 @@ import {
   EyeOff,
   Users,
   UserX,
-  Settings,
+  Info,
   Film,
   Download,
   Loader2,
@@ -100,11 +100,11 @@ export default function UploadPage() {
         {/* Step 2: Detect */}
         {currentStep === 'detect' && upload.fileUrl && (
           <div className="max-w-4xl mx-auto">
-            <div className="grid lg:grid-cols-2 gap-8">
+            <div className="grid lg:grid-cols-2 gap-8 items-stretch">
               {/* Video preview */}
-              <div>
-                <div className="glass rounded-2xl p-2 mb-4">
-                  <video src={upload.fileUrl} controls className="w-full rounded-xl" />
+              <div className="flex flex-col min-h-0">
+                <div className="glass rounded-2xl p-2 mb-4 flex-1 min-h-0 flex flex-col">
+                  <video src={upload.fileUrl} controls className="w-full h-full min-h-[240px] object-contain rounded-xl" />
                 </div>
                 <div className="flex items-center gap-2 text-sm text-zinc-400">
                   <Film className="w-4 h-4" />
@@ -139,9 +139,24 @@ export default function UploadPage() {
 
                 <div className="mt-4 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
                   <div className="flex items-center gap-2 text-sm text-zinc-400">
-                    <Settings className="w-4 h-4" />
+                    <span className="relative group">
+                      <span className="inline-flex cursor-help text-zinc-500 hover:text-indigo-400 transition-colors">
+                        <Info className="w-4 h-4" />
+                      </span>
+                      <span className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-10 w-64 p-3 text-sm text-left text-zinc-300 bg-zinc-800 border border-zinc-600 rounded-lg shadow-xl pointer-events-none">
+                        <span className="font-medium text-white">Frame sampling</span>
+                        <br />
+                        <span className="text-zinc-400 text-xs">1 check per {sampleRate} frames</span>
+                        <br /><br />
+                        Faces are only searched at these intervals, and not on every frame.
+                        <br /><br />
+                        <div className="flex justify-between text-xs mt-1">
+                          <span className="text-emerald-400">Low = thorough</span>
+                          <span className="text-amber-400">High = fast</span>
+                        </div>
+                      </span>
+                    </span>
                     <span>Sample every <strong className="text-zinc-300">{sampleRate}</strong> frames</span>
-                    <span className="ml-2 text-xs text-zinc-500">(higher = faster, less accurate)</span>
                   </div>
                   <div className="mt-4 flex items-center gap-3 bg-zinc-800 rounded-lg px-3 py-2">
                     <label className="text-xs text-zinc-400">Sample rate:</label>
