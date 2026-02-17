@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Blur That Guy - Privacy-First Video Anonymization",
-  description: "Automatically detect and blur faces in your videos. Protect privacy with AI-powered face detection and selective blurring.",
+  title: "Blur That Guy Project",
+  description: "Automatically detect and blur faces in your videos. Protect privacy with OPEN CV face detection and selective blurring.",
 };
 
 export default function RootLayout({

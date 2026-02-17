@@ -16,7 +16,7 @@ import {
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
 import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery } from './components';
 
-const PlayerWithMask = dynamic(() => import('../components/PlayerWithMask'), { ssr: false });
+const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
 
 type Step = 'upload' | 'detect' | 'select';
 

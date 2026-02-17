@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { EyeOff, Users } from 'lucide-react';
 
 export type BBox = [number, number, number, number];
 
