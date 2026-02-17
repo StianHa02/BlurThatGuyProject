@@ -9,6 +9,7 @@ services:
     environment:
       # Server-side API URL (inside Docker network, use service name)
       API_URL: http://backend:8000
+      API_KEY: ""
     volumes:
       - .:/app
       - /app/node_modules
@@ -22,6 +23,10 @@ services:
       dockerfile: Dockerfile.backend
     ports:
       - "8000:8000"
+    environment:
+      DEV_MODE: "true"
+      ALLOWED_ORIGINS: http://localhost:3000
+      MAX_UPLOAD_SIZE_MB: "100"
     volumes:
       - ./backend:/app
       - video_uploads:/tmp/blurthatguy

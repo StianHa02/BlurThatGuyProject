@@ -31,45 +31,6 @@ export async function loadModels(): Promise<void> {
 }
 
 /**
- * Detect faces in a canvas element (single frame)
- * @param canvas - The canvas containing the video frame
- * @returns Array of detected faces with bounding boxes and confidence scores
- */
-export async function detectFacesInCanvas(
-  canvas: HTMLCanvasElement
-): Promise<{ bbox: [number, number, number, number]; score: number }[]> {
-  if (!isReady) {
-    throw new Error('Face detector not loaded. Call loadModels() first.');
-  }
-
-  // Convert canvas to base64
-  const imageData = canvas.toDataURL('image/jpeg', 0.9);
-
-  try {
-    const response = await fetch(`${API_URL}/detect`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ image: imageData }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Detection failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data.faces.map((face: { bbox: number[]; score: number }) => ({
-      bbox: face.bbox as [number, number, number, number],
-      score: face.score,
-    }));
-  } catch (error) {
-    console.error('Face detection error:', error);
-    return [];
-  }
-}
-
-/**
  * Detect faces in multiple frames at once (BATCH PROCESSING)
  * @param batch - Array of frames with frameIndex and base64 image data
  * @returns Array of results with frameIndex and detected faces
@@ -86,7 +47,7 @@ export async function detectFacesInBatch(
     throw new Error('Batch must be a non-empty array');
   }
   if (batch.length > 200) {
-    throw new Error('Batch size must not exceed 300 frames');
+    throw new Error('Batch size must not exceed 200 frames');
   }
 
   for (const item of batch) {

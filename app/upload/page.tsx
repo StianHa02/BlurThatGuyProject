@@ -77,6 +77,7 @@ export default function UploadPage() {
     <div className="min-h-screen bg-zinc-950 bg-grid">
       <Header
         currentStep={currentStep}
+        onUploadNew={handleReset}
       />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
@@ -109,12 +110,6 @@ export default function UploadPage() {
                   <Film className="w-4 h-4" />
                   <span className="truncate">{upload.fileName}</span>
                 </div>
-                <button
-                  onClick={handleReset}
-                  className="mt-4 w-full text-sm text-zinc-500 hover:text-white border border-zinc-700 rounded-lg py-2 transition-colors cursor-pointer"
-                >
-                  ← Upload another video
-                </button>
               </div>
 
               {/* Detection panel */}
@@ -259,10 +254,7 @@ export default function UploadPage() {
             </div>
 
             {/* Action bar */}
-            <div className="mt-6 flex items-center justify-between">
-              <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-white transition-colors cursor-pointer">
-                ← Upload another video
-              </button>
+            <div className="mt-6 flex justify-end">
               <div className="text-sm text-zinc-500">{upload.fileName}</div>
             </div>
           </div>
