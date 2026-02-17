@@ -94,7 +94,7 @@ Click **"Launch Instance"** and wait for it to start.
 
 **Mac/Linux:**
 ```bash
-ssh -i ~/Downloads/blurthatguy-key.pem ubuntu@54.123.45.67
+ssh -i ~/.ssh/blurthatguy-key.pem ubuntu@13.62.202.27
 ```
 
 **Windows (PowerShell):**
@@ -171,7 +171,7 @@ git --version
 
 ```bash
 cd ~
-git clone https://github.com/yourusername/blurthatguy.git
+git clone https://github.com/StianHa02/BlurThatGuyProject.git
 cd blurthatguy
 ```
 
@@ -204,7 +204,7 @@ Add this content (replace with your actual API key):
 # PRODUCTION ENVIRONMENT - DO NOT COMMIT TO GIT
 
 # API Key (use the one you generated above)
-API_KEY=a7b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2
+API_KEY=
 
 # CORS - Add your domain when you have one
 ALLOWED_ORIGINS=http://54.123.45.67:3000,http://localhost:3000
@@ -213,7 +213,7 @@ ALLOWED_ORIGINS=http://54.123.45.67:3000,http://localhost:3000
 MAX_UPLOAD_SIZE_MB=100
 
 # Development mode - MUST be false or unset in production
-DEV_MODE=false
+DEV_MODE=true
 ```
 
 Save and exit (`Ctrl+X`, then `Y`, then `Enter`).
@@ -249,58 +249,6 @@ NEXT_PUBLIC_BACKEND_URL=http://54.123.45.67:8000
 
 Save and exit.
 
-### 4.4 Update Docker Compose for Production
-
-Create a production Docker Compose file:
-
-```bash
-nano docker-compose.prod.yml
-```
-
-Add this content:
-
-```yaml
-version: '3.8'
-
-services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    env_file:
-      - /etc/blurthatguy.env
-    volumes:
-      - ./backend/videos:/app/videos
-      - ./backend/models:/app/models
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env.production
-    depends_on:
-      - backend
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-```
-
-Save and exit.
-
 ---
 
 ## 🚀 Step 5: Build and Start the Application
@@ -309,7 +257,7 @@ Save and exit.
 
 ```bash
 cd ~/blurthatguy
-docker-compose -f docker-compose.prod.yml build --no-cache
+docker-compose -f docker-compose.yml build --no-cache
 ```
 
 This will take 5-10 minutes. ☕
@@ -317,7 +265,7 @@ This will take 5-10 minutes. ☕
 ### 5.2 Start the Application
 
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.yml up -d
 ```
 
 The `-d` flag runs containers in the background (detached mode).
@@ -326,7 +274,7 @@ The `-d` flag runs containers in the background (detached mode).
 
 ```bash
 # Check container status
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 
 # Should show both containers running:
 # NAME                     STATUS
@@ -334,7 +282,7 @@ docker-compose -f docker-compose.prod.yml ps
 # blurthatguy-frontend-1   Up About a minute (healthy)
 
 # View logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.yml logs -f
 
 # Test backend
 curl http://localhost:8000/health
