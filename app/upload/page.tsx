@@ -181,38 +181,36 @@ export default function UploadPage() {
         {currentStep === 'select' && upload.fileUrl && (
           <div className="max-w-6xl mx-auto">
             {/* Status bar */}
-            <div className="flex flex-row items-center justify-between gap-x-2 overflow-x-auto whitespace-nowrap mb-6">
-              <div className="flex flex-row items-center gap-x-2 flex-1 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
+              <div className="flex flex-row flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs sm:text-sm">
                   <Users className="w-4 h-4 text-indigo-400" />
-                  <span className="truncate">
-                    <strong className="text-white">{detection.tracks.length}</strong> people detected
+                  <span><strong className="text-white">{detection.tracks.length}</strong> people detected</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs sm:text-sm">
+                  <EyeOff className="w-4 h-4 text-indigo-400" />
+                  <span className="text-indigo-400">
+                    <strong>{detection.selectedTrackIds.length}</strong> selected for blur
                   </span>
                 </div>
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs sm:text-sm">
-                    <EyeOff className="w-4 h-4 text-indigo-400" />
-                    <span className="text-indigo-400 truncate">
-                      <strong>{detection.selectedTrackIds.length}</strong> selected for blur
-                    </span>
-                  </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20 text-xs sm:text-sm">
                   <Eye className="w-4 h-4 text-green-400" />
-                  <span className="text-green-400 truncate">
+                  <span className="text-green-400">
                     <strong>{detection.tracks.length - detection.selectedTrackIds.length}</strong> face{detection.tracks.length - detection.selectedTrackIds.length !== 1 ? 's' : ''} visible
                   </span>
                 </div>
               </div>
-              <div className="flex flex-row items-center gap-x-2 shrink-0 whitespace-nowrap">
+              <div className="flex flex-row items-center gap-2 shrink-0">
                 <button
                   onClick={detection.selectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors whitespace-nowrap cursor-pointer"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors cursor-pointer"
                 >
                   <UserX className="w-4 h-4" />
                   Blur All
                 </button>
                 <button
                   onClick={detection.deselectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors whitespace-nowrap cursor-pointer"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors cursor-pointer"
                 >
                   <Eye className="w-4 h-4" />
                   Clear
@@ -220,7 +218,7 @@ export default function UploadPage() {
                 <button
                   onClick={handleExport}
                   disabled={exportHook.exporting || detection.selectedTrackIds.length === 0}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 font-medium text-white transition-all text-xs sm:text-sm whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 font-medium text-white transition-all text-xs sm:text-sm cursor-pointer disabled:cursor-not-allowed"
                 >
                   {exportHook.exporting ? (
                     <>

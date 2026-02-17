@@ -41,7 +41,7 @@ export function FaceGallery({
       video.crossOrigin = 'anonymous';
       video.muted = true;
 
-      console.log('📹 Loading video:', videoUrl);
+      console.log('Loading video:', videoUrl);
 
       await new Promise<void>((resolve) => {
         video.addEventListener('loadedmetadata', () => {
@@ -108,7 +108,7 @@ export function FaceGallery({
 
             // Convert to data URL
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-            console.log(`  ✅ Thumbnail created for face ${track.id}`);
+            console.log(`  Thumbnail created for face ${track.id}`);
             newThumbnails.set(track.id, dataUrl);
 
             resolve();
@@ -122,7 +122,7 @@ export function FaceGallery({
     };
 
     extractThumbnails().catch(err => {
-      console.error('❌ Thumbnail extraction failed:', err);
+      console.error(' Thumbnail extraction failed:', err);
       setLoading(false);
     });
   }, [tracks, videoUrl]);
@@ -138,7 +138,7 @@ export function FaceGallery({
       </div>
 
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
-        {tracks.map((track, index) => {
+        {[...tracks].sort((a, b) => (a.frames[0]?.frameIndex ?? 0) - (b.frames[0]?.frameIndex ?? 0)).map((track, index) => {
           const isSelected = selectedTrackIds.includes(track.id);
           const thumbnail = thumbnails.get(track.id);
 
@@ -180,14 +180,6 @@ export function FaceGallery({
                   </div>
                 </div>
               )}
-
-              {/* Frame Count Badge */}
-              <div className={`
-                absolute bottom-1 right-1 px-2 py-0.5 rounded-md text-[10px] font-bold backdrop-blur-sm
-                ${isSelected ? 'bg-indigo-500 text-white' : 'bg-black/70 text-zinc-300'}
-              `}>
-                {track.frames.length}f
-              </div>
 
               {/* Face Number Badge */}
               <div className={`
