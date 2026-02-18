@@ -88,8 +88,8 @@ export function FaceGallery({
             const paddedW = Math.min(w * (1 + padding * 2), video.videoWidth - paddedX);
             const paddedH = Math.min(h * (1 + padding * 2), video.videoHeight - paddedY);
 
-            // Create square thumbnail
-            const thumbSize = 120;
+            // Create square thumbnail (slightly smaller for faster generation)
+            const thumbSize = 96;
             canvas.width = thumbSize;
             canvas.height = thumbSize;
 
@@ -106,10 +106,13 @@ export function FaceGallery({
               thumbSize
             );
 
-            // Convert to data URL
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            // Convert to data URL (lower quality for speed/smaller payload)
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
             console.log(`  Thumbnail created for face ${track.id}`);
             newThumbnails.set(track.id, dataUrl);
+
+            // Update state incrementally so early thumbnails appear sooner
+            setThumbnails(new Map(newThumbnails));
 
             resolve();
           }, { once: true });
@@ -117,7 +120,6 @@ export function FaceGallery({
       }
 
       console.log('🎉 All thumbnails extracted:', newThumbnails.size);
-      setThumbnails(newThumbnails);
       setLoading(false);
     };
 
