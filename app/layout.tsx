@@ -10,6 +10,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Blur That Guy Project",
   description: "Automatically detect and blur faces in your videos. Protect privacy with OPEN CV face detection and selective blurring.",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

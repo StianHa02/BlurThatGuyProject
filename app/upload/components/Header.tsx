@@ -36,7 +36,7 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
         </Link>
 
         {/* Step indicators */}
-        <div className="hidden sm:flex items-center gap-2 flex-1 justify-center min-w-0">
+        <div className="hidden sm:flex items-center gap-0 flex-1 justify-center min-w-0">
           {STEPS.map((step, i) => (
             <div key={step} className="flex items-center">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
