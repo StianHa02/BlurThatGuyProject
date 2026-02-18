@@ -62,46 +62,46 @@ export default function Home() {
 			<div className="relative overflow-hidden min-h-screen flex flex-col">
 				<Navbar />
 
-				<main className="relative z-10 flex-1 flex items-center w-full">
+				<main className="relative z-10 flex-1 flex items-center w-full pt-20 pb-10 sm:pt-28 sm:pb-12">
 					<div className="text-center max-w-4xl mx-auto w-full px-6">
 						{/* Badge */}
-						<div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-sm font-medium mb-6 backdrop-blur-sm">
-							<Shield className="w-4 h-4" />
+						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs sm:text-sm font-medium mb-4 sm:mb-6 backdrop-blur-sm">
+							<Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
 							Privacy-First Video Processing
 						</div>
 
 						{/* Hero Headline */}
-						<h1 className="text-5xl sm:text-7xl font-bold tracking-tight mb-4 leading-tight">
+						<h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight mb-3 sm:mb-4 leading-tight">
 							<span className="gradient-text">Blur faces</span> in your videos
 							<br />
 							<span className="text-white">with one click</span>
 						</h1>
 
 						{/* Subheadline */}
-						<p className="text-xl text-zinc-400 mb-8 max-w-2xl mx-auto leading-relaxed">
+						<p className="text-base sm:text-lg text-zinc-400 mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
 							AI-powered face detection and selective blurring built with OpenCV.
 							Protect privacy, and maintain anonymity with secure processing on AWS EC2 via HTTPS.
 						</p>
 
 						{/* CTA Buttons */}
-						<div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+						<div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-6 sm:mb-8">
 							<Link
 								href="/upload"
-								className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
+								className="group inline-flex items-center justify-center gap-2 px-7 py-3 sm:px-8 sm:py-4 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
 							>
 								<Upload className="w-5 h-5 group-hover:scale-110 transition-transform" />
 								Start Blurring
 							</Link>
 							<a
 								href="/#how-it-works"
-								className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all font-medium backdrop-blur-sm"
+								className="inline-flex items-center justify-center gap-2 px-7 py-3 sm:px-8 sm:py-4 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all font-medium backdrop-blur-sm"
 							>
 								Learn More
 							</a>
 						</div>
 
 						{/* Social Proof / Quick Stats */}
-						<div className="flex flex-wrap items-center justify-center gap-6 text-sm text-zinc-500">
+						<div className="hidden sm:flex flex-wrap items-center justify-center gap-6 text-sm text-zinc-500">
 							<div className="flex items-center gap-2">
 								<div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
 								No installation required
