@@ -17,64 +17,78 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
   const showUploadNew = currentStep !== 'upload' && onUploadNew;
 
   return (
-    <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-        {/* Home link — clearly labeled */}
-        <Link
-          href="/"
-          className="group flex items-center gap-3 px-3 py-2 -mx-3 -my-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/80 border border-transparent hover:border-zinc-700 transition-all"
-          aria-label="Back to home"
+    <header style={{
+      borderBottom: '1px solid var(--border)',
+      background: 'rgba(14,26,19,0.85)',
+      backdropFilter: 'blur(20px)',
+      position: 'sticky', top: 0, zIndex: 50,
+    }}>
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+
+        {/* Home link */}
+        <Link href="/" style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          color: 'var(--muted-foreground)', textDecoration: 'none',
+          padding: '8px 12px', borderRadius: 8,
+          border: '1px solid transparent',
+          transition: 'all 0.2s',
+        }}
+          onMouseOver={e => {
+            e.currentTarget.style.color = 'var(--foreground)';
+            e.currentTarget.style.background = 'rgba(245,240,232,0.05)';
+            e.currentTarget.style.borderColor = 'var(--border)';
+          }}
+          onMouseOut={e => {
+            e.currentTarget.style.color = 'var(--muted-foreground)';
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.borderColor = 'transparent';
+          }}
         >
-          <ArrowLeft className="w-4 h-4 shrink-0" />
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0">
-              <EyeOff className="w-3.5 h-3.5 text-white" />
+          <ArrowLeft style={{ width: 16, height: 16 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 4, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <EyeOff style={{ width: 14, height: 14, color: 'var(--background)' }} />
             </div>
-            <span className="font-semibold">BlurThatGuy</span>
+            <span style={{ fontFamily: 'var(--font-serif)', fontSize: 16, color: 'var(--foreground)' }}>BlurThatGuy</span>
           </div>
-          <span className="text-xs text-zinc-500 group-hover:text-zinc-400 hidden sm:inline ml-1">Home</span>
         </Link>
 
         {/* Step indicators */}
-        <div className="hidden sm:flex items-center gap-0 flex-1 justify-center min-w-0">
+        <div style={{ display: 'flex', alignItems: 'center', flex: 1, justifyContent: 'center' }}>
           {STEPS.map((step, i) => (
-            <div key={step} className="flex items-center">
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                currentStep === step
-                  ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+            <div key={step} style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 500,
+                transition: 'all 0.2s',
+                ...(currentStep === step
+                  ? { background: 'rgba(200,245,90,0.1)', color: 'var(--primary)', border: '1px solid rgba(200,245,90,0.3)' }
                   : i < currentIndex
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                    : 'bg-zinc-800 text-zinc-500 border border-zinc-700'
-              }`}>
-                {i < currentIndex ? (
-                  <CheckCircle className="w-3 h-3" />
-                ) : (
-                  <span className="w-4 h-4 rounded-full bg-current/20 flex items-center justify-center text-[10px]">
-                    {i + 1}
-                  </span>
-                )}
-                <span className="capitalize">{step}</span>
+                    ? { background: 'rgba(200,245,90,0.06)', color: 'var(--primary)', border: '1px solid rgba(200,245,90,0.15)', opacity: 0.6 }
+                    : { background: 'rgba(245,240,232,0.03)', color: 'var(--subtle)', border: '1px solid var(--border)' }
+                ),
+              }}>
+                {i < currentIndex
+                  ? <CheckCircle style={{ width: 12, height: 12 }} />
+                  : <span style={{ width: 16, height: 16, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>{i + 1}</span>
+                }
+                <span style={{ textTransform: 'capitalize' }}>{step}</span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`w-8 h-px mx-1 ${i < currentIndex ? 'bg-green-500/50' : 'bg-zinc-700'}`} />
+                <div style={{ width: 28, height: 1, margin: '0 4px', background: i < currentIndex ? 'rgba(200,245,90,0.3)' : 'var(--border)' }} />
               )}
             </div>
           ))}
         </div>
 
-        {/* Upload new file — visible in header when past upload step */}
-        <div className="w-40 shrink-0 flex justify-end">
-          {showUploadNew ? (
-            <button
-              type="button"
-              onClick={onUploadNew}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 cursor-pointer"
-            >
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Upload new file</span>
-              <span className="sm:hidden">New file</span>
+        {/* Upload new */}
+        <div style={{ width: 160, display: 'flex', justifyContent: 'flex-end' }}>
+          {showUploadNew && (
+            <button onClick={onUploadNew} className="cta-primary" style={{ padding: '8px 16px', fontSize: 13 }}>
+              <Upload style={{ width: 14, height: 14 }} />
+              New file
             </button>
-          ) : null}
+          )}
         </div>
       </div>
     </header>

@@ -18,16 +18,8 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
     if (f) onFileSelect(f);
   }, [onFileSelect]);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-  }, []);
-
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) onFileSelect(f);
@@ -39,28 +31,36 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onClick={() => inputRef.current?.click()}
-      className={`relative border-2 border-dashed rounded-2xl p-16 text-center cursor-pointer transition-all ${
-        dragOver
-          ? 'border-indigo-500 bg-indigo-500/10'
-          : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-900/50'
-      }`}
+      style={{
+        position: 'relative',
+        border: `2px dashed ${dragOver ? 'var(--primary)' : 'var(--border)'}`,
+        borderRadius: 8,
+        padding: '80px 48px',
+        textAlign: 'center',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        background: dragOver ? 'rgba(200,245,90,0.04)' : 'rgba(245,240,232,0.01)',
+      }}
+      onMouseOver={e => { if (!dragOver) e.currentTarget.style.borderColor = 'rgba(245,240,232,0.2)'; }}
+      onMouseOut={e => { if (!dragOver) e.currentTarget.style.borderColor = 'var(--border)'; }}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        accept="video/*"
-        onChange={handleChange}
-        className="hidden"
-      />
-      <div className={`w-16 h-16 rounded-2xl mx-auto mb-6 flex items-center justify-center transition-colors ${
-        dragOver ? 'bg-indigo-500/20' : 'bg-zinc-800'
-      }`}>
-        <Upload className={`w-8 h-8 ${dragOver ? 'text-indigo-400' : 'text-zinc-500'}`} />
+      <input ref={inputRef} type="file" accept="video/*" onChange={handleChange} style={{ display: 'none' }} />
+      <div style={{
+        width: 64, height: 64, borderRadius: 6,
+        background: dragOver ? 'rgba(200,245,90,0.1)' : 'rgba(245,240,232,0.04)',
+        border: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        margin: '0 auto 24px',
+        transition: 'all 0.2s',
+      }}>
+        <Upload style={{ width: 28, height: 28, color: dragOver ? 'var(--primary)' : 'var(--subtle)' }} />
       </div>
-      <h3 className="text-lg font-semibold mb-2">Drop your video here</h3>
-      <p className="text-zinc-500 text-sm mb-4">or click to browse files</p>
-      <div className="flex items-center justify-center gap-2 text-xs text-zinc-600">
-        <Film className="w-3 h-3" />
+      <h3 style={{ fontSize: 18, fontWeight: 600, color: 'var(--foreground)', marginBottom: 8, fontFamily: 'var(--font-serif)' }}>
+        Drop your video here
+      </h3>
+      <p style={{ color: 'var(--subtle)', fontSize: 14, marginBottom: 16 }}>or click to browse files</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, color: 'var(--subtle)', opacity: 0.6 }}>
+        <Film style={{ width: 12, height: 12 }} />
         <span>Supports MP4, WebM, MOV</span>
       </div>
     </div>

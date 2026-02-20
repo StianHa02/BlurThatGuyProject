@@ -1,178 +1,84 @@
 'use client';
 
-import Link from 'next/link';
-import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
-import { Navbar, FeatureCard, Footer } from './components';
+import { Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
+import { Navbar, FeatureCard, Footer, HeroContent } from './components';
 import { useEffect, useState } from 'react';
 
 const FEATURES = [
-	{
-		icon: Upload,
-		step: 1,
-		title: 'Upload Video',
-		description: 'Drag and drop or select your MP4 video file. Uploaded securely over HTTPS and processed on our private server.',
-		color: 'indigo' as const,
-	},
-	{
-		icon: MousePointerClick,
-		step: 2,
-		title: 'Select Faces',
-		description: 'AI automatically detects all faces. Click on any face to toggle blur on or off.',
-		color: 'purple' as const,
-	},
-	{
-		icon: Download,
-		step: 3,
-		title: 'Export',
-		description: 'Download your processed video with faces permanently blurred.',
-		color: 'pink' as const,
-	},
+  { icon: Upload,            step: '01', title: 'Upload Video',     description: 'Drag and drop or select your MP4 video file.' },
+  { icon: MousePointerClick, step: '02', title: 'Select Faces',     description: 'AI automatically detects all faces. Click on any face to toggle blur on or off.' },
+  { icon: Download,          step: '03', title: 'Export',           description: 'Download your processed video with faces permanently blurred.' },
 ];
 
 const BENEFITS = [
-	{
-		icon: Lock,
-		title: 'Privacy First',
-		description: 'Processed securely on our servers via encrypted HTTPS. Your footage is never shared with third-party AI services.',
-	},
-	{
-		icon: Gauge,
-		title: 'Lightning Fast',
-		description: 'Batch processing technology analyzes 200 frames at once for maximum speed.',
-	},
-	{
-		icon: Eye,
-		title: 'Selective Blurring',
-		description: 'Choose exactly which faces to blur. Full control over your content.',
-	},
+  { icon: Lock,  title: 'Privacy First',      description: 'Processed securely on our servers via encrypted HTTPS. Your footage is never shared with third-party AI services.' },
+  { icon: Gauge, title: 'Lightning Fast',     description: 'Batch processing technology analyzes 200 frames at once for maximum speed.' },
+  { icon: Eye,   title: 'Selective Blurring', description: 'Choose exactly which faces to blur. Full control over your content.' },
 ];
 
 export default function Home() {
-	const [scrolled, setScrolled] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
-	useEffect(() => {
-		const handleScroll = () => setScrolled(window.scrollY > 50);
-		window.addEventListener('scroll', handleScroll, { passive: true });
-		return () => window.removeEventListener('scroll', handleScroll);
-	}, []);
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 50);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
-	return (
-		<div className="bg-zinc-950 bg-grid">
-			{/* Hero Section */}
-			<div className="relative overflow-hidden min-h-screen flex flex-col">
-				<Navbar />
+  return (
+    <div style={{ background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
 
-				<main className="relative z-10 flex-1 flex items-center w-full pt-20 pb-10 sm:pt-28 sm:pb-12">
-					<div className="text-center max-w-4xl mx-auto w-full px-6">
-						{/* Badge */}
-						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs sm:text-sm font-medium mb-4 sm:mb-6 backdrop-blur-sm">
-							<Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-							Piva-First Video Processing
-						</div>
+      {/* ───── HERO ───── */}
+      <div style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="hero-grain" />
+        <Navbar />
 
-						{/* Hero Headline */}
-						<h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight mb-3 sm:mb-4 leading-tight">
-							<span className="gradient-text">Blur faces</span> in your videos
-							<br />
-							<span className="text-white">with one click</span>
-						</h1>
+        <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 10, padding: '120px 48px 60px' }}>
+          <HeroContent />
+        </main>
 
-						{/* Subheadline */}
-						<p className="text-base sm:text-lg text-zinc-400 mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
-							AI-powered face detection and selective blurring built with OpenCV.
-							Protect privacy, and maintain anonymity with secure processing on AWS EC2 via HTTPS.
-						</p>
+        <div style={{ position: 'relative', zIndex: 10, display: 'flex', justifyContent: 'center', paddingBottom: 36, opacity: scrolled ? 0 : 1, transition: 'opacity 0.5s', pointerEvents: scrolled ? 'none' : 'auto' }}>
+          <a href="/#how-it-works" className="scroll-indicator">
+            <span style={{ fontSize: 10, letterSpacing: '0.2em', color: 'var(--subtle)', textTransform: 'uppercase' }}>Scroll</span>
+            <div className="scroll-line" />
+          </a>
+        </div>
+      </div>
 
-						{/* CTA Buttons */}
-						<div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-6 sm:mb-8">
-							<Link
-								href="/upload"
-								className="group inline-flex items-center justify-center gap-2 px-7 py-3 sm:px-8 sm:py-4 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
-							>
-								<Upload className="w-5 h-5 group-hover:scale-110 transition-transform" />
-								Start Blurring
-							</Link>
-							<a
-								href="/#how-it-works"
-								className="inline-flex items-center justify-center gap-2 px-7 py-3 sm:px-8 sm:py-4 rounded-xl bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 transition-all font-medium backdrop-blur-sm"
-							>
-								Learn More
-							</a>
-						</div>
+      {/* ───── HOW IT WORKS ───── */}
+      <section id="how-it-works" style={{ minHeight: '100vh', position: 'relative', display: 'flex', flexDirection: 'column', padding: '80px 48px 120px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', width: '100%' }}>
 
-						{/* Social Proof / Quick Stats */}
-						<div className="hidden sm:flex flex-wrap items-center justify-center gap-6 text-sm text-zinc-500">
-							<div className="flex items-center gap-2">
-								<div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-								No installation required
-							</div>
-							<div className="flex items-center gap-2">
-								<div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-								Works in your browser
-							</div>
-							<div className="flex items-center gap-2">
-								<div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-								100% free & open source
-							</div>
-						</div>
-					</div>
-				</main>
+          <div style={{ marginBottom: 52 }}>
+            <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: 'clamp(40px, 5vw, 60px)', color: 'var(--foreground)', marginTop: 10, letterSpacing: '-0.025em', lineHeight: 1.05 }}>
+              How it works
+            </h2>
+          </div>
 
-				{/* Scroll indicator */}
-				<div className={`relative z-10 flex justify-center pb-8 transition-opacity duration-500 ${scrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-					<a
-						href="/#how-it-works"
-						className="flex flex-col items-center gap-2 text-zinc-500 hover:text-zinc-300 transition-colors"
-					>
-						<span className="text-xs font-medium tracking-widest uppercase">Scroll</span>
-						<svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-						</svg>
-					</a>
-				</div>
-			</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: 3, marginBottom: 64 }}>
+            {FEATURES.map(f => (
+              <FeatureCard key={f.step} icon={f.icon} step={f.step} title={f.title} description={f.description} />
+            ))}
+          </div>
 
-			{/* How It Works + Benefits Section */}
-			<section id="how-it-works" className="relative min-h-screen flex flex-col px-6 pt-28 pb-32">
-				<div className="max-w-7xl mx-auto w-full">
-					<div className="text-center mb-12">
-						<h2 className="text-4xl font-bold mb-4">How it works</h2>
-						<p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-							Three simple steps to anonymize faces in your videos
-						</p>
-					</div>
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 48 }}>
+            <div className="section-label" style={{ marginBottom: 24 }}>Why BlurThatGuy</div>
+            {BENEFITS.map(({ icon: Icon, title, description }) => (
+              <div key={title} className="benefit-row">
+                <div className="benefit-icon">
+                  <Icon style={{ width: 15, height: 15, color: 'var(--primary)' }} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 500, color: 'var(--foreground)', marginBottom: 5, fontSize: 15 }}>{title}</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: 14, lineHeight: 1.7, fontWeight: 300 }}>{description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
-					<div className="grid md:grid-cols-3 gap-6 mb-12">
-						{FEATURES.map((feature) => (
-							<FeatureCard key={feature.step} {...feature} />
-						))}
-					</div>
-
-					{/* Benefits - compact */}
-					<div className="grid md:grid-cols-3 gap-6 items-start">
-						{BENEFITS.map((b) => {
-							const Icon = b.icon;
-							return (
-								<div key={b.title} className="flex gap-4 items-start">
-									<div className="p-2 rounded-md bg-zinc-800/60">
-										<Icon className="w-6 h-6 text-white" />
-									</div>
-									<div>
-										<h3 className="font-semibold text-white">{b.title}</h3>
-										<p className="text-zinc-400 text-sm mt-1">{b.description}</p>
-									</div>
-								</div>
-							);
-						})}
-					</div>
-				</div>
-
-				{/* Footer pinned to bottom of section */}
-				<div className="absolute bottom-0 left-0 right-0">
-					<Footer />
-				</div>
-			</section>
-
-		</div>
-	);
+        <Footer />
+      </section>
+    </div>
+  );
 }

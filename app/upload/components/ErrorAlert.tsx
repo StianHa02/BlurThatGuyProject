@@ -9,13 +9,15 @@ interface ErrorAlertProps {
 
 export function ErrorAlert({ message, onDismiss }: ErrorAlertProps) {
   return (
-    <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
-      <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-      <div className="flex-1">
-        <p className="text-red-400 text-sm">{message}</p>
-      </div>
-      <button onClick={onDismiss} className="text-red-400 hover:text-red-300">
-        <X className="w-4 h-4" />
+    <div style={{
+      marginBottom: 24, padding: 16, borderRadius: 6,
+      background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',
+      display: 'flex', alignItems: 'flex-start', gap: 12,
+    }}>
+      <AlertCircle style={{ width: 18, height: 18, color: '#f87171', flexShrink: 0, marginTop: 2 }} />
+      <p style={{ flex: 1, color: '#f87171', fontSize: 14 }}>{message}</p>
+      <button onClick={onDismiss} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171', padding: 0 }}>
+        <X style={{ width: 16, height: 16 }} />
       </button>
     </div>
   );

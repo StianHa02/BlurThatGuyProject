@@ -2,44 +2,31 @@ import { LucideIcon } from 'lucide-react';
 
 interface FeatureCardProps {
   icon: LucideIcon;
-  step: number;
+  step: string;
   title: string;
   description: string;
-  color: 'indigo' | 'purple' | 'pink';
 }
 
-const colorClasses = {
-  indigo: {
-    bg: 'bg-indigo-500/10',
-    bgHover: 'group-hover:bg-indigo-500/20',
-    text: 'text-indigo-400',
-    border: 'hover:border-indigo-500/50',
-  },
-  purple: {
-    bg: 'bg-purple-500/10',
-    bgHover: 'group-hover:bg-purple-500/20',
-    text: 'text-purple-400',
-    border: 'hover:border-purple-500/50',
-  },
-  pink: {
-    bg: 'bg-pink-500/10',
-    bgHover: 'group-hover:bg-pink-500/20',
-    text: 'text-pink-400',
-    border: 'hover:border-pink-500/50',
-  },
-};
-
-export function FeatureCard({ icon: Icon, step, title, description, color }: FeatureCardProps) {
-  const colors = colorClasses[color];
-
+export function FeatureCard({ icon: Icon, step, title, description }: FeatureCardProps) {
   return (
-    <div className={`glass rounded-2xl p-6 group ${colors.border} transition-colors`}>
-      <div className={`w-12 h-12 rounded-xl ${colors.bg} flex items-center justify-center mb-4 ${colors.bgHover} transition-colors`}>
-        <Icon className={`w-6 h-6 ${colors.text}`} />
+    <div className="feature-card">
+      <span className="step-ghost">{step}</span>
+      <div style={{
+        width: 38, height: 38, borderRadius: 3,
+        border: '1px solid rgba(200,245,90,0.2)',
+        background: 'rgba(200,245,90,0.06)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginBottom: 20,
+      }}>
+        <Icon style={{ width: 16, height: 16, color: 'var(--primary)' }} />
       </div>
-      <div className={`text-sm ${colors.text} font-medium mb-2`}>Step {step}</div>
-      <h3 className="text-xl font-semibold mb-2">{title}</h3>
-      <p className="text-zinc-400 text-sm">{description}</p>
+      <div className="section-label" style={{ marginBottom: 10 }}>Step {step}</div>
+      <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: 22, color: 'var(--foreground)', marginBottom: 10, letterSpacing: '-0.01em' }}>
+        {title}
+      </h3>
+      <p style={{ color: 'var(--muted-foreground)', fontSize: 14, lineHeight: 1.75, fontWeight: 300 }}>
+        {description}
+      </p>
     </div>
   );
 }

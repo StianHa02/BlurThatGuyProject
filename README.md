@@ -86,6 +86,7 @@ docker-compose down
 ```bash
 # Start with hot reload enabled
 docker-compose -f docker-compose.dev.yml up --build
+npm run dev
 
 # Code changes automatically reload!
 # Frontend: Changes to app/ files reload instantly

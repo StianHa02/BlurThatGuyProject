@@ -1,53 +1,43 @@
-// Convert Footer to a client component so we can reveal the "Created by" link on scroll
 'use client';
 
-import { EyeOff, ExternalLink } from 'lucide-react';
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { Eye } from 'lucide-react';
 
-export function Footer() {
-  const [showCreator, setShowCreator] = useState(false);
+interface FooterProps {
+  tagline?: string;
+  creatorName?: string;
+  creatorUrl?: string;
+}
 
-  useEffect(() => {
-    const onScroll = () => {
-      setShowCreator(window.scrollY > 0);
-    };
-
-    // Check initial position (in case page isn't at top)
-    onScroll();
-
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
+export function Footer({
+  tagline = 'Built with privacy in mind. Powered by YuNet.',
+  creatorName = 'Stian Gia Huy Ha',
+  creatorUrl = 'https://stianha.com',
+}: FooterProps) {
   return (
-    <footer className="py-8 px-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <EyeOff className="w-3 h-3 text-white" />
-            </div>
-            <span className="text-sm text-zinc-500">BlurThatGuy</span>
-          </Link>
-          <p className="text-sm text-zinc-500">
-            Built with privacy in mind. Face detection powered by YuNet.
-          </p>
+    <div style={{
+      position: 'absolute', bottom: 0, left: 0, right: 0,
+      padding: '20px 48px',
+      borderTop: '1px solid rgba(245,240,232,0.05)',
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      flexWrap: 'wrap', gap: 12,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ width: 20, height: 20, borderRadius: 2, background: '#c8f55a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Eye style={{ width: 10, height: 10, color: '#0e1a13' }} />
         </div>
-
-        <div className="flex justify-center pt-4">
-          <a
-            href="https://stianha.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-linear-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 text-indigo-400 hover:text-indigo-300 hover:border-indigo-500/40 text-sm font-medium transform transition-transform ${showCreator ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'}`}
-          >
-            <span>Created by</span>
-            <span className="font-semibold">Stian Gia Huy Ha</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        </div>
+        <span style={{ fontSize: 13, color: '#5a6e5e', fontFamily: "'DM Sans', sans-serif" }}>BlurThatGuy</span>
       </div>
-    </footer>
+      <span style={{ fontSize: 13, color: '#5a6e5e', fontFamily: "'DM Sans', sans-serif" }}>{tagline}</span>
+      <a
+        href={creatorUrl} target="_blank" rel="noopener noreferrer"
+        style={{
+          fontSize: 13, color: '#c8f55a', textDecoration: 'none',
+          borderBottom: '1px solid rgba(200,245,90,0.25)', paddingBottom: 1,
+          fontFamily: "'DM Sans', sans-serif",
+        }}
+      >
+        {creatorName} ↗
+      </a>
+    </div>
   );
 }
