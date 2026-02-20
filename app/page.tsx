@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Shield, Zap, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
-import { Navbar, FeatureCard, Footer, CTASection } from './components';
+import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
+import { Navbar, FeatureCard, Footer } from './components';
 import { useEffect, useState } from 'react';
 
 const FEATURES = [
@@ -132,9 +132,9 @@ export default function Home() {
 				</div>
 			</div>
 
-			{/* How It Works Section */}
-			<section id="how-it-works" className="py-16 px-6">
-				<div className="max-w-7xl mx-auto">
+			{/* How It Works + Benefits Section */}
+			<section id="how-it-works" className="relative min-h-screen flex flex-col px-6 pt-28 pb-32">
+				<div className="max-w-7xl mx-auto w-full">
 					<div className="text-center mb-12">
 						<h2 className="text-4xl font-bold mb-4">How it works</h2>
 						<p className="text-zinc-400 text-lg max-w-2xl mx-auto">
@@ -142,17 +142,13 @@ export default function Home() {
 						</p>
 					</div>
 
-					<div className="grid md:grid-cols-3 gap-6">
+					<div className="grid md:grid-cols-3 gap-6 mb-12">
 						{FEATURES.map((feature) => (
 							<FeatureCard key={feature.step} {...feature} />
 						))}
 					</div>
-				</div>
-			</section>
 
-			{/* Benefits - compact */}
-			<section className="py-8 px-6">
-				<div className="max-w-7xl mx-auto">
+					{/* Benefits - compact */}
 					<div className="grid md:grid-cols-3 gap-6 items-start">
 						{BENEFITS.map((b) => {
 							const Icon = b.icon;
@@ -170,17 +166,13 @@ export default function Home() {
 						})}
 					</div>
 				</div>
+
+				{/* Footer pinned to bottom of section */}
+				<div className="absolute bottom-0 left-0 right-0">
+					<Footer />
+				</div>
 			</section>
 
-			<CTASection
-				icon={Zap}
-				title="Ready to protect privacy?"
-				description="Start anonymizing faces in your videos today. No account or installation needed."
-				buttonText="Upload Your First Video"
-				buttonIcon={Upload}
-				buttonHref="/upload"
-			/>
-			<Footer />
 		</div>
 	);
 }
