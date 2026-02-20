@@ -67,7 +67,7 @@ export default function Home() {
 						{/* Badge */}
 						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs sm:text-sm font-medium mb-4 sm:mb-6 backdrop-blur-sm">
 							<Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-							Privacy-First Video Processing
+							Piva-First Video Processing
 						</div>
 
 						{/* Hero Headline */}

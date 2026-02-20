@@ -1,26 +1,6 @@
-# Development docker-compose - uses hot reloading
+# Development docker-compose - backend only
+# Run frontend natively with: npm run dev
 services:
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend.dev
-    ports:
-      - "3000:3000"
-    environment:
-      # Server-side API URL (inside Docker network, use service name)
-      API_URL: http://backend:8000
-      API_KEY: ""
-      # Required for hot reload: bind mounts in Docker (Mac/Windows) don't propagate inotify
-      CHOKIDAR_USEPOLLING: "true"
-      WATCHPACK_POLLING: "true"
-      # Dev server must listen on 0.0.0.0 to be reachable from host
-      HOSTNAME: "0.0.0.0"
-    volumes:
-      - .:/app
-      - /app/node_modules
-    depends_on:
-      - backend
-
   backend:
     build:
       context: .
