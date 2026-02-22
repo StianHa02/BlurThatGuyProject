@@ -28,7 +28,7 @@ try:
     spec = importlib.util.find_spec("dotenv")
     if spec is not None:
         dotenv = importlib.import_module("dotenv")
-        _env_path = Path(__file__).parent / "..env.local"
+        _env_path = Path(__file__).parent / ".env.local"
         dotenv.load_dotenv(dotenv_path=_env_path)
 except Exception:
     # If python-dotenv is not installed, continue without crashing; environment must be provided by system
