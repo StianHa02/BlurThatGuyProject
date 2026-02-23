@@ -204,6 +204,12 @@ python -c "import secrets; print(secrets.token_hex(32))"
 - FastAPI
 - OpenCV with YuNet face detection
 
+**Deployment:**
+- Docker
+- AWS EC2
+- Nginx
+- Github Actions - CI/CD
+
 ---
 
 ## 📁 Project Structure
