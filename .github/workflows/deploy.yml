@@ -19,19 +19,14 @@ jobs:
           script: |
             set -e
 
-            echo "📂 Going to project directory"
             cd BlurThatGuyProject
 
-            echo "⬇️ Pulling latest changes"
             git pull origin main
 
-            echo "🛑 Stopping containers"
             docker compose down
 
-            echo "🗑 Removing old images"
             docker image prune -af
 
-            echo "🔨 Rebuilding and starting containers"
             docker compose up -d --build
 
-            echo "✅ Deployment complete"
+            echo "Deployment complete"
