@@ -1,7 +1,5 @@
 # BlurThatGuy (For a Competition by FONN Group)
 
-AI-powered face detection and selective blurring for videos. Protect privacy with one click.
-
 TODO:
 Nice to have
 A demo video in the README — a 30 second GIF or screen recording. Employers often won't run it locally so show it working.
@@ -12,6 +10,7 @@ Remove the excessive console.logs in useVideoExport.ts — there are about 10 de
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 
 ---
+
 ## Preface
 
 As part of this competition, I specialized in building **frontend** using React/Next.js and deploying the **infrastructure** on AWS EC2 with Docker.
@@ -22,45 +21,44 @@ The backend was implemented with FastAPI to align with the original architecture
 
 ---
 
-## Tech Stack
-
-**Frontend:**
-- Next.js 
-- React 
-- Tailwind CSS 
-- TypeScript
-
-**Backend:**
-- Python 
-- FastAPI
-- OpenCV with YuNet face detection
-
-**Deployment:**
-- Docker
-- AWS EC2
-- Nginx
-- GitHub Actions - CI/CD
+## Leardning Outcomes
+- Deployed a Next.js frontend on AWS EC2 with Docker
+- Deployed a FastAPI backend on AWS EC2 with Docker
+- Used OpenCV to detect faces in videos
 
 ---
 
+## Table of Contents
+- [Quick Start](#quick-start)
+- [Environment Configuration](#environment-configuration)
+- [How to Use](#how-to-use)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Docker Tips](#docker-tips)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+---
 
 ## Quick Start
 
-### Option 1: Try Instantly in Your Browser
+### Option 1: Run on Your Browser
 
 **Requirements:**
-- Modern web browser
+- Web browser
 - (Contact me to start the EC2 instance)
 
 **Live Demo:**
 [https://blurthatguy.no/](https://blurthatguy.no/)
+
+---
 
 
 ### Option 2: Run with Docker
 
 **Requirements:**
 - Docker Desktop
-- Setup EnvironmentVariable (look av setup section under)
+- Setup Environment Variable (look av setup section under)
 
 **For Regular Use:**
 ```bash
@@ -79,9 +77,10 @@ docker-compose down
 # Start with hot reload enabled
 docker-compose -f docker-compose.dev.yml up --build
 
+# on another terminal
+pnpm run dev
+
 # Code changes automatically reload!
-# Frontend: Changes to app/ files reload instantly
-# Backend: Changes to backend/ files reload automatically
 ```
 
 Open [http://localhost:3000](http://localhost:3000)
@@ -94,7 +93,7 @@ Open [http://localhost:3000](http://localhost:3000)
 - Node.js 20+
 - Python 3.11+
 - pnpm (install with `npm install -g pnpm`)
-- Setup EnvironmentVariable (look av setup section under)
+- Setup Environment Variable (look av setup section under)
 
 **Terminal 1 - Start Backend:**
 ```bash
@@ -120,32 +119,6 @@ pnpm dev
 Open [http://localhost:3000](http://localhost:3000) ✨
 
 > **Note**: Local development runs in `DEV_MODE` which disables API key requirements. The frontend `.env.local` points to `http://localhost:8000` for the backend connection.
-
----
-
-
-
-## How to Use
-
-1. **Upload Video**
-   - Click "Upload" or drag & drop your video file
-   - Supported formats: MP4, WebM, MOV
-   - Max size: 100MB
-
-2. **Detect Faces**
-   - Click "Start Detection"
-   - AI will scan through your video and find all faces
-   - Processing time: ~10-15 seconds for a 2-minute video
-
-3. **Select Faces to Blur**
-   - Play the video
-   - Click on faces with red frames to blur them
-   - Selected faces appear pixelated
-   - Click blurred faces to unblur
-
-4. **Download**
-   - Click "Download Video"
-   - Your processed video will download with selected faces permanently blurred
 
 ---
 
@@ -190,7 +163,7 @@ BACKEND_URL=http://backend:8000
 **Backend** (`.env.prod` or environment file):
 ```bash
 API_KEY=same-api-key-as-frontend
-ALLOWED_ORIGINS=http://your-domain.com
+ALLOWED_ORIGINS=https://your-domain.com
 MAX_UPLOAD_SIZE_MB=100
 ```
 
@@ -210,6 +183,53 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 ---
 
+
+
+## How to Use
+
+1. **Upload Video**
+   - Click "Upload" or drag & drop your video file
+   - Supported formats: MP4, WebM, MOV
+   - Max size: 100MB
+
+2. **Detect Faces**
+   - Click "Start Detection"
+   - AI will scan through your video and find all faces
+   - Processing time: ~60 seconds for a 2-minute video
+
+3. **Select Faces to Blur**
+   - Play the video
+   - Click on faces with red frames to blur them
+   - Or select faces in the face gallery
+   - Selected faces appear pixelated
+   - Click blurred faces to unblur
+
+4. **Download**
+   - Click "Download Video"
+   - Your processed video will download with selected faces permanently blurred
+
+---
+
+## Tech Stack
+
+**Frontend:**
+- Next.js 
+- React 
+- Tailwind CSS 
+- TypeScript
+
+**Backend:**
+- Python 
+- FastAPI
+- OpenCV with YuNet face detection
+
+**Deployment:**
+- Docker
+- AWS EC2
+- Nginx
+- GitHub Actions - CI/CD
+
+---
 
 
 ## Project Structure
