@@ -32,99 +32,94 @@ export function FaceGallery({
   useEffect(() => {
     if (tracks.length === 0) return;
 
-    console.log('🖼️ Starting thumbnail extraction for', tracks.length, 'faces');
-
     const extractThumbnails = async () => {
       setLoading(true);
       const video = document.createElement('video');
       video.src = videoUrl;
       video.crossOrigin = 'anonymous';
       video.muted = true;
+      // preload metadata + enough data to seek
+      video.preload = 'auto';
 
-      console.log('Loading video:', videoUrl);
-
-      await new Promise<void>((resolve) => {
-        video.addEventListener('loadedmetadata', () => {
-          console.log('✅ Video loaded:', video.videoWidth, 'x', video.videoHeight);
-          resolve();
-        }, { once: true });
+      await new Promise<void>((resolve, reject) => {
+        video.addEventListener('canplaythrough', () => resolve(), { once: true });
+        video.addEventListener('error', () => reject(new Error('Video load error')), { once: true });
+        // Fallback: if loadedmetadata fires but canplaythrough is slow, proceed anyway
+        setTimeout(resolve, 8000);
+        video.load();
       });
 
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        console.error('❌ Could not get canvas context');
-        return;
-      }
+      if (!ctx) return;
 
       const newThumbnails = new Map<number, string>();
 
+      /**
+       * Seek helper — attaches the listener BEFORE setting currentTime
+       * and includes a timeout fallback so we never hang.
+       */
+      const seekTo = (time: number): Promise<void> =>
+        new Promise<void>((resolve) => {
+          const TIMEOUT_MS = 3000;
+          let settled = false;
+
+          const settle = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            video.removeEventListener('seeked', onSeeked);
+            video.removeEventListener('error', onSeeked);
+            resolve();
+          };
+
+          const onSeeked = () => settle();
+          const timer = setTimeout(settle, TIMEOUT_MS);
+
+          // Attach BEFORE mutating currentTime
+          video.addEventListener('seeked', onSeeked, { once: true });
+          video.addEventListener('error', onSeeked, { once: true });
+
+          // If we're already at (approximately) this time, seeked won't fire
+          if (Math.abs(video.currentTime - time) < 0.001) {
+            settle();
+          } else {
+            video.currentTime = time;
+          }
+        });
+
       for (const track of tracks) {
-        // Use middle frame for best representation
         const middleIndex = Math.floor(track.frames.length / 2);
         const frame = track.frames[middleIndex];
+        if (!frame) continue;
 
-        if (!frame) {
-          console.warn('⚠️ No frame found for track', track.id);
-          continue;
-        }
+        const frameTime = frame.frameIndex / 30;
+        await seekTo(frameTime);
 
-        console.log(`📸 Extracting thumbnail for face ${track.id} at frame ${frame.frameIndex}`);
+        const [x, y, w, h] = frame.bbox;
+        const padding = 0.3;
+        const paddedX = Math.max(0, x - w * padding);
+        const paddedY = Math.max(0, y - h * padding);
+        const paddedW = Math.min(w * (1 + padding * 2), video.videoWidth - paddedX);
+        const paddedH = Math.min(h * (1 + padding * 2), video.videoHeight - paddedY);
 
-        // Seek to frame
-        const frameTime = frame.frameIndex / 30; // Assuming 30fps
-        video.currentTime = frameTime;
+        const thumbSize = 96;
+        canvas.width = thumbSize;
+        canvas.height = thumbSize;
 
-        await new Promise<void>((resolve) => {
-          video.addEventListener('seeked', async () => {
-            const [x, y, w, h] = frame.bbox;
+        ctx.drawImage(video, paddedX, paddedY, paddedW, paddedH, 0, 0, thumbSize, thumbSize);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+        newThumbnails.set(track.id, dataUrl);
 
-            console.log(`  Face bbox: x=${x}, y=${y}, w=${w}, h=${h}`);
-
-            // Add padding around face
-            const padding = 0.3;
-            const paddedX = Math.max(0, x - w * padding);
-            const paddedY = Math.max(0, y - h * padding);
-            const paddedW = Math.min(w * (1 + padding * 2), video.videoWidth - paddedX);
-            const paddedH = Math.min(h * (1 + padding * 2), video.videoHeight - paddedY);
-
-            // Create square thumbnail (slightly smaller for faster generation)
-            const thumbSize = 96;
-            canvas.width = thumbSize;
-            canvas.height = thumbSize;
-
-            // Draw face to canvas (centered and cropped)
-            ctx.drawImage(
-              video,
-              paddedX,
-              paddedY,
-              paddedW,
-              paddedH,
-              0,
-              0,
-              thumbSize,
-              thumbSize
-            );
-
-            // Convert to data URL (lower quality for speed/smaller payload)
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
-            console.log(`  Thumbnail created for face ${track.id}`);
-            newThumbnails.set(track.id, dataUrl);
-
-            // Update state incrementally so early thumbnails appear sooner
-            setThumbnails(new Map(newThumbnails));
-
-            resolve();
-          }, { once: true });
-        });
+        // Incrementally show thumbnails as they're ready
+        setThumbnails(new Map(newThumbnails));
       }
 
-      console.log('🎉 All thumbnails extracted:', newThumbnails.size);
       setLoading(false);
     };
 
     extractThumbnails().catch(err => {
-      console.error(' Thumbnail extraction failed:', err);
+      console.error('Thumbnail extraction failed:', err);
       setLoading(false);
     });
   }, [tracks, videoUrl]);
@@ -140,59 +135,58 @@ export function FaceGallery({
       </div>
 
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
-        {[...tracks].sort((a, b) => (a.frames[0]?.frameIndex ?? 0) - (b.frames[0]?.frameIndex ?? 0)).map((track, index) => {
-          const isSelected = selectedTrackIds.includes(track.id);
-          const thumbnail = thumbnails.get(track.id);
+        {[...tracks]
+          .sort((a, b) => (a.frames[0]?.frameIndex ?? 0) - (b.frames[0]?.frameIndex ?? 0))
+          .map((track, index) => {
+            const isSelected = selectedTrackIds.includes(track.id);
+            const thumbnail = thumbnails.get(track.id);
 
-          return (
-            <button
-              key={track.id}
-              onClick={() => onToggleTrack(track.id)}
-              className={`
-                relative aspect-square rounded-lg overflow-hidden
-                border-2 transition-all group
-                ${isSelected 
-                  ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-lg shadow-indigo-500/20' 
-                  : 'border-zinc-700 hover:border-zinc-600 hover:scale-105'
-                }
-              `}
-              title={`Face ${index + 1} - Appears in ${track.frames.length} frames`}
-            >
-              {/* Face Thumbnail or Placeholder */}
-              {thumbnail ? (
-                <img
-                  src={thumbnail}
-                  alt={`Face ${index + 1}`}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className={`
-                  w-full h-full flex items-center justify-center text-2xl font-bold transition-colors
-                  ${isSelected ? 'bg-indigo-900/30 text-indigo-300' : 'bg-zinc-800 text-zinc-600 group-hover:text-zinc-500'}
-                `}>
-                  {loading ? '...' : index + 1}
-                </div>
-              )}
-
-              {/* Selection Indicator */}
-              {isSelected && (
-                <div className="absolute inset-0 bg-indigo-500/30 flex items-center justify-center backdrop-blur-[2px]">
-                  <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center shadow-lg">
-                    <Check className="w-6 h-6 text-white" strokeWidth={3} />
+            return (
+              <button
+                key={track.id}
+                onClick={() => onToggleTrack(track.id)}
+                className={`
+                  relative aspect-square rounded-lg overflow-hidden
+                  border-2 transition-all group
+                  ${isSelected
+                    ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-lg shadow-indigo-500/20'
+                    : 'border-zinc-700 hover:border-zinc-600 hover:scale-105'
+                  }
+                `}
+                title={`Face ${index + 1} - Appears in ${track.frames.length} frames`}
+              >
+                {thumbnail ? (
+                  <img
+                    src={thumbnail}
+                    alt={`Face ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className={`
+                    w-full h-full flex items-center justify-center text-2xl font-bold transition-colors
+                    ${isSelected ? 'bg-indigo-900/30 text-indigo-300' : 'bg-zinc-800 text-zinc-600 group-hover:text-zinc-500'}
+                  `}>
+                    {loading ? '...' : index + 1}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Face Number Badge */}
-              <div className={`
-                absolute top-1 left-1 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center backdrop-blur-sm
-                ${isSelected ? 'bg-indigo-500 text-white' : 'bg-zinc-900/70 text-zinc-400'}
-              `}>
-                {index + 1}
-              </div>
-            </button>
-          );
-        })}
+                {isSelected && (
+                  <div className="absolute inset-0 bg-indigo-500/30 flex items-center justify-center backdrop-blur-[2px]">
+                    <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center shadow-lg">
+                      <Check className="w-6 h-6 text-white" strokeWidth={3} />
+                    </div>
+                  </div>
+                )}
+
+                <div className={`
+                  absolute top-1 left-1 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center backdrop-blur-sm
+                  ${isSelected ? 'bg-indigo-500 text-white' : 'bg-zinc-900/70 text-zinc-400'}
+                `}>
+                  {index + 1}
+                </div>
+              </button>
+            );
+          })}
       </div>
 
       {tracks.length === 0 && (

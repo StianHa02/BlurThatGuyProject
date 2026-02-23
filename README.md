@@ -3,12 +3,9 @@
 AI-powered face detection and selective blurring for videos. Protect privacy with one click.
 
 TODO: 
-Switch to MediaPipe — YuNet misses partial and side faces which looks bad in a live demo. MediaPipe is a straight swap, no model download needed, handles real-world faces much better.
 CI/CD pipeline — already done, just need to add the two GitHub secrets and clone the repo on EC2.
 README — doesn't exist yet. Employers look at this first. Include what it does, a screenshot or GIF of it working, how to run locally, and the architecture decisions you can talk about in an interview.
 
-Medium priority
-Switch MediaPipe in the Dockerfile — remove the wget model download block since MediaPipe bundles its own model.
 
 Nice to have
 A demo video in the README — a 30 second GIF or screen recording. Employers often won't run it locally so show it working.
