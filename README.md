@@ -1,12 +1,8 @@
-# BlurThatGuy 🙈
+# BlurThatGuy (For a Competition by FONN Group)
 
 AI-powered face detection and selective blurring for videos. Protect privacy with one click.
 
-TODO: 
-CI/CD pipeline — already done, just need to add the two GitHub secrets and clone the repo on EC2.
-README — doesn't exist yet. Employers look at this first. Include what it does, a screenshot or GIF of it working, how to run locally, and the architecture decisions you can talk about in an interview.
-
-
+TODO:
 Nice to have
 A demo video in the README — a 30 second GIF or screen recording. Employers often won't run it locally so show it working.
 Remove the excessive console.logs in useVideoExport.ts — there are about 10 debug logs in there from when you were fixing the stale closure bug. Clean those up before showing anyone the code.
@@ -15,22 +11,48 @@ Remove the excessive console.logs in useVideoExport.ts — there are about 10 de
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 
-## Features
+---
+## Preface
 
-- 🎯 **AI Face Detection** - Powered by YuNet for accurate face detection
-- 🎬 **Video Processing** - Upload MP4, WebM, or MOV files up to 100MB
-- 👆 **Click to Blur** - Select which faces to anonymize
-- ⚡ **Batch Processing** - Process 25 frames at once for maximum speed
-- 📥 **Export** - Download processed video with faces permanently blurred
-- 🔒 **Privacy First** - All processing happens on your computer
+As part of this competition, I specialized in building **frontend** using React/Next.js and deploying the **infrastructure** on AWS EC2 with Docker.
+
+The application was initially developed with a backend hosted on EC2 and a frontend deployed on Vercel. However, due to payload size limitations, I chose to deploy both the frontend and backend on AWS EC2.
+
+The backend was implemented with FastAPI to align with the original architecture and ensure efficient, scalable API development.
+
+---
+
+## Tech Stack
+
+**Frontend:**
+- Next.js 
+- React 
+- Tailwind CSS 
+- TypeScript
+
+**Backend:**
+- Python 
+- FastAPI
+- OpenCV with YuNet face detection
+
+**Deployment:**
+- Docker
+- AWS EC2
+- Nginx
+- GitHub Actions - CI/CD
 
 ---
 
 
+## Quick Start
 
-## 🚀 Quick Start
+### Option 1: Try Instantly in Your Browser
 
-### Option 1: Run it on the your browser (Fastest)
+**Requirements:**
+- Modern web browser
+- (Contact me to start the EC2 instance)
+
+**Live Demo:**
 [https://blurthatguy.no/](https://blurthatguy.no/)
 
 
@@ -62,7 +84,7 @@ docker-compose -f docker-compose.dev.yml up --build
 # Backend: Changes to backend/ files reload automatically
 ```
 
-Open [http://localhost:3000](http://localhost:3000) ✨
+Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
@@ -103,7 +125,7 @@ Open [http://localhost:3000](http://localhost:3000) ✨
 
 
 
-## 📖 How to Use
+## How to Use
 
 1. **Upload Video**
    - Click "Upload" or drag & drop your video file
@@ -127,7 +149,7 @@ Open [http://localhost:3000](http://localhost:3000) ✨
 
 ---
 
-## 🔐 Environment Configuration
+## Environment Configuration
 
 ### Local Development (No API Key Required)
 
@@ -181,53 +203,53 @@ openssl rand -hex 32
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-> ⚠️ **Important**: 
+>  **Important**:
 > - Never commit `.env.local` or `.env.prod` files to git
 > - Only commit `.env.local.example` files as templates
 > - Use the same API key for both frontend and backend in production
 
 ---
 
-## 🔧 Tech Stack
 
-**Frontend:**
-- Next.js 16
-- React 19
-- Tailwind CSS 4
-- TypeScript
 
-**Backend:**
-- Python 3.11
-- FastAPI
-- OpenCV with YuNet face detection
-
-**Deployment:**
-- Docker
-- AWS EC2
-- Nginx
-- Github Actions - CI/CD
-
----
-
-## 📁 Project Structure
+## Project Structure
 
 ```
-blurthatguy/
+BlurThatGuyProject/
 ├── app/                    # Next.js frontend
-│   ├── components/         # React components
-│   ├── upload/             # Upload page & hooks
-│   └── api/                # API routes
+│   ├── api/                # Next.js API routes
+│   ├── components/         # Components for landing page
+│   ├── upload/             # Upload page & related
+│   │   ├── components/     # Components for upload page
+│   │   ├── hooks/          # Upload-related hooks
+│   │   └── page.tsx        # Upload page
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx            # Main landing page
 ├── backend/                # Python FastAPI backend
-│   ├── main.py             # API endpoints
+│   ├── main.py             # Main backend file and API endpoints
 │   ├── models/             # YuNet face detection model
 │   └── requirements.txt    # Python dependencies
+├── lib/                    # Shared TypeScript/JS utilities
+│   ├── config.ts
+│   ├── faceClient.ts
+│   └── tracker.ts
+├── public/                 # Static files
+│   ├── favicon.ico
+│   └── Test video/         # Example videos
 ├── docker-compose.yml      # Docker configuration
-└── README.md               # This file
+├── docker-compose.dev.yml  # Docker dev config
+├── Dockerfile.backend      # Backend Dockerfile
+├── Dockerfile.frontend     # Frontend Dockerfile
+├── Dockerfile.frontend.dev # Frontend dev Dockerfile
+├── README.md               # This file
+├── LICENSE                 # MIT License
+└── ...                     # Other config/scripts
 ```
 
 ---
 
-## 💡 Docker Tips
+## Docker Tips
 
 **View logs:**
 ```bash
@@ -261,7 +283,7 @@ docker-compose ps
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 **Video won't upload (413 error)**
 - Make sure your video is under 100MB
@@ -290,18 +312,11 @@ lsof -ti:8000 | xargs kill -9
 
 ---
 
-## 🔐 Privacy & Security
 
-- All video processing happens **locally** on your machine
-- Videos are **not uploaded** to any external servers
-- Processed videos are **not stored** anywhere
-- Your data stays **100% private**
 
----
+## License
 
-## 📝 License
-
-MIT
+[MIT](LICENSE)
 
 ---
 
