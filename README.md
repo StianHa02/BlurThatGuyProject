@@ -13,7 +13,7 @@ Remove the excessive console.logs in useVideoExport.ts — there are about 10 de
 
 ## Preface
 
-As part of this competition, I specialized in building **frontend** using React/Next.js and deploying the **infrastructure** on AWS EC2 with Docker.
+As part of this competition, I wanted to specialize in building **frontend** using React/Next.js and deploying the **infrastructure** on AWS EC2 with Docker.
 
 The application was initially developed with a backend hosted on EC2 and a frontend deployed on Vercel. However, due to payload size limitations, I chose to deploy both the frontend and backend on AWS EC2.
 
