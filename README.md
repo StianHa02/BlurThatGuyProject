@@ -8,7 +8,6 @@ CI/CD pipeline — already done, just need to add the two GitHub secrets and clo
 README — doesn't exist yet. Employers look at this first. Include what it does, a screenshot or GIF of it working, how to run locally, and the architecture decisions you can talk about in an interview.
 
 Medium priority
-Drop batch size to 25 — the progress bar currently jumps in one big chunk. Smaller batches make it feel more responsive and alive during a demo.
 Switch MediaPipe in the Dockerfile — remove the wget model download block since MediaPipe bundles its own model.
 
 Nice to have
@@ -24,7 +23,7 @@ Remove the excessive console.logs in useVideoExport.ts — there are about 10 de
 - 🎯 **AI Face Detection** - Powered by YuNet for accurate face detection
 - 🎬 **Video Processing** - Upload MP4, WebM, or MOV files up to 100MB
 - 👆 **Click to Blur** - Select which faces to anonymize
-- ⚡ **Batch Processing** - Process 300 frames at once for maximum speed
+- ⚡ **Batch Processing** - Process 25 frames at once for maximum speed
 - 📥 **Export** - Download processed video with faces permanently blurred
 - 🔒 **Privacy First** - All processing happens on your computer
 

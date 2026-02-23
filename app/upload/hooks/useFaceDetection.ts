@@ -65,8 +65,8 @@ export function useFaceDetection({ sampleRate, fileUrl, fileRef, onError }: UseD
 
     const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
 
-    // BATCH PROCESSING: Process up to 200 frames at a time (maximum allowed by backend)
-    const BATCH_SIZE = 200;
+    // BATCH PROCESSING: Process up to 25 frames at a time (maximum allowed by backend)
+    const BATCH_SIZE = 25;
     const frameIndices: number[] = [];
     for (let fi = 0; fi < totalFrames; fi += sampleRate) {
       frameIndices.push(fi);
