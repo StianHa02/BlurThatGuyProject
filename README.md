@@ -30,45 +30,19 @@ Remove the excessive console.logs in useVideoExport.ts — there are about 10 de
 
 ---
 
+
+
 ## 🚀 Quick Start
 
-### Option 1: Run Locally (Easiest)
+### Option 1: Run it on the your browser (Fastest)
+[https://blurthatguy.no/](https://blurthatguy.no/)
 
-**Requirements:**
-- Node.js 20+
-- Python 3.11+
-- pnpm (install with `npm install -g pnpm`)
-
-**Terminal 1 - Start Backend:**
-```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Run the server
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**Terminal 2 - Start Frontend:**
-```bash
-# Install and run
-pnpm install
-pnpm dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) ✨
-
-> **Note**: Local development runs in `DEV_MODE` which disables API key requirements. The frontend `.env.local` points to `http://localhost:8000` for the backend connection.
-
----
 
 ### Option 2: Run with Docker
 
 **Requirements:**
 - Docker Desktop
+- Setup EnvironmentVariable (look av setup section under)
 
 **For Regular Use:**
 ```bash
@@ -95,6 +69,43 @@ docker-compose -f docker-compose.dev.yml up --build
 Open [http://localhost:3000](http://localhost:3000) ✨
 
 ---
+
+### Option 3: Run Locally
+
+**Requirements:**
+- Node.js 20+
+- Python 3.11+
+- pnpm (install with `npm install -g pnpm`)
+- Setup EnvironmentVariable (look av setup section under)
+
+**Terminal 1 - Start Backend:**
+```bash
+cd backend
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Run the server
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Terminal 2 - Start Frontend:**
+
+```bash
+# Install and run
+pnpm install
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) ✨
+
+> **Note**: Local development runs in `DEV_MODE` which disables API key requirements. The frontend `.env.local` points to `http://localhost:8000` for the backend connection.
+
+---
+
+
 
 ## 📖 How to Use
 

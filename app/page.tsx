@@ -10,7 +10,7 @@ const FEATURES = [
 		icon: Upload,
 		step: 1,
 		title: 'Upload Video',
-		description: 'Drag and drop or select your MP4 video file. Uploaded securely over HTTPS and processed on our private server.',
+		description: 'Upload your video to get started. Supports MP4, MOV, and WebM.',
 		color: 'indigo' as const,
 	},
 	{
@@ -33,12 +33,12 @@ const BENEFITS = [
 	{
 		icon: Lock,
 		title: 'Privacy First',
-		description: 'Processed securely on our servers via encrypted HTTPS. Your footage is never shared with third-party AI services.',
+		description: 'We handle everything on AWS EC2 servers. No third parties ever see your footage.',
 	},
 	{
 		icon: Gauge,
 		title: 'Lightning Fast',
-		description: 'Batch processing technology analyzes 200 frames at once for maximum speed.',
+		description: 'Processed on AWS high-performance cloud servers for super fast results.',
 	},
 	{
 		icon: Eye,
@@ -67,20 +67,20 @@ export default function Home() {
 						{/* Badge */}
 						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs sm:text-sm font-medium mb-4 sm:mb-6 backdrop-blur-sm">
 							<Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-							Piva-First Video Processing
+							Privacy-First Video Processing
 						</div>
 
 						{/* Hero Headline */}
-						<h1 className="text-4xl sm:text-6xl md:text-7xl font-bold tracking-tight mb-3 sm:mb-4 leading-tight">
-							<span className="gradient-text">Blur faces</span> in your videos
-							<br />
-							<span className="text-white">with one click</span>
+						<h1 className="font-bold tracking-tight mb-3 sm:mb-4 leading-tight">
+							<span className="gradient-text text-5xl sm:text-7xl md:text-8xl block font-nippo">
+  								BLUR THAT GUY
+							</span>
 						</h1>
 
 						{/* Subheadline */}
 						<p className="text-base sm:text-lg text-zinc-400 mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
 							AI-powered face detection and selective blurring built with OpenCV.
-							Protect privacy, and maintain anonymity with secure processing on AWS EC2 via HTTPS.
+							<br/>Processed securely with end-to-end encryption.
 						</p>
 
 						{/* CTA Buttons */}
@@ -90,7 +90,7 @@ export default function Home() {
 								className="group inline-flex items-center justify-center gap-2 px-7 py-3 sm:px-8 sm:py-4 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition-all font-semibold text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
 							>
 								<Upload className="w-5 h-5 group-hover:scale-110 transition-transform" />
-								Start Blurring
+								Start Uploading
 							</Link>
 							<a
 								href="/#how-it-works"
@@ -149,7 +149,7 @@ export default function Home() {
 					</div>
 
 					{/* Benefits - compact */}
-					<div className="grid md:grid-cols-3 gap-6 items-start">
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
 						{BENEFITS.map((b) => {
 							const Icon = b.icon;
 							return (
