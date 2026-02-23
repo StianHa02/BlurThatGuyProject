@@ -4,6 +4,7 @@ TODO:
 Nice to have
 A demo video in the README — a 30 second GIF or screen recording. Employers often won't run it locally so show it working.
 Remove the excessive console.logs in useVideoExport.ts — there are about 10 debug logs in there from when you were fixing the stale closure bug. Clean those up before showing anyone the code.
+Make blurring in backed consistant with in frontend
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
