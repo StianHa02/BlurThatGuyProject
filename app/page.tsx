@@ -9,7 +9,7 @@ const FEATURES = [
 	{
 		icon: Upload,
 		step: 1,
-		title: 'Uppload Video',
+		title: 'Upload Video',
 		description: 'Upload your video to get started. Supports MP4, MOV, and WebM.',
 		color: 'indigo' as const,
 	},
