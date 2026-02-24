@@ -59,7 +59,7 @@ export default function Home() {
 	return (
 		<div className="bg-zinc-950 bg-grid">
 			{/* Hero Section */}
-			<div className="relative overflow-hidden min-h-screen flex flex-col">
+			<div className="relative h-screen flex flex-col" style={{height: '100dvh'}}>
 				<Navbar />
 
 				<main className="relative z-10 flex-1 flex items-center w-full pt-20 pb-10 sm:pt-28 sm:pb-12">
@@ -132,42 +132,48 @@ export default function Home() {
 			</div>
 
 			{/* How It Works + Benefits Section */}
-			<section id="how-it-works" className="flex flex-col px-6 pt-28 pb-16">
-				<div className="max-w-7xl mx-auto w-full">
-					<div className="text-center mb-12">
-						<h2 className="text-4xl font-bold mb-4">How it works</h2>
-						<p className="text-zinc-400 text-lg max-w-2xl mx-auto">
-							Three simple steps to anonymize faces in your videos
-						</p>
-					</div>
+			<div className="flex flex-col" style={{minHeight: '100dvh'}}>
+				<section id="how-it-works" className="flex-1 flex flex-col items-center justify-center px-6 py-16">
+					<div className="max-w-7xl mx-auto w-full flex flex-col items-center">
 
-					<div className="grid md:grid-cols-3 gap-6 mb-12">
-						{FEATURES.map((feature) => (
-							<FeatureCard key={feature.step} {...feature} />
-						))}
-					</div>
+						{/* Cards - the anchor/center of the screen */}
+						<div className="grid md:grid-cols-3 gap-6 w-full mb-12">
+							{FEATURES.map((feature) => (
+								<FeatureCard key={feature.step} {...feature} />
+							))}
+						</div>
 
-					{/* Benefits - compact */}
-					<div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-						{BENEFITS.map((b) => {
-							const Icon = b.icon;
-							return (
-								<div key={b.title} className="flex gap-4 items-start">
-									<div className="p-2 rounded-md bg-zinc-800/60">
-										<Icon className="w-6 h-6 text-white" />
+						{/* Title above cards */}
+						<div className="text-center order-first mb-12">
+							<h2 className="text-4xl font-bold mb-4">How it works</h2>
+							<p className="text-zinc-400 text-lg max-w-2xl mx-auto">
+								Three simple steps to anonymize faces in your videos
+							</p>
+						</div>
+
+						{/* Benefits below cards */}
+						<div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start w-full">
+							{BENEFITS.map((b) => {
+								const Icon = b.icon;
+								return (
+									<div key={b.title} className="flex gap-4 items-start">
+										<div className="p-2 rounded-md bg-zinc-800/60">
+											<Icon className="w-6 h-6 text-white" />
+										</div>
+										<div>
+											<h3 className="font-semibold text-white">{b.title}</h3>
+											<p className="text-zinc-400 text-sm mt-1">{b.description}</p>
+										</div>
 									</div>
-									<div>
-										<h3 className="font-semibold text-white">{b.title}</h3>
-										<p className="text-zinc-400 text-sm mt-1">{b.description}</p>
-									</div>
-								</div>
-							);
-						})}
-					</div>
-				</div>
-			</section>
+								);
+							})}
+						</div>
 
-			<Footer />
+					</div>
+				</section>
+
+				<Footer />
+			</div>
 
 		</div>
 	);
