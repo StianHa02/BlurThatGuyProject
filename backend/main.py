@@ -125,6 +125,8 @@ async def lifespan(app: FastAPI):
         await cleanup_task
     except asyncio.CancelledError:
         pass
+    if _thread_pool:
+        _thread_pool.shutdown(wait=False)
 
 
 app = FastAPI(title="Face Detection API", lifespan=lifespan)
@@ -374,59 +376,108 @@ def cleanup_old_files():
 # Face Detection Core
 # =============================================================================
 
-_detector = None
+import threading
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+
+# =============================================================================
+# Thread-Safe Detector Pool
+# =============================================================================
+
+# Number of parallel detectors — tune to your CPU core count.
+# Each detector instance is independent and safe to use from one thread at a time.
+DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
+
+# Shared thread pool — created once, reused across all requests
+_thread_pool: ThreadPoolExecutor | None = None
 
 
-def get_face_detector():
-    """Initialize and return YuNet face detector (singleton)"""
-    global _detector
-    if _detector is not None:
-        return _detector
+def get_thread_pool() -> ThreadPoolExecutor:
+    global _thread_pool
+    if _thread_pool is None:
+        _thread_pool = ThreadPoolExecutor(max_workers=DETECTOR_POOL_SIZE)
+        logger.info(f"Thread pool created with {DETECTOR_POOL_SIZE} workers")
+    return _thread_pool
 
-    model_path = Path(__file__).parent / "models" / "face_detection_yunet_2023mar.onnx"
+_model_path: Path | None = None
+_detector_pool: list = []
+_pool_lock = threading.Lock()
+_pool_semaphore: threading.Semaphore | None = None
 
-    # Download model if not present
-    if not model_path.exists():
-        model_path.parent.mkdir(parents=True, exist_ok=True)
+
+def _get_model_path() -> Path:
+    """Ensure model is downloaded and return its path."""
+    global _model_path
+    if _model_path is not None:
+        return _model_path
+    path = Path(__file__).parent / "models" / "face_detection_yunet_2023mar.onnx"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
         model_url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
         logger.info(f"Downloading YuNet model from {model_url}...")
-        urllib.request.urlretrieve(model_url, model_path)
+        urllib.request.urlretrieve(model_url, path)
         logger.info("Model downloaded successfully")
+    _model_path = path
+    return _model_path
 
-    _detector = cv2.FaceDetectorYN.create(
-        model=str(model_path),
+
+def _create_detector() -> cv2.FaceDetectorYN:
+    """Create a fresh detector instance."""
+    return cv2.FaceDetectorYN.create(
+        model=str(_get_model_path()),
         config="",
         input_size=(320, 320),
         score_threshold=FACE_DETECTION_CONFIG["score_threshold"],
         nms_threshold=FACE_DETECTION_CONFIG["nms_threshold"],
-        top_k=FACE_DETECTION_CONFIG["max_faces"]
+        top_k=FACE_DETECTION_CONFIG["max_faces"],
     )
 
-    return _detector
+
+def get_face_detector():
+    """Initialize the detector pool and return one detector (for single-frame use)."""
+    global _detector_pool, _pool_semaphore
+    with _pool_lock:
+        if not _detector_pool:
+            logger.info(f"Creating detector pool with {DETECTOR_POOL_SIZE} instances")
+            _detector_pool = [_create_detector() for _ in range(DETECTOR_POOL_SIZE)]
+            _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
+    # Just return the first detector for single-frame legacy use
+    return _detector_pool[0]
 
 
-def detect_faces(image: np.ndarray) -> list[dict]:
-    """Detect faces in an image using YuNet"""
-    detector = get_face_detector()
-    h, w = image.shape[:2]
-    detector.setInputSize((w, h))
+class _DetectorLease:
+    """Context manager that checks out one detector from the pool."""
+    def __enter__(self):
+        _pool_semaphore.acquire()
+        with _pool_lock:
+            self._det = _detector_pool.pop()
+        return self._det
 
-    _, faces = detector.detect(image)
+    def __exit__(self, *_):
+        with _pool_lock:
+            _detector_pool.append(self._det)
+        _pool_semaphore.release()
+
+
+def _run_detection(image: np.ndarray) -> list[dict]:
+    """Run detection using a leased detector from the pool."""
+    with _DetectorLease() as detector:
+        h, w = image.shape[:2]
+        detector.setInputSize((w, h))
+        _, faces = detector.detect(image)
 
     if faces is None:
         return []
 
-    results = []
-    for face in faces:
-        x, y, w_box, h_box = face[:4]
-        confidence = float(face[-1])
+    return [
+        {"bbox": [float(f[0]), float(f[1]), float(f[2]), float(f[3])], "score": float(f[-1])}
+        for f in faces
+    ]
 
-        results.append({
-            "bbox": [float(x), float(y), float(w_box), float(h_box)],
-            "score": confidence
-        })
 
-    return results
+def detect_faces(image: np.ndarray) -> list[dict]:
+    """Detect faces in an image using YuNet (thread-safe, pool-backed)."""
+    return _run_detection(image)
 
 
 def verify_video_with_opencv(video_path: Path) -> bool:
@@ -554,25 +605,21 @@ async def export_video(
         out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
         frame_idx = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+        chunk_size = DETECTOR_POOL_SIZE * 4  # scales with core count: 48 on M2 Pro (12 cores), 8 on c7i.large (2 vCPUs)
 
+        def blur_frame(args):
+            idx, frame = args
             for track_id, track in tracks_map.items():
-                det = find_detection_for_frame(track.frames, frame_idx)
+                det = find_detection_for_frame(track.frames, idx)
                 if det is None:
                     continue
-
                 bbox = det["bbox"]
                 ox, oy, ow, oh = bbox
                 padding = export_request.padding
-
                 x = max(0, int(ox - ow * padding))
                 y = max(0, int(oy - oh * padding))
                 w = min(int(ow * (1 + padding * 2)), width - x)
                 h = min(int(oh * (1 + padding * 2)), height - y)
-
                 if w > 0 and h > 0:
                     face_region = frame[y:y + h, x:x + w]
                     blur_amt = export_request.blurAmount
@@ -583,9 +630,31 @@ async def export_video(
                     )
                     pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
                     frame[y:y + h, x:x + w] = pixelated
+            return (idx, frame)
 
-            out.write(frame)
+        pool = get_thread_pool()
+        chunk = []
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            chunk.append((frame_idx, frame))
             frame_idx += 1
+
+            if len(chunk) >= chunk_size:
+                processed = list(pool.map(blur_frame, chunk))
+                processed.sort(key=lambda x: x[0])
+                for _, f in processed:
+                    out.write(f)
+                chunk = []
+
+        # Flush remaining frames
+        if chunk:
+            processed = list(pool.map(blur_frame, chunk))
+            processed.sort(key=lambda x: x[0])
+            for _, f in processed:
+                out.write(f)
 
         cap.release()
         out.release()
@@ -659,55 +728,38 @@ async def detect_batch_endpoint(
         _: bool = Depends(verify_api_key)
 ):
     """
-    Detect faces in multiple frames at once (batch processing)
-    Processes up to 25 frames per request for improved performance
+    Detect faces in multiple frames at once (batch processing).
+    Frames are decoded and detected in parallel using a thread pool.
     """
+    def process_frame(frame_req: BatchFrameRequest) -> BatchFrameResult:
+        image_data = frame_req.image
+        if "," in image_data:
+            image_data = image_data.split(",", 1)[1]
+        try:
+            image_bytes = base64.b64decode(image_data)
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if image is None:
+                return BatchFrameResult(frameIndex=frame_req.frameIndex, faces=[])
+            faces = detect_faces(image)
+            return BatchFrameResult(
+                frameIndex=frame_req.frameIndex,
+                faces=[FaceDetectionResult(bbox=f["bbox"], score=f["score"]) for f in faces]
+            )
+        except Exception as e:
+            logger.error(f"Error processing frame {frame_req.frameIndex}: {e}")
+            return BatchFrameResult(frameIndex=frame_req.frameIndex, faces=[])
+
     try:
-        results = []
+        loop = asyncio.get_event_loop()
+        futures = [
+            loop.run_in_executor(get_thread_pool(), process_frame, frame_req)
+            for frame_req in batch_request.batch
+        ]
+        results = await asyncio.gather(*futures)
 
-        for frame_req in batch_request.batch:
-            # Process each frame
-            image_data = frame_req.image
-            if "," in image_data:
-                image_data = image_data.split(",", 1)[1]
-
-            try:
-                image_bytes = base64.b64decode(image_data)
-                nparr = np.frombuffer(image_bytes, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-                if image is None:
-                    # If decoding fails, return empty faces for this frame
-                    results.append(BatchFrameResult(
-                        frameIndex=frame_req.frameIndex,
-                        faces=[]
-                    ))
-                    continue
-
-                # Detect faces
-                faces = detect_faces(image)
-
-                # Convert to response format
-                face_results = [
-                    FaceDetectionResult(bbox=face["bbox"], score=face["score"])
-                    for face in faces
-                ]
-
-                results.append(BatchFrameResult(
-                    frameIndex=frame_req.frameIndex,
-                    faces=face_results
-                ))
-
-            except Exception as e:
-                logger.error(f"Error processing frame {frame_req.frameIndex}: {e}")
-                # Return empty result for failed frame
-                results.append(BatchFrameResult(
-                    frameIndex=frame_req.frameIndex,
-                    faces=[]
-                ))
-
-        logger.info(f"Batch detection completed: {len(batch_request.batch)} frames processed")
-        return BatchDetectResponse(results=results)
+        logger.info(f"Batch detection completed: {len(batch_request.batch)} frames processed in parallel")
+        return BatchDetectResponse(results=list(results))
 
     except HTTPException:
         raise
@@ -720,5 +772,4 @@ async def detect_batch_endpoint(
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
