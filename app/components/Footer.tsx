@@ -38,7 +38,7 @@ export function Footer() {
           href="https://stianha.com"
           target="_blank"
           rel="noopener noreferrer"
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-linear-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 text-indigo-400 hover:text-indigo-300 hover:border-indigo-500/40 text-sm font-medium transition-all ${showCreator ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'}`}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/60 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 text-sm font-medium transition-colors"
         >
           <span>Created by</span>
           <span className="font-semibold">Stian Gia Huy Ha</span>

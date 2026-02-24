@@ -152,11 +152,11 @@ export default function Home() {
 						</div>
 
 						{/* Benefits below cards */}
-						<div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start w-full">
+						<div className="grid grid-cols-1 md:grid-cols-3 gap-0 md:gap-6 items-start w-full">
 							{BENEFITS.map((b) => {
 								const Icon = b.icon;
 								return (
-									<div key={b.title} className="flex gap-4 items-start">
+									<div key={b.title} className="flex gap-4 items-start py-4 md:py-0 border-b border-zinc-800/60 md:border-b-0 last:border-b-0">
 										<div className="p-2 rounded-md bg-zinc-800/60">
 											<Icon className="w-6 h-6 text-white" />
 										</div>
