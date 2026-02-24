@@ -1,4 +1,4 @@
-# BlurThatGuy (For a Competition by FONN Group)
+# BlurThatGuy (Coding challenge by FONN Group and Mimir)
 
 TODO:
 Nice to have
