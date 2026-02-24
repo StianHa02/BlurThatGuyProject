@@ -626,7 +626,7 @@ async def export_video(
                     small = cv2.resize(
                         face_region,
                         (max(1, w // blur_amt), max(1, h // blur_amt)),
-                        interpolation=cv2.INTER_LINEAR
+                        interpolation=cv2.INTER_NEAREST
                     )
                     pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
                     frame[y:y + h, x:x + w] = pixelated
