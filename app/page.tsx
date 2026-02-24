@@ -72,15 +72,14 @@ export default function Home() {
 
 						{/* Hero Headline */}
 						<h1 className="font-bold tracking-tight mb-3 sm:mb-4 leading-tight">
-							<span className="gradient-text text-5xl sm:text-7xl md:text-8xl block font-nippo">
+							<span className="gradient-text text-6xl sm:text-7xl md:text-8xl block font-nippo">
   								BLUR THAT GUY
 							</span>
 						</h1>
 
 						{/* Subheadline */}
-						<p className="text-base sm:text-lg text-zinc-400 mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
-							AI-powered face detection and selective blurring built with OpenCV.
-							<br/>Processed securely with end-to-end encryption.
+						<p className="text-xs sm:text-lg text-zinc-400 mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
+							AI-powered face detection and selective blurring built with OpenCV. <br/> Processed securely with end-to-end encryption.
 						</p>
 
 						{/* CTA Buttons */}
@@ -133,7 +132,7 @@ export default function Home() {
 			</div>
 
 			{/* How It Works + Benefits Section */}
-			<section id="how-it-works" className="relative min-h-screen flex flex-col px-6 pt-28 pb-32">
+			<section id="how-it-works" className="flex flex-col px-6 pt-28 pb-16">
 				<div className="max-w-7xl mx-auto w-full">
 					<div className="text-center mb-12">
 						<h2 className="text-4xl font-bold mb-4">How it works</h2>
@@ -166,12 +165,9 @@ export default function Home() {
 						})}
 					</div>
 				</div>
-
-				{/* Footer pinned to bottom of section */}
-				<div className="absolute bottom-0 left-0 right-0">
-					<Footer />
-				</div>
 			</section>
+
+			<Footer />
 
 		</div>
 	);

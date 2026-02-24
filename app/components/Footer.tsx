@@ -21,7 +21,7 @@ export function Footer() {
   }, []);
 
   return (
-    <footer className="py-6 px-6 border-0">
+    <footer className="py-6 px-6 border-t border-zinc-800/60 bg-zinc-900/40 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
