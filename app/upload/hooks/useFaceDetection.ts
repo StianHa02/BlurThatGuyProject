@@ -1,172 +1,168 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { loadModels, detectFacesInBatch, resetTrackers } from '@/lib/faceClient';
+import { useState, useCallback, useRef } from 'react';
 import { trackDetections } from '@/lib/tracker';
+import { API_URL } from '@/lib/config';
 
 interface UseDetectionOptions {
   sampleRate: number;
   fileUrl: string | null;
   fileRef: React.RefObject<File | null>;
+  videoId: string | null;
   onError: (error: string) => void;
 }
 
-export function useFaceDetection({ sampleRate, fileUrl, fileRef, onError }: UseDetectionOptions) {
+export function useFaceDetection({ sampleRate, fileUrl, videoId, onError }: UseDetectionOptions) {
   const [tracks, setTracks] = useState<any[]>([]);
   const [selectedTrackIds, setSelectedTrackIds] = useState<number[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentProgressRef = useRef(0);
+
+  const stopProgressTimer = useCallback(() => {
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+  }, []);
+
+  // Tick progress toward a ceiling, slowing down as it approaches
+  // Never reaches the ceiling — leaves room for the real completion snap
+  const startProgressTicker = useCallback((ceiling: number, totalMs: number) => {
+    stopProgressTimer();
+    currentProgressRef.current = 10;
+    setProgress(10);
+
+    const intervalMs = 500;
+    const totalSteps = totalMs / intervalMs;
+    let step = 0;
+
+    progressTimerRef.current = setInterval(() => {
+      step++;
+      // Ease-out: progress slows as it approaches ceiling
+      const ratio = step / totalSteps;
+      const eased = 1 - Math.pow(1 - Math.min(ratio, 0.99), 2);
+      const next = 10 + (ceiling - 10) * eased;
+      currentProgressRef.current = next;
+      setProgress(Math.round(next));
+
+      // Hard stop just below ceiling — never overshoot
+      if (next >= ceiling - 1) {
+        stopProgressTimer();
+      }
+    }, intervalMs);
+  }, [stopProgressTimer]);
 
   const runDetection = useCallback(async () => {
-    const f = fileRef.current;
-    if (!f || !fileUrl) return false;
+    if (!videoId || !fileUrl) return false;
 
     setProcessing(true);
     setProgress(0);
-    setStatus('Connecting to face detector...');
+    setStatus('Reading video info...');
 
-    resetTrackers();
+    // Get real video duration from the browser so we can estimate detection time accurately
+    let estimatedMs = 20000; // fallback 20s
+    try {
+      const videoDuration = await new Promise<number>((resolve) => {
+        const v = document.createElement('video');
+        v.src = fileUrl;
+        v.muted = true;
+        v.addEventListener('loadedmetadata', () => {
+          resolve(v.duration);
+          v.src = '';
+        }, { once: true });
+        // Timeout fallback
+        setTimeout(() => resolve(30), 3000);
+      });
+
+      // Estimate: ~37ms per frame on 2 workers, at 30fps sampled every N frames
+      const framesToProcess = Math.ceil((videoDuration * 30) / sampleRate);
+      const msPerFrame = 37; // measured from your logs
+      estimatedMs = (framesToProcess * msPerFrame) / 2; // 2 parallel workers
+    } catch {
+      // use fallback
+    }
 
     try {
-      await loadModels();
-      setStatus('Face detector ready');
+      setStatus('Detecting faces...');
+      // Animate toward 88% over the estimated duration, easing out so it
+      // naturally slows before the response arrives
+      startProgressTicker(88, estimatedMs);
+
+      const response = await fetch(`${API_URL}/detect-video/${videoId}?sample_rate=${sampleRate}`, {
+        method: 'POST',
+      });
+
+      // Backend done — stop ticker, snap to 90%
+      stopProgressTimer();
+      setProgress(90);
+      setStatus('Building face tracks...');
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Detection failed');
+      }
+
+      const data: {
+        fps: number;
+        totalFrames: number;
+        results: { frameIndex: number; faces: { bbox: [number, number, number, number]; score: number }[] }[];
+      } = await response.json();
+
+      const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
+      for (const result of data.results) {
+        if (result.faces && result.faces.length > 0) {
+          detectionsPerFrame[result.frameIndex] = result.faces.map(f => ({
+            bbox: f.bbox,
+            score: f.score,
+          }));
+        }
+      }
+
+      const builtTracks = trackDetections(detectionsPerFrame, {
+        iouThreshold: 0.15,
+        maxMisses: 20,
+        minTrackLength: 3,
+      });
+
+      const totalSampledFrames = Math.ceil(data.totalFrames / sampleRate);
+      const filteredTracks = builtTracks.filter(track => {
+        const minDetections = Math.max(5, Math.floor(totalSampledFrames * 0.05));
+        return track.frames.length >= Math.min(minDetections, 10);
+      });
+
+      filteredTracks.sort((a, b) => b.frames.length - a.frames.length);
+
+      setTracks(filteredTracks);
+      setSelectedTrackIds([]);
+      setProgress(100);
+
+      if (filteredTracks.length === 0) {
+        setStatus('No faces detected');
+        onError('No faces were detected in this video. Try adjusting the sample rate or use a video with visible faces.');
+        setProcessing(false);
+        return false;
+      }
+
+      setStatus(filteredTracks.length === 1 ? '1 person detected' : `${filteredTracks.length} people detected`);
+      setProcessing(false);
+      return true;
+
     } catch (err) {
-      console.error('Failed to load face detector:', err);
-      onError('Failed to connect to face detector. Make sure the Python backend is running on port 8000.');
+      stopProgressTimer();
+      console.error('Detection error:', err);
+      onError(err instanceof Error ? err.message : 'Failed to run face detection. Make sure the backend is running.');
       setProcessing(false);
       setStatus('');
       return false;
     }
-
-    setStatus('Preparing video...');
-    const video = document.createElement('video');
-    video.src = fileUrl;
-    video.muted = true;
-    video.crossOrigin = 'anonymous';
-
-    await new Promise<void>((resolve) => {
-      video.addEventListener('loadedmetadata', () => resolve(), { once: true });
-    });
-
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-    const duration = video.duration;
-    const frameRate = 30;
-    const totalFrames = Math.ceil(duration * frameRate);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d')!;
-
-    const BATCH_SIZE = 25;
-    const frameIndices: number[] = [];
-    for (let fi = 0; fi < totalFrames; fi += sampleRate) {
-      frameIndices.push(fi);
-    }
-    const totalFramesToScan = frameIndices.length;
-
-    // STEP 1: Extract all frames sequentially (video seeking must be serial)
-    const allFrames: { frameIndex: number; image: string }[] = [];
-
-    for (const fi of frameIndices) {
-      await new Promise<void>((resolve) => {
-        video.currentTime = fi / frameRate;
-        video.addEventListener('seeked', () => {
-          ctx.drawImage(video, 0, 0, width, height);
-          allFrames.push({
-            frameIndex: fi,
-            image: canvas.toDataURL('image/jpeg', 0.8),
-          });
-          resolve();
-        }, { once: true });
-      });
-
-      const extracted = allFrames.length;
-      setProgress(Math.round((extracted / totalFramesToScan) * 40));
-      setStatus(`Extracting frames... ${extracted}/${totalFramesToScan}`);
-      await new Promise(r => setTimeout(r, 0));
-    }
-
-    // STEP 2: Split into batches and fire ALL concurrently
-    const batches: { frameIndex: number; image: string }[][] = [];
-    for (let i = 0; i < allFrames.length; i += BATCH_SIZE) {
-      batches.push(allFrames.slice(i, i + BATCH_SIZE));
-    }
-
-    const totalBatches = batches.length;
-    let completedBatches = 0;
-    const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
-
-    setStatus(`Detecting faces... 0/${totalBatches} batches`);
-
-    const batchResults = await Promise.all(
-      batches.map(async (batch) => {
-        try {
-          const results = await detectFacesInBatch(batch);
-          completedBatches++;
-          setProgress(40 + Math.round((completedBatches / totalBatches) * 60));
-          setStatus(`Detecting faces... ${completedBatches}/${totalBatches} batches`);
-          return results;
-        } catch (e) {
-          console.error('Batch detection error:', e);
-          completedBatches++;
-          return batch.map(b => ({ frameIndex: b.frameIndex, faces: [] }));
-        }
-      })
-    );
-
-    // Merge results
-    for (const results of batchResults) {
-      for (const result of results) {
-        if (result.faces && result.faces.length > 0) {
-          detectionsPerFrame[result.frameIndex] = result.faces.map(d => ({
-            bbox: d.bbox as [number, number, number, number],
-            score: d.score,
-          }));
-        }
-      }
-    }
-
-    setStatus('Building face tracks...');
-    setProgress(100);
-
-    const builtTracks = trackDetections(detectionsPerFrame, {
-      iouThreshold: 0.15,
-      maxMisses: 20,
-      minTrackLength: 3,
-    });
-
-    const totalSampledFrames = Math.ceil(totalFrames / sampleRate);
-    const filteredTracks = builtTracks.filter(track => {
-      const minDetections = Math.max(5, Math.floor(totalSampledFrames * 0.05));
-      return track.frames.length >= Math.min(minDetections, 10);
-    });
-
-    filteredTracks.sort((a, b) => b.frames.length - a.frames.length);
-
-    setTracks(filteredTracks);
-    setSelectedTrackIds([]);
-
-    if (filteredTracks.length === 0) {
-      setStatus('No faces detected');
-      onError('No faces were detected in this video. Try adjusting the sample rate or use a video with visible faces.');
-    } else if (filteredTracks.length === 1) {
-      setStatus('1 person detected');
-    } else {
-      setStatus(`${filteredTracks.length} people detected`);
-    }
-
-    setProcessing(false);
-    return filteredTracks.length > 0;
-  }, [fileUrl, fileRef, sampleRate, onError]);
+  }, [videoId, fileUrl, sampleRate, onError, startProgressTicker, stopProgressTimer]);
 
   const toggleTrack = useCallback((trackId: number) => {
     setSelectedTrackIds(prev =>
-      prev.includes(trackId)
-        ? prev.filter(id => id !== trackId)
-        : [...prev, trackId]
+      prev.includes(trackId) ? prev.filter(id => id !== trackId) : [...prev, trackId]
     );
   }, []);
 
@@ -179,11 +175,12 @@ export function useFaceDetection({ sampleRate, fileUrl, fileRef, onError }: UseD
   }, []);
 
   const reset = useCallback(() => {
+    stopProgressTimer();
     setTracks([]);
     setSelectedTrackIds([]);
     setProgress(0);
     setStatus('');
-  }, []);
+  }, [stopProgressTimer]);
 
   return {
     tracks,

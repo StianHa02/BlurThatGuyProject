@@ -32,6 +32,7 @@ export default function UploadPage() {
     sampleRate,
     fileUrl: upload.fileUrl,
     fileRef: upload.fileRef,
+    videoId: upload.videoId,
     onError: upload.setError,
   });
 

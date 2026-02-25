@@ -9,6 +9,7 @@ export function useVideoUpload() {
   const [videoId, setVideoId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<File | null>(null);
+  const fileUrlRef = useRef<string | null>(null);
 
   const MAX_UPLOAD_SIZE_MB = 100;
 
@@ -27,6 +28,7 @@ export function useVideoUpload() {
     fileRef.current = f;
     setFileName(f.name);
     const url = URL.createObjectURL(f);
+    fileUrlRef.current = url;
     setFileUrl(url);
 
     // Upload video to backend (via API proxy)
@@ -57,13 +59,17 @@ export function useVideoUpload() {
   }, []);
 
   const reset = useCallback(() => {
-    if (fileUrl) URL.revokeObjectURL(fileUrl);
+    // Use ref to avoid stale closure over fileUrl state
+    if (fileUrlRef.current) {
+      URL.revokeObjectURL(fileUrlRef.current);
+      fileUrlRef.current = null;
+    }
     setFileUrl(null);
     setFileName('');
     setVideoId(null);
     setError(null);
     fileRef.current = null;
-  }, [fileUrl]);
+  }, []);
 
   return {
     fileUrl,

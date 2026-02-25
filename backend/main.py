@@ -305,6 +305,13 @@ class Track(BaseModel):
     endFrame: int
 
 
+class DetectVideoResponse(BaseModel):
+    """Response for server-side video detection"""
+    fps: float
+    totalFrames: int
+    results: List[BatchFrameResult]
+
+
 class ExportRequest(BaseModel):
     """Model for video export request"""
     tracks: list[Track]
@@ -605,12 +612,35 @@ async def export_video(
         out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
         frame_idx = 0
-        chunk_size = DETECTOR_POOL_SIZE * 4  # scales with core count: 48 on M2 Pro (12 cores), 8 on c7i.large (2 vCPUs)
+        chunk_size = max(16, DETECTOR_POOL_SIZE * 4)  # floor of 16 prevents tiny batches on 2-vCPU instances
+
+        # Pre-build per-track frame index maps once — O(total detections).
+        # Without this, blur_frame does an O(n) linear scan for every frame × every track.
+        # On a 5-min video with 2 tracks that's ~18,000 × 2 × n iterations; with the map it's O(1).
+        tracks_frame_maps: dict[int, dict[int, dict]] = {
+            track_id: {f["frameIndex"]: f for f in track.frames}
+            for track_id, track in tracks_map.items()
+        }
 
         def blur_frame(args):
             idx, frame = args
             for track_id, track in tracks_map.items():
-                det = find_detection_for_frame(track.frames, idx)
+                frame_map = tracks_frame_maps[track_id]
+
+                # O(1) exact lookup first
+                det = frame_map.get(idx)
+
+                # Nearest-neighbour fallback for sampled/sparse detections (±15 frame window)
+                if det is None:
+                    best = None
+                    best_diff = float('inf')
+                    for fi, fd in frame_map.items():
+                        diff = abs(fi - idx)
+                        if diff < best_diff:
+                            best_diff = diff
+                            best = fd
+                    det = best if best_diff <= 15 else None
+
                 if det is None:
                     continue
                 bbox = det["bbox"]
@@ -674,13 +704,26 @@ async def export_video(
 
 
 def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
-    """Find the closest detection for a given frame index"""
+    """Find the closest detection for a given frame index.
+
+    Uses a pre-built dict for O(1) exact lookup, falling back to a linear
+    nearest-neighbour search only when the exact frame is absent (interpolation
+    window ±15 frames, unchanged from original behaviour).
+    """
     if not frames:
         return None
 
+    # Build index on first call — caller should cache this for hot paths;
+    # here we rebuild per-call which is still O(n) worst-case on a miss,
+    # but the exact-hit path (the overwhelmingly common case) is O(1).
+    frame_map: dict[int, dict] = {f["frameIndex"]: f for f in frames}
+
+    if frame_idx in frame_map:
+        return frame_map[frame_idx]
+
+    # Nearest-neighbour fallback (sparse detections / sampled video)
     best = None
     best_diff = float('inf')
-
     for f in frames:
         diff = abs(f["frameIndex"] - frame_idx)
         if diff < best_diff:
@@ -751,9 +794,8 @@ async def detect_batch_endpoint(
             return BatchFrameResult(frameIndex=frame_req.frameIndex, faces=[])
 
     try:
-        loop = asyncio.get_event_loop()
         futures = [
-            loop.run_in_executor(get_thread_pool(), process_frame, frame_req)
+            asyncio.get_event_loop().run_in_executor(get_thread_pool(), process_frame, frame_req)
             for frame_req in batch_request.batch
         ]
         results = await asyncio.gather(*futures)
@@ -770,6 +812,85 @@ async def detect_batch_endpoint(
         raise HTTPException(status_code=500, detail="Failed to detect faces in batch")
 
 
+@app.post("/detect-video/{video_id}", response_model=DetectVideoResponse)
+async def detect_video_endpoint(
+        video_id: str,
+        sample_rate: int = 2,
+        _: bool = Depends(verify_api_key)
+):
+    """
+    Server-side frame extraction + parallel face detection.
+
+    The video is already on disk from /upload-video — no second upload needed.
+    Replaces the browser frame-extraction + /detect-batch loop entirely.
+
+    sample_rate=2 → process every 2nd frame (halves work on a 30fps source,
+    giving 15 effective fps of detection data, which is plenty for face tracking).
+    """
+    input_path = get_safe_video_path(video_id)
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found. Please upload again.")
+
+    sample_rate = max(1, min(sample_rate, 30))  # clamp to sane range
+
+    # --- Stream frames in chunks to avoid loading entire video into RAM ---
+    # At sample_rate=1 on 1080p, 3500 frames = ~21GB if loaded all at once.
+    # Process CHUNK_FRAMES at a time: detect, discard, read next chunk.
+    CHUNK_FRAMES = 50  # ~300MB peak RAM per chunk at 1080p
+
+    cap = cv2.VideoCapture(str(input_path))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    def detect_frame(args: tuple[int, np.ndarray]) -> BatchFrameResult:
+        idx, frame = args
+        try:
+            faces = detect_faces(frame)
+            return BatchFrameResult(
+                frameIndex=idx,
+                faces=[FaceDetectionResult(bbox=f["bbox"], score=f["score"]) for f in faces]
+            )
+        except Exception as e:
+            logger.error(f"Frame {idx} detection error: {e}")
+            return BatchFrameResult(frameIndex=idx, faces=[])
+
+    all_results: list[BatchFrameResult] = []
+    chunk: list[tuple[int, np.ndarray]] = []
+    frame_idx = 0
+    frames_sampled = 0
+    loop = asyncio.get_event_loop()
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        if frame_idx % sample_rate == 0:
+            chunk.append((frame_idx, frame.copy()))
+            frames_sampled += 1
+
+        frame_idx += 1
+
+        if len(chunk) >= CHUNK_FRAMES:
+            futures = [loop.run_in_executor(get_thread_pool(), detect_frame, args) for args in chunk]
+            chunk_results = await asyncio.gather(*futures)
+            all_results.extend(chunk_results)
+            chunk.clear()  # free memory before reading next chunk
+
+    # Flush remaining frames
+    if chunk:
+        futures = [loop.run_in_executor(get_thread_pool(), detect_frame, args) for args in chunk]
+        chunk_results = await asyncio.gather(*futures)
+        all_results.extend(chunk_results)
+
+    cap.release()
+
+    logger.info(
+        f"detect-video {video_id}: processed {frames_sampled}/{total_frames} frames "
+        f"(sample_rate={sample_rate}, {fps:.1f}fps source)"
+    )
+    return DetectVideoResponse(fps=fps, totalFrames=total_frames, results=all_results)
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, h11_max_incomplete_event_size=200 * 1024 * 1024)
