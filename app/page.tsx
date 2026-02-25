@@ -59,7 +59,7 @@ export default function Home() {
 	return (
 		<div className="bg-zinc-950 bg-grid">
 			{/* Hero Section */}
-			<div className="relative h-screen flex flex-col" style={{height: '100dvh'}}>
+			<div className="relative min-h-svh flex flex-col">
 				<Navbar />
 
 				<main className="relative z-10 flex-1 flex items-center w-full pt-20 pb-10 sm:pt-28 sm:pb-12">
@@ -132,7 +132,7 @@ export default function Home() {
 			</div>
 
 			{/* How It Works + Benefits Section */}
-			<div className="flex flex-col" style={{minHeight: '100dvh'}}>
+			<div className="flex flex-col min-h-svh">
 				<section id="how-it-works" className="flex-1 flex flex-col items-center justify-center px-6 py-16">
 					<div className="max-w-7xl mx-auto w-full flex flex-col items-center">
 
