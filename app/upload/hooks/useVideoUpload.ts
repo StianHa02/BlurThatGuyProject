@@ -7,6 +7,12 @@ export function useVideoUpload() {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [videoId, setVideoId] = useState<string | null>(null);
+  const [videoMetadata, setVideoMetadata] = useState<{
+    fps: number;
+    width: number;
+    height: number;
+    frameCount: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<File | null>(null);
 
@@ -41,6 +47,7 @@ export function useVideoUpload() {
       if (response.ok) {
         const data = await response.json();
         setVideoId(data.videoId);
+        setVideoMetadata(data.metadata || null);
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Upload failed:', errorData.error || response.statusText);
@@ -61,6 +68,7 @@ export function useVideoUpload() {
     setFileUrl(null);
     setFileName('');
     setVideoId(null);
+    setVideoMetadata(null);
     setError(null);
     fileRef.current = null;
   }, [fileUrl]);
@@ -69,6 +77,7 @@ export function useVideoUpload() {
     fileUrl,
     fileName,
     videoId,
+    videoMetadata,
     error,
     setError,
     fileRef,

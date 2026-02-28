@@ -17,6 +17,7 @@ interface FaceGalleryProps {
   selectedTrackIds: number[];
   onToggleTrack: (trackId: number) => void;
   videoUrl: string;
+  fps: number;
 }
 
 export function FaceGallery({
@@ -24,6 +25,7 @@ export function FaceGallery({
   selectedTrackIds,
   onToggleTrack,
   videoUrl,
+  fps,
 }: FaceGalleryProps) {
   const [thumbnails, setThumbnails] = useState<Map<number, string>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -92,8 +94,10 @@ export function FaceGallery({
         const middleIndex = Math.floor(track.frames.length / 2);
         const frame = track.frames[middleIndex];
         if (!frame) continue;
-
-        const frameTime = frame.frameIndex / 30;
+        
+        // Use the actual video FPS if available, otherwise default to 30
+        const videoFps = fps > 0 ? fps : 30;
+        const frameTime = frame.frameIndex / videoFps;
         await seekTo(frameTime);
 
         const [x, y, w, h] = frame.bbox;

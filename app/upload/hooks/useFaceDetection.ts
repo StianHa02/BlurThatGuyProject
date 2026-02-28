@@ -1,17 +1,18 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { loadModels, detectFacesInBatch, resetTrackers } from '@/lib/faceClient';
+import { loadModels, detectFacesInVideo, resetTrackers } from '@/lib/faceClient';
 import { trackDetections } from '@/lib/tracker';
 
 interface UseDetectionOptions {
   sampleRate: number;
   fileUrl: string | null;
+  videoId: string | null;
   fileRef: React.RefObject<File | null>;
   onError: (error: string) => void;
 }
 
-export function useFaceDetection({ sampleRate, fileUrl, fileRef, onError }: UseDetectionOptions) {
+export function useFaceDetection({ sampleRate, fileUrl, videoId, fileRef, onError }: UseDetectionOptions) {
   const [tracks, setTracks] = useState<any[]>([]);
   const [selectedTrackIds, setSelectedTrackIds] = useState<number[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -19,8 +20,10 @@ export function useFaceDetection({ sampleRate, fileUrl, fileRef, onError }: UseD
   const [status, setStatus] = useState('');
 
   const runDetection = useCallback(async () => {
-    const f = fileRef.current;
-    if (!f || !fileUrl) return false;
+    if (!videoId) {
+      onError('Video must be uploaded before detection.');
+      return false;
+    }
 
     setProcessing(true);
     setProgress(0);
@@ -39,128 +42,63 @@ export function useFaceDetection({ sampleRate, fileUrl, fileRef, onError }: UseD
       return false;
     }
 
-    setStatus('Preparing video...');
-    const video = document.createElement('video');
-    video.src = fileUrl;
-    video.muted = true;
-    video.crossOrigin = 'anonymous';
+    setStatus('Detecting faces (server-side)...');
+    setProgress(10);
 
-    await new Promise<void>((resolve) => {
-      video.addEventListener('loadedmetadata', () => resolve(), { once: true });
-    });
-
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-    const duration = video.duration;
-    const frameRate = 30;
-    const totalFrames = Math.ceil(duration * frameRate);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d')!;
-
-    const BATCH_SIZE = 25;
-    const frameIndices: number[] = [];
-    for (let fi = 0; fi < totalFrames; fi += sampleRate) {
-      frameIndices.push(fi);
-    }
-    const totalFramesToScan = frameIndices.length;
-
-    // STEP 1: Extract all frames sequentially (video seeking must be serial)
-    const allFrames: { frameIndex: number; image: string }[] = [];
-
-    for (const fi of frameIndices) {
-      await new Promise<void>((resolve) => {
-        video.currentTime = fi / frameRate;
-        video.addEventListener('seeked', () => {
-          ctx.drawImage(video, 0, 0, width, height);
-          allFrames.push({
-            frameIndex: fi,
-            image: canvas.toDataURL('image/jpeg', 0.8),
-          });
-          resolve();
-        }, { once: true });
+    try {
+      // Use the new server-side detection endpoint with progress support
+      const allResults = await detectFacesInVideo(videoId, sampleRate, (p) => {
+        // Map 0-100 to 10-80% for smoother integration with existing progress steps
+        const scaledProgress = 10 + (p * 0.7);
+        setProgress(Math.round(scaledProgress));
       });
+      
+      setProgress(80);
+      setStatus('Building face tracks...');
 
-      const extracted = allFrames.length;
-      setProgress(Math.round((extracted / totalFramesToScan) * 40));
-      setStatus(`Extracting frames... ${extracted}/${totalFramesToScan}`);
-      await new Promise(r => setTimeout(r, 0));
-    }
-
-    // STEP 2: Split into batches and fire ALL concurrently
-    const batches: { frameIndex: number; image: string }[][] = [];
-    for (let i = 0; i < allFrames.length; i += BATCH_SIZE) {
-      batches.push(allFrames.slice(i, i + BATCH_SIZE));
-    }
-
-    const totalBatches = batches.length;
-    let completedBatches = 0;
-    const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
-
-    setStatus(`Detecting faces... 0/${totalBatches} batches`);
-
-    const batchResults = await Promise.all(
-      batches.map(async (batch) => {
-        try {
-          const results = await detectFacesInBatch(batch);
-          completedBatches++;
-          setProgress(40 + Math.round((completedBatches / totalBatches) * 60));
-          setStatus(`Detecting faces... ${completedBatches}/${totalBatches} batches`);
-          return results;
-        } catch (e) {
-          console.error('Batch detection error:', e);
-          completedBatches++;
-          return batch.map(b => ({ frameIndex: b.frameIndex, faces: [] }));
-        }
-      })
-    );
-
-    // Merge results
-    for (const results of batchResults) {
-      for (const result of results) {
-        if (result.faces && result.faces.length > 0) {
-          detectionsPerFrame[result.frameIndex] = result.faces.map(d => ({
+      const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
+      for (const res of allResults) {
+        if (res.faces && res.faces.length > 0) {
+          detectionsPerFrame[res.frameIndex] = res.faces.map(d => ({
             bbox: d.bbox as [number, number, number, number],
             score: d.score,
           }));
         }
       }
+
+      const builtTracks = trackDetections(detectionsPerFrame, {
+        iouThreshold: 0.1,
+        maxMisses: 20,
+        minTrackLength: 2,
+      });
+
+      const filteredTracks = [...builtTracks];
+
+      filteredTracks.sort((a, b) => b.frames.length - a.frames.length);
+
+      setTracks(filteredTracks);
+      setSelectedTrackIds([]);
+
+      if (filteredTracks.length === 0) {
+        setStatus('No faces detected');
+        onError('No faces were detected in this video. Try adjusting the sample rate.');
+      } else {
+        setStatus(`${filteredTracks.length} ${filteredTracks.length === 1 ? 'person' : 'people'} detected`);
+      }
+
+      setProgress(100);
+      setProcessing(false);
+      return filteredTracks.length > 0;
+
+    } catch (err) {
+      console.error('Detection error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred during face detection.';
+      onError(errorMessage);
+      setProcessing(false);
+      setStatus('');
+      return false;
     }
-
-    setStatus('Building face tracks...');
-    setProgress(100);
-
-    const builtTracks = trackDetections(detectionsPerFrame, {
-      iouThreshold: 0.15,
-      maxMisses: 20,
-      minTrackLength: 3,
-    });
-
-    const totalSampledFrames = Math.ceil(totalFrames / sampleRate);
-    const filteredTracks = builtTracks.filter(track => {
-      const minDetections = Math.max(5, Math.floor(totalSampledFrames * 0.05));
-      return track.frames.length >= Math.min(minDetections, 10);
-    });
-
-    filteredTracks.sort((a, b) => b.frames.length - a.frames.length);
-
-    setTracks(filteredTracks);
-    setSelectedTrackIds([]);
-
-    if (filteredTracks.length === 0) {
-      setStatus('No faces detected');
-      onError('No faces were detected in this video. Try adjusting the sample rate or use a video with visible faces.');
-    } else if (filteredTracks.length === 1) {
-      setStatus('1 person detected');
-    } else {
-      setStatus(`${filteredTracks.length} people detected`);
-    }
-
-    setProcessing(false);
-    return filteredTracks.length > 0;
-  }, [fileUrl, fileRef, sampleRate, onError]);
+  }, [videoId, sampleRate, onError]);
 
   const toggleTrack = useCallback((trackId: number) => {
     setSelectedTrackIds(prev =>

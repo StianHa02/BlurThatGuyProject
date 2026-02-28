@@ -31,6 +31,135 @@ export async function loadModels(): Promise<void> {
 }
 
 /**
+ * Detect faces directly from a video file on the backend
+ * @param videoId - ID of the uploaded video
+ * @param sampleRate - Rate at which to sample frames
+ * @param onProgress - Optional callback for progress updates
+ * @returns Array of results with frameIndex and detected faces
+ */
+export async function detectFacesInVideo(
+  videoId: string,
+  sampleRate: number = 3,
+  onProgress?: (progress: number) => void
+): Promise<{ frameIndex: number; faces: { bbox: [number, number, number, number]; score: number }[] }[]> {
+  if (!isReady) {
+    throw new Error('Face detector not loaded. Call loadModels() first.');
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/detect-video/${videoId}?sample_rate=${sampleRate}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      console.error('Video detection failed', { status: response.status, body });
+      throw new Error(`Video detection failed: ${response.status} ${body.detail || body.error || ''}`);
+    }
+
+    // Handle streaming response
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    let results: any[] = [];
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const processLine = (line: string) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return;
+
+      try {
+        // Robust handling for joined JSON objects which can occur in streams
+        // Split by common boundary patterns if JSON.parse would fail
+        if (trimmedLine.includes('}{') || trimmedLine.includes('} {') || trimmedLine.includes('}\r{') || trimmedLine.includes('}\n{')) {
+          const parts = trimmedLine.replace(/}\s*{/g, '}\n{').split('\n');
+          if (parts.length > 1) {
+            for (const part of parts) {
+              processLine(part);
+            }
+            return;
+          }
+        }
+
+        const data = JSON.parse(trimmedLine);
+        if (data.type === 'progress') {
+          onProgress?.(data.progress);
+        } else if (data.type === 'results') {
+          results = data.results;
+        } else if (data.type === 'error' || data.error) {
+          throw new Error(data.error || 'Detection failed during processing');
+        }
+      } catch (e) {
+        // Final attempt recovery: if we still have joined objects that don't match the simple regex above
+        if (e instanceof SyntaxError && trimmedLine.includes('}{')) {
+          // This serves as a secondary safety net
+          const parts = trimmedLine.split(/}\s*{/).map((p, i, a) => {
+            if (i === 0) return p + '}';
+            if (i === a.length - 1) return '{' + p;
+            return '{' + p + '}';
+          });
+           if (parts.length > 1) {
+             for (const part of parts) {
+               processLine(part);
+             }
+             return;
+           }
+        }
+        console.error('Failed to parse NDJSON line', trimmedLine, e);
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Robust splitting that handles \n, \r\n and even pure \r
+        const lines = buffer.split(/\r\n|\r|\n/);
+        
+        // The last element might be an incomplete line, keep it in buffer
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          processLine(line);
+        }
+      }
+
+      if (done) break;
+    }
+
+    // Process any remaining data in buffer
+    if (buffer.trim()) {
+      processLine(buffer);
+    }
+
+    if (results.length === 0) {
+      // If we didn't get results via stream, it might be an empty video or an error
+      // that didn't throw. 
+      console.warn('No results received from detection stream');
+    }
+
+    return results.map((result: any) => ({
+      frameIndex: result.frameIndex,
+      faces: result.faces.map((face: { bbox: number[]; score: number }) => ({
+        bbox: face.bbox as [number, number, number, number],
+        score: face.score,
+      })),
+    }));
+  } catch (error) {
+    console.error('Video detection error:', error);
+    throw error;
+  }
+}
+
+/**
  * Detect faces in multiple frames at once (BATCH PROCESSING)
  * @param batch - Array of frames with frameIndex and base64 image data
  * @returns Array of results with frameIndex and detected faces

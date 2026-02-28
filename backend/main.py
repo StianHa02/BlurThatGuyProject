@@ -1,14 +1,12 @@
-# Face Detection API with OpenCV DNN (YuNet)
-# Security-hardened version with BATCH PROCESSING support
-
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from contextlib import asynccontextmanager
 import cv2
 import numpy as np
 import base64
+import json
 from pathlib import Path
 import urllib.request
 import tempfile
@@ -39,7 +37,7 @@ except Exception:
 # =============================================================================
 
 FACE_DETECTION_CONFIG = {
-    "score_threshold": 0.5,
+    "score_threshold": 0.35,
     "nms_threshold": 0.3,
     "max_faces": 5000,
 }
@@ -219,7 +217,7 @@ except Exception:
     _max_upload_env = 100
 # Clamp to 1..100 MB to avoid unexpectedly large uploads
 MAX_UPLOAD_SIZE_MB = max(1, min(_max_upload_env, 100))
-CHUNK_SIZE = 8192  # 8KB chunks for streaming
+CHUNK_SIZE = 1024 * 1024  # 1MB chunks for faster streaming
 
 # =============================================================================
 # Path Traversal Protection
@@ -314,6 +312,7 @@ class ExportRequest(BaseModel):
     blurAmount: int = Field(default=VIDEO_PROCESSING_CONFIG["default_blur_amount"],
                             ge=VIDEO_PROCESSING_CONFIG["min_blur_amount"],
                             le=VIDEO_PROCESSING_CONFIG["max_blur_amount"])
+    sampleRate: int = Field(default=1, ge=1, le=60)
 
 
 # =============================================================================
@@ -461,16 +460,38 @@ class _DetectorLease:
 
 def _run_detection(image: np.ndarray) -> list[dict]:
     """Run detection using a leased detector from the pool."""
+    h, w = image.shape[:2]
+
+    # Optimization: Resize large images for faster detection
+    # YuNet is very fast on smaller resolutions (e.g., 640x480).
+    # 1080p or 4K is overkill for finding faces to blur.
+    MAX_DET_DIM = 1280
+    scale = 1.0
+    if max(h, w) > MAX_DET_DIM:
+        scale = MAX_DET_DIM / max(h, w)
+        input_img = cv2.resize(image, (int(w * scale), int(h * scale)))
+    else:
+        input_img = image
+
+    nh, nw = input_img.shape[:2]
+
     with _DetectorLease() as detector:
-        h, w = image.shape[:2]
-        detector.setInputSize((w, h))
-        _, faces = detector.detect(image)
+        detector.setInputSize((nw, nh))
+        _, faces = detector.detect(input_img)
 
     if faces is None:
         return []
 
     return [
-        {"bbox": [float(f[0]), float(f[1]), float(f[2]), float(f[3])], "score": float(f[-1])}
+        {
+            "bbox": [
+                float(f[0]) / scale,
+                float(f[1]) / scale,
+                float(f[2]) / scale,
+                float(f[3]) / scale
+            ],
+            "score": float(f[-1])
+        }
         for f in faces
     ]
 
@@ -561,15 +582,36 @@ async def upload_video(
                 f.write(chunk)
 
         # Verify it's actually a valid video
-        if not verify_video_with_opencv(video_path):
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
             video_path.unlink(missing_ok=True)
             raise HTTPException(
                 status_code=400,
                 detail="Invalid video file. Could not read video data."
             )
+        
+        # Get metadata
+        fps = float(cap.get(cv2.CAP_PROP_FPS))
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
 
-        logger.info(f"Video uploaded successfully: {video_id} ({size / 1024 / 1024:.1f}MB)")
-        return {"videoId": video_id}
+        # Sanity check for FPS (OpenCV sometimes returns 0 for some formats)
+        if fps <= 0:
+            fps = 30.0
+            logger.warning(f"Video {video_id} has invalid FPS (0). Defaulting to 30.0")
+
+        logger.info(f"Video uploaded successfully: {video_id} ({size / 1024 / 1024:.1f}MB, {fps} FPS, {width}x{height}, {frame_count} frames)")
+        return {
+            "videoId": video_id,
+            "metadata": {
+                "fps": fps,
+                "width": width,
+                "height": height,
+                "frameCount": frame_count
+            }
+        }
 
     except HTTPException:
         raise
@@ -610,7 +652,7 @@ async def export_video(
         def blur_frame(args):
             idx, frame = args
             for track_id, track in tracks_map.items():
-                det = find_detection_for_frame(track.frames, idx)
+                det = find_detection_for_frame(track.frames, idx, export_request.sampleRate)
                 if det is None:
                     continue
                 bbox = det["bbox"]
@@ -673,21 +715,171 @@ async def export_video(
         raise HTTPException(status_code=500, detail="Failed to process video")
 
 
-def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
-    """Find the closest detection for a given frame index"""
+def find_detection_for_frame(frames: list, frame_idx: int, sample_rate: int = 1) -> dict | None:
+    """Find the closest detection for a given frame index and interpolate if needed"""
     if not frames:
         return None
 
-    best = None
-    best_diff = float('inf')
+    # Track frames are sorted by frameIndex in tracker.ts
+    # Binary search or scan for the interval containing frame_idx
+    prev_f = None
+    next_f = None
 
     for f in frames:
-        diff = abs(f["frameIndex"] - frame_idx)
-        if diff < best_diff:
-            best_diff = diff
-            best = f
+        if f["frameIndex"] == frame_idx:
+            return f
+        if f["frameIndex"] < frame_idx:
+            prev_f = f
+        else:
+            next_f = f
+            break
 
-    return best if best_diff <= 15 else None
+    # If we only have one side or both are too far, return closest within reason
+    max_gap = 20 # Match tracker's maxMisses
+    
+    # No padding for first/last detections as per user request to avoid "ghost" masks.
+    padding = 0
+
+    if prev_f and not next_f:
+        return prev_f if abs(frame_idx - prev_f["frameIndex"]) <= padding else None
+    if next_f and not prev_f:
+        return next_f if abs(frame_idx - next_f["frameIndex"]) <= padding else None
+
+    if prev_f and next_f:
+        gap = next_f["frameIndex"] - prev_f["frameIndex"]
+        if gap > max_gap:
+            # Gap too large to bridge reliably. 
+            # When gap is large, we don't apply any padding.
+            if frame_idx == prev_f["frameIndex"]: return prev_f
+            if frame_idx == next_f["frameIndex"]: return next_f
+            return None
+
+        # Linear interpolation
+        t = (frame_idx - prev_f["frameIndex"]) / gap
+        p_bbox = prev_f["bbox"]
+        n_bbox = next_f["bbox"]
+
+        interp_bbox = [
+            p_bbox[0] + (n_bbox[0] - p_bbox[0]) * t,
+            p_bbox[1] + (n_bbox[1] - p_bbox[1]) * t,
+            p_bbox[2] + (n_bbox[2] - p_bbox[2]) * t,
+            p_bbox[3] + (n_bbox[3] - p_bbox[3]) * t
+        ]
+
+        return {
+            "frameIndex": frame_idx,
+            "bbox": interp_bbox,
+            "score": prev_f["score"] * (1-t) + next_f["score"] * t
+        }
+
+    return None
+
+
+@app.post("/detect-video/{video_id}")
+def detect_video_id_endpoint(
+        video_id: str,
+        sample_rate: int = 3,
+        _: bool = Depends(verify_api_key)
+):
+    """Detect faces directly from an uploaded video file with streaming progress updates"""
+    video_path = get_safe_video_path(video_id, ".mp4")
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    def generate():
+        try:
+            cap = cv2.VideoCapture(str(video_path))
+            if not cap.isOpened():
+                yield json.dumps({"error": "Could not open video file"}) + "\n"
+                return
+
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            results = []
+            
+            # Estimate total steps for progress calculation
+            # Each step is one frame processed (either sequentially or via seek)
+            total_steps = (total_frames + sample_rate - 1) // sample_rate if total_frames > 0 else 0
+            completed_steps = 0
+            
+            # Parallel processing setup
+            pool = get_thread_pool()
+            pending_futures = []
+            
+            # Balance throughput and memory - don't load too many frames in memory simultaneously
+            MAX_PENDING_DETECTIONS = DETECTOR_POOL_SIZE * 2
+            
+            # Robust loop to handle videos with or without accurate frame counts
+            target_idx = 0
+            current_frame = 0
+            
+            while True:
+                # Check if we should stop. If total_frames is 0 or -1, we rely on cap.read() returning False.
+                if total_frames > 0 and target_idx >= total_frames:
+                    break
+                
+                # Optimization: only seek if we're not at the next sequential frame
+                if target_idx != current_frame:
+                    if not cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx):
+                        break
+                
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                current_frame = target_idx + 1
+
+                # Submit to pool for parallel detection
+                future = pool.submit(detect_faces, frame)
+                pending_futures.append((target_idx, future))
+                
+                # If we've reached the maximum number of pending detections, 
+                # wait for the oldest one to maintain memory stability and frame order.
+                while len(pending_futures) >= MAX_PENDING_DETECTIONS:
+                    idx, fut = pending_futures.pop(0)
+                    try:
+                        faces = fut.result()
+                        if faces:
+                            results.append({
+                                "frameIndex": idx,
+                                "faces": [{"bbox": f["bbox"], "score": f["score"]} for f in faces]
+                            })
+                    except Exception as e:
+                        logger.error(f"Detection failed for frame {idx}: {e}")
+                    
+                    completed_steps += 1
+                    if total_steps > 0:
+                        progress = round((completed_steps / total_steps) * 100, 1)
+                        yield json.dumps({"type": "progress", "progress": progress}) + "\n"
+                
+                target_idx += sample_rate
+
+            # Process any remaining futures in the pipeline
+            for idx, fut in pending_futures:
+                try:
+                    faces = fut.result()
+                    if faces:
+                        results.append({
+                            "frameIndex": idx,
+                            "faces": [{"bbox": f["bbox"], "score": f["score"]} for f in faces]
+                        })
+                except Exception as e:
+                    logger.error(f"Detection failed for final frame {idx}: {e}")
+                
+                completed_steps += 1
+                if total_steps > 0:
+                    progress = min(100, round((completed_steps / total_steps) * 100, 1))
+                    yield json.dumps({"type": "progress", "progress": progress}) + "\n"
+
+            cap.release()
+            logger.info(f"Detection completed for video {video_id}: {len(results)} frames with faces")
+            # Final results
+            yield json.dumps({"type": "results", "results": results}) + "\n"
+
+        except Exception as e:
+            logger.error(f"Video detection error during stream: {e}")
+            yield json.dumps({"type": "error", "error": str(e)}) + "\n"
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
 @app.post("/detect")

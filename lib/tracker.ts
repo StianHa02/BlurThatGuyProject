@@ -74,8 +74,8 @@ export function trackDetections(
   detectionsPerFrame: Record<number, { bbox: BBox; score: number }[]>,
   opts?: { iouThreshold?: number; maxMisses?: number; minTrackLength?: number }
 ): Track[] {
-  const iouThreshold = opts?.iouThreshold ?? 0.1;
-  const maxMisses = opts?.maxMisses ?? 30;
+  const iouThreshold = opts?.iouThreshold ?? 0.2;
+  const maxMisses = opts?.maxMisses ?? 20;
   const minTrackLength = opts?.minTrackLength ?? 5;
 
   // Distance threshold - if centers are within 2x box size, consider same track

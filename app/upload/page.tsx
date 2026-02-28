@@ -31,6 +31,7 @@ export default function UploadPage() {
   const detection = useFaceDetection({
     sampleRate,
     fileUrl: upload.fileUrl,
+    videoId: upload.videoId,
     fileRef: upload.fileRef,
     onError: upload.setError,
   });
@@ -41,6 +42,7 @@ export default function UploadPage() {
     fileName: upload.fileName,
     tracks: detection.tracks,
     selectedTrackIds: detection.selectedTrackIds,
+    sampleRate,
     onError: upload.setError,
   });
 
@@ -253,6 +255,7 @@ export default function UploadPage() {
                 onToggleTrack={detection.toggleTrack}
                 blur={true}
                 sampleRate={sampleRate}
+                fps={upload.videoMetadata?.fps || 30}
               />
             </div>
 
@@ -263,6 +266,7 @@ export default function UploadPage() {
                 selectedTrackIds={detection.selectedTrackIds}
                 onToggleTrack={detection.toggleTrack}
                 videoUrl={upload.fileUrl}
+                fps={upload.videoMetadata?.fps || 30}
               />
             </div>
 
