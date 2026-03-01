@@ -41,8 +41,8 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
       onClick={() => inputRef.current?.click()}
       className={`relative border-2 border-dashed rounded-2xl p-16 text-center cursor-pointer transition-all ${
         dragOver
-          ? 'border-indigo-500 bg-indigo-500/10'
-          : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-900/50'
+          ? 'border-blue-500 bg-blue-500/8'
+          : 'border-white/12 hover:border-white/20 hover:bg-white/4'
       }`}
     >
       <input
@@ -53,13 +53,13 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
         className="hidden"
       />
       <div className={`w-16 h-16 rounded-2xl mx-auto mb-6 flex items-center justify-center transition-colors ${
-        dragOver ? 'bg-indigo-500/20' : 'bg-zinc-800'
+        dragOver ? 'bg-blue-500/20' : 'bg-white/6'
       }`}>
-        <Upload className={`w-8 h-8 ${dragOver ? 'text-indigo-400' : 'text-zinc-500'}`} />
+        <Upload className={`w-8 h-8 ${dragOver ? 'text-blue-400' : 'text-slate-500'}`} />
       </div>
-      <h3 className="text-lg font-semibold mb-2">Drop your video here</h3>
-      <p className="text-zinc-500 text-sm mb-4">or click to browse files</p>
-      <div className="flex items-center justify-center gap-2 text-xs text-zinc-600">
+      <h3 className="text-lg font-semibold mb-2 text-white">Drop your video here</h3>
+      <p className="text-slate-500 text-sm mb-4">or click to browse files</p>
+      <div className="flex items-center justify-center gap-2 text-xs text-slate-600">
         <Film className="w-3 h-3" />
         <span>Supports MP4, WebM, MOV</span>
       </div>

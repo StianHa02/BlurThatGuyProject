@@ -14,17 +14,24 @@ export function ProgressBar({ progress, status, hint }: ProgressBarProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
-        <span className="text-sm">{status}</span>
-        <span className="ml-auto text-xs text-zinc-400">{pct}%</span>
+        <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+        <span className="text-sm text-white">{status}</span>
+        <span className="ml-auto text-xs text-slate-400">{pct}%</span>
       </div>
-      <div className="relative h-2 bg-zinc-800 rounded-full overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label={status}>
+      <div
+        className="relative h-2 bg-white/8 rounded-full overflow-hidden"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-label={status}
+      >
         <div
-          className="absolute inset-y-0 left-0 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-[width] duration-500 ease-out progress-shine"
+          className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-[width] duration-500 ease-out"
           style={{ width: `${pct}%` }}
         />
       </div>
-      {hint && <p className="text-xs text-zinc-500">{hint}</p>}
+      {hint && <p className="text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }

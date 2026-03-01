@@ -17,22 +17,23 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
   const showUploadNew = currentStep !== 'upload' && onUploadNew;
 
   return (
-    <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-xl sticky top-0 z-50">
+    <header className="border-b border-white/8 bg-[#070f1c]/80 backdrop-blur-xl sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-        {/* Home link — clearly labeled */}
+
+        {/* Home link */}
         <Link
           href="/"
-          className="group flex items-center gap-3 px-3 py-2 -mx-3 -my-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/80 border border-transparent hover:border-zinc-700 transition-all"
+          className="group flex items-center gap-3 px-3 py-2 -mx-3 -my-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/8 border border-transparent hover:border-white/10 transition-all"
           aria-label="Back to home"
         >
           <ArrowLeft className="w-4 h-4 shrink-0" />
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 shadow-sm shadow-blue-600/40">
               <EyeOff className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="font-semibold">BlurThatGuy</span>
           </div>
-          <span className="text-xs text-zinc-500 group-hover:text-zinc-400 hidden sm:inline ml-1">Home</span>
+          <span className="text-xs text-slate-600 group-hover:text-slate-400 hidden sm:inline ml-1">Home</span>
         </Link>
 
         {/* Step indicators */}
@@ -41,10 +42,10 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
             <div key={step} className="flex items-center">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
                 currentStep === step
-                  ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
                   : i < currentIndex
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                    : 'bg-zinc-800 text-zinc-500 border border-zinc-700'
+                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                    : 'bg-white/5 text-slate-500 border border-white/8'
               }`}>
                 {i < currentIndex ? (
                   <CheckCircle className="w-3 h-3" />
@@ -56,19 +57,19 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
                 <span className="capitalize">{step}</span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`w-8 h-px mx-1 ${i < currentIndex ? 'bg-green-500/50' : 'bg-zinc-700'}`} />
+                <div className={`w-8 h-px mx-1 ${i < currentIndex ? 'bg-emerald-500/40' : 'bg-white/10'}`} />
               )}
             </div>
           ))}
         </div>
 
-        {/* Upload new file — visible in header when past upload step */}
+        {/* Upload new */}
         <div className="w-40 shrink-0 flex justify-end">
           {showUploadNew ? (
             <button
               type="button"
               onClick={onUploadNew}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-medium text-sm transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
             >
               <Upload className="w-4 h-4" />
               <span className="hidden sm:inline">Upload new file</span>
