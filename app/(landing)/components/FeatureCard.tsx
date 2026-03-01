@@ -13,28 +13,31 @@ interface FeatureCardProps {
 
 const colorClasses = {
   indigo: {
-    spotlight: 'rgba(99,102,241,0.08)',
-    shimmer: 'via-indigo-400/50',
-    corner: 'from-indigo-500/40',
-    iconBg: 'bg-indigo-500/10',
-    iconText: 'text-indigo-400',
-    stepText: 'text-indigo-400',
+    spotlight: 'rgba(59,130,246,0.10)',
+    shimmer: 'via-blue-400/60',
+    corner: 'from-blue-400/50',
+    iconBg: 'bg-blue-500/15',
+    iconText: 'text-blue-400',
+    stepText: 'text-blue-400',
+    border: 'hover:border-blue-500/40',
   },
   purple: {
-    spotlight: 'rgba(168,85,247,0.08)',
-    shimmer: 'via-purple-400/50',
-    corner: 'from-purple-500/40',
-    iconBg: 'bg-purple-500/10',
-    iconText: 'text-purple-400',
-    stepText: 'text-purple-400',
+    spotlight: 'rgba(99,102,241,0.10)',
+    shimmer: 'via-indigo-400/60',
+    corner: 'from-indigo-400/50',
+    iconBg: 'bg-indigo-500/15',
+    iconText: 'text-indigo-400',
+    stepText: 'text-indigo-400',
+    border: 'hover:border-indigo-500/40',
   },
   pink: {
-    spotlight: 'rgba(236,72,153,0.08)',
-    shimmer: 'via-pink-400/50',
-    corner: 'from-pink-500/40',
-    iconBg: 'bg-pink-500/10',
-    iconText: 'text-pink-400',
-    stepText: 'text-pink-400',
+    spotlight: 'rgba(139,92,246,0.10)',
+    shimmer: 'via-violet-400/60',
+    corner: 'from-violet-400/50',
+    iconBg: 'bg-violet-500/15',
+    iconText: 'text-violet-400',
+    stepText: 'text-violet-400',
+    border: 'hover:border-violet-500/40',
   },
 };
 
@@ -59,7 +62,7 @@ export function FeatureCard({ icon: Icon, step, title, description, color }: Fea
       ref={boxRef}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
-      className="group relative rounded-2xl p-5 bg-zinc-950 border border-white/10 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:border-white/20 hover:shadow-xl hover:shadow-black/40 overflow-hidden"
+      className={`group relative rounded-2xl p-5 bg-[#0d1b2e]/80 border border-white/8 shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 ${colors.border} hover:shadow-xl hover:shadow-black/40 overflow-hidden`}
     >
       {/* Mouse spotlight */}
       <div
@@ -90,8 +93,7 @@ export function FeatureCard({ icon: Icon, step, title, description, color }: Fea
         </div>
       </div>
 
-      <p className="relative text-zinc-400 text-sm leading-relaxed">{description}</p>
+      <p className="relative text-slate-400 text-sm leading-relaxed">{description}</p>
     </div>
   );
 }
-
