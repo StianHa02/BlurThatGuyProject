@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { API_URL } from '@/lib/config';
 
 interface UseExportOptions {
@@ -14,6 +14,7 @@ interface UseExportOptions {
 export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate, onError }: UseExportOptions) {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const lastRef = useRef<number>(0);
 
   const exportVideo = useCallback(async () => {
     if (!videoId) { onError('No video uploaded.'); return false; }
@@ -21,6 +22,7 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
 
     setExporting(true);
     setExportProgress(10);
+    lastRef.current = 10;
 
     try {
       // Only send selectedTrackIds — backend uses stored detection results
@@ -35,7 +37,9 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
         }),
       });
 
-      setExportProgress(80);
+      // mid way
+      setExportProgress((prev) => Math.max(prev, 60));
+      lastRef.current = Math.max(lastRef.current, 60);
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -59,6 +63,7 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
       URL.revokeObjectURL(url);
 
       setExportProgress(100);
+      lastRef.current = 100;
       return true;
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Failed to export video.');

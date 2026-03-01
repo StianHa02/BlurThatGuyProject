@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { loadModels, detectFacesInVideo } from '@/lib/faceClient';
 import { Track } from '@/lib/tracker';
 
@@ -17,6 +17,9 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState('');
 
+  // Keep last progress in a ref to prevent regressions
+  const lastProgressRef = useRef<number>(0);
+
   const runDetection = useCallback(async () => {
     if (!videoId) {
       onError('Video must be uploaded before detection.');
@@ -25,12 +28,14 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
 
     setProcessing(true);
     setProgress(0);
+    lastProgressRef.current = 0;
     setStatus('Connecting to face detector...');
 
     try {
       await loadModels();
       setStatus('Detecting faces...');
       setProgress(10);
+      lastProgressRef.current = 10;
     } catch {
       onError('Failed to connect to face detector. Make sure the Python backend is running.');
       setProcessing(false);
@@ -41,8 +46,16 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
     try {
       // Returns Track[] directly — tracking is server-side, no client processing needed
       const builtTracks = await detectFacesInVideo(videoId, sampleRate, (p) => {
-        setProgress(p);
-        if (p < 85) setStatus('Detecting faces...');
+        // Ensure progress is numeric and clamped 0-100
+        const num = Math.max(0, Math.min(100, Number(p) || 0));
+        // Never move backward (except when explicitly reset)
+        setProgress((prev) => {
+          const next = Math.max(prev, Math.round(num));
+          lastProgressRef.current = next;
+          return next;
+        });
+
+        if (num < 85) setStatus('Detecting faces...');
         else setStatus('Building face tracks...');
       });
 
@@ -56,7 +69,9 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
         setStatus(`${builtTracks.length} ${builtTracks.length === 1 ? 'person' : 'people'} detected`);
       }
 
+      // Ensure final progress moves to 100
       setProgress(100);
+      lastProgressRef.current = 100;
       setProcessing(false);
       return builtTracks.length > 0;
     } catch (err) {
@@ -79,6 +94,7 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
     setTracks([]);
     setSelectedTrackIds([]);
     setProgress(0);
+    lastProgressRef.current = 0;
     setStatus('');
   }, []);
 
