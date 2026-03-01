@@ -2,18 +2,16 @@
 
 import { useState, useCallback } from 'react';
 import { API_URL } from '@/lib/config';
-import { Track } from '@/lib/tracker';
 
 interface UseExportOptions {
   videoId: string | null;
   fileName: string;
-  tracks: Track[];
   selectedTrackIds: number[];
   sampleRate: number;
   onError: (error: string) => void;
 }
 
-export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, sampleRate, onError }: UseExportOptions) {
+export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate, onError }: UseExportOptions) {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
 
@@ -25,17 +23,22 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, sa
     setExportProgress(10);
 
     try {
+      // Only send selectedTrackIds — backend uses stored detection results
       const response = await fetch(`${API_URL}/export/${videoId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tracks, selectedTrackIds, padding: 0.4, blurAmount: 12, sampleRate }),
+        body: JSON.stringify({
+          selectedTrackIds,
+          padding: 0.4,
+          blurAmount: 12,
+          sampleRate,
+        }),
       });
 
       setExportProgress(80);
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        // Pydantic validation errors use `detail`, other errors use `error`
         const message = typeof err.detail === 'string'
           ? err.detail
           : Array.isArray(err.detail)
@@ -46,7 +49,10 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, sa
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      const a = Object.assign(document.createElement('a'), { href: url, download: `blurred-${fileName || 'video.mp4'}` });
+      const a = Object.assign(document.createElement('a'), {
+        href: url,
+        download: `blurred-${fileName || 'video.mp4'}`,
+      });
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -60,7 +66,7 @@ export function useVideoExport({ videoId, fileName, tracks, selectedTrackIds, sa
     } finally {
       setExporting(false);
     }
-  }, [videoId, fileName, tracks, selectedTrackIds, sampleRate, onError]);
+  }, [videoId, fileName, selectedTrackIds, sampleRate, onError]);
 
   return { exporting, exportProgress, exportVideo };
 }

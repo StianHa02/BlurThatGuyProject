@@ -23,7 +23,6 @@ export default function UploadPage() {
   const exportHook = useVideoExport({
     videoId: upload.videoId,
     fileName: upload.fileName,
-    tracks: detection.tracks,
     selectedTrackIds: detection.selectedTrackIds,
     sampleRate,
     onError: upload.setError,
@@ -167,13 +166,21 @@ export default function UploadPage() {
                 <button
                   onClick={() => exportHook.exportVideo()}
                   disabled={exportHook.exporting || detection.selectedTrackIds.length === 0}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 font-medium text-white transition-all text-xs sm:text-sm cursor-pointer disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 font-medium text-white transition-all text-xs sm:text-sm cursor-pointer disabled:cursor-not-allowed relative overflow-hidden"
                 >
-                  {exportHook.exporting ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Exporting... {exportHook.exportProgress}%</>
-                  ) : (
-                    <><Download className="w-4 h-4" /> Download Video</>
+                  {exportHook.exporting && (
+                    <span
+                      className="absolute inset-0 bg-emerald-500/30 transition-all duration-500"
+                      style={{ width: `${exportHook.exportProgress}%` }}
+                    />
                   )}
+                  <span className="relative flex items-center gap-2">
+                    {exportHook.exporting ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Exporting... {exportHook.exportProgress}%</>
+                    ) : (
+                      <><Download className="w-4 h-4" /> Download Video</>
+                    )}
+                  </span>
                 </button>
               </div>
             </div>

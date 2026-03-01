@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { loadModels, detectFacesInVideo } from '@/lib/faceClient';
-import { trackDetections, Track } from '@/lib/tracker';
+import { Track } from '@/lib/tracker';
 
 interface UseDetectionOptions {
   sampleRate: number;
@@ -39,25 +39,12 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
     }
 
     try {
-      const allResults = await detectFacesInVideo(videoId, sampleRate, (p) => {
-        setProgress(Math.round(10 + p * 0.7));
+      // Returns Track[] directly — tracking is server-side, no client processing needed
+      const builtTracks = await detectFacesInVideo(videoId, sampleRate, (p) => {
+        setProgress(p);
+        if (p < 85) setStatus('Detecting faces...');
+        else setStatus('Building face tracks...');
       });
-
-      setProgress(80);
-      setStatus('Building face tracks...');
-
-      const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
-      for (const res of allResults) {
-        if (res.faces.length > 0) {
-          detectionsPerFrame[res.frameIndex] = res.faces;
-        }
-      }
-
-      const builtTracks = trackDetections(detectionsPerFrame, {
-        iouThreshold: 0.1,
-        maxMisses: 20,
-        minTrackLength: 5, // Raised from 2 — filters out brief false detections
-      }).sort((a, b) => b.frames.length - a.frames.length);
 
       setTracks(builtTracks);
       setSelectedTrackIds([]);
