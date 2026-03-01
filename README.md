@@ -1,11 +1,5 @@
 # BlurThatGuy (Coding challenge by FONN Group and Mimir)
 
-TODO:
-Nice to have
-A demo video in the README — a 30 second GIF or screen recording. Employers often won't run it locally so show it working.
-Remove the excessive console.logs in useVideoExport.ts — there are about 10 debug logs in there from when you were fixing the stale closure bug. Clean those up before showing anyone the code.
-Make blurring in backed consistant with in frontend
-
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
@@ -14,7 +8,7 @@ Make blurring in backed consistant with in frontend
 
 ## Preface
 
-As part of this competition, I wanted to specialize in building **frontend** using React/Next.js and deploying the **infrastructure** on AWS EC2 with Docker.
+As part of this competition, I wanted to specialize in building **frontend** and **infrastructure** using React/Next.js and deploying AWS EC2 with Docker.
 
 The application was initially developed with a backend hosted on EC2 and a frontend deployed on Vercel. However, due to payload size limitations, I chose to deploy both the frontend and backend on AWS EC2.
 
@@ -23,9 +17,9 @@ The backend was implemented with FastAPI to align with the original architecture
 ---
 
 ## Leardning Outcomes
-- Deployed a Next.js frontend on AWS EC2 with Docker
-- Deployed a FastAPI backend on AWS EC2 with Docker
-- Used OpenCV to detect faces in videos
+- Familirized with FastAPI 
+- Familirized with AWS and depoyment options
+- tying together frontend and backend with API 
 
 ---
 
@@ -238,15 +232,17 @@ python -c "import secrets; print(secrets.token_hex(32))"
 ```
 BlurThatGuyProject/
 ├── app/                    # Next.js frontend
+│   ├── (landing)/          # Next.js API routes
+│   │   ├── components/     # Components for landing page
+│   │   └── page.tsx        # Landing page
 │   ├── api/                # Next.js API routes
-│   ├── components/         # Components for landing page
 │   ├── upload/             # Upload page & related
 │   │   ├── components/     # Components for upload page
-│   │   ├── hooks/          # Upload-related hooks
+│   │   ├── hooks/          # Custom React hooks
 │   │   └── page.tsx        # Upload page
 │   ├── globals.css
 │   ├── layout.tsx
-│   └── page.tsx            # Main landing page
+│   └── page.tsx            # Route to the landing page
 ├── backend/                # Python FastAPI backend
 │   ├── main.py             # Main backend file and API endpoints
 │   ├── models/             # YuNet face detection model
@@ -256,8 +252,9 @@ BlurThatGuyProject/
 │   ├── faceClient.ts
 │   └── tracker.ts
 ├── public/                 # Static files
+│   ├── Server/             # Handling API headers
 │   ├── favicon.ico
-│   └── Test video/         # Example videos
+│   └── test-videos/        # Example videos
 ├── docker-compose.yml      # Docker configuration
 ├── docker-compose.dev.yml  # Docker dev config
 ├── Dockerfile.backend      # Backend Dockerfile
