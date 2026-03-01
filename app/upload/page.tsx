@@ -1,18 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import {
-  Eye,
-  EyeOff,
-  Users,
-  UserX,
-  Info,
-  Film,
-  Download,
-  Loader2,
-} from 'lucide-react';
-
+import { Eye, EyeOff, Users, UserX, Info, Film, Download, Loader2 } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
 import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery } from './components';
 
@@ -24,49 +14,31 @@ export default function UploadPage() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [sampleRate, setSampleRate] = useState(3);
 
-  // Video upload hook
   const upload = useVideoUpload();
-
-  // Face detection hook
   const detection = useFaceDetection({
     sampleRate,
-    fileUrl: upload.fileUrl,
-    fileRef: upload.fileRef,
+    videoId: upload.videoId,
     onError: upload.setError,
   });
-
-  // Export hook
   const exportHook = useVideoExport({
     videoId: upload.videoId,
     fileName: upload.fileName,
     tracks: detection.tracks,
     selectedTrackIds: detection.selectedTrackIds,
+    sampleRate,
     onError: upload.setError,
   });
 
-  // Handle file selection
   async function handleFileSelect(file: File) {
     const success = await upload.handleFile(file);
-    if (success) {
-      detection.reset();
-      setCurrentStep('detect');
-    }
+    if (success) { detection.reset(); setCurrentStep('detect'); }
   }
 
-  // Handle detection start
   async function handleStartDetection() {
     const success = await detection.runDetection();
-    if (success) {
-      setCurrentStep('select');
-    }
+    if (success) setCurrentStep('select');
   }
 
-  // Handle export
-  async function handleExport() {
-    await exportHook.exportVideo();
-  }
-
-  // Reset everything
   function handleReset() {
     upload.reset();
     detection.reset();
@@ -75,18 +47,13 @@ export default function UploadPage() {
 
   return (
     <div className="min-h-screen bg-zinc-950 bg-grid">
-      <Header
-        currentStep={currentStep}
-        onUploadNew={handleReset}
-      />
+      <Header currentStep={currentStep} onUploadNew={handleReset} />
 
       <main className="max-w-7xl mx-auto px-6 py-8">
-        {/* Error alert */}
         {upload.error && (
           <ErrorAlert message={upload.error} onDismiss={() => upload.setError(null)} />
         )}
 
-        {/* Step 1: Upload */}
         {currentStep === 'upload' && (
           <div className="max-w-2xl mx-auto">
             <div className="text-center mb-8">
@@ -97,11 +64,9 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Step 2: Detect */}
         {currentStep === 'detect' && upload.fileUrl && (
           <div className="max-w-4xl mx-auto">
             <div className="grid lg:grid-cols-2 gap-8 items-stretch">
-              {/* Video preview */}
               <div className="flex flex-col min-h-0">
                 <div className="glass rounded-2xl p-2 mb-4 flex-1 min-h-0 flex flex-col">
                   <video src={upload.fileUrl} controls className="w-full h-full min-h-[240px] object-contain rounded-xl" />
@@ -112,14 +77,12 @@ export default function UploadPage() {
                 </div>
               </div>
 
-              {/* Detection panel */}
               <div className="flex flex-col">
                 <div className="glass rounded-2xl p-6 flex-1">
                   <h2 className="text-xl font-semibold mb-2">Detect Faces</h2>
                   <p className="text-zinc-400 text-sm mb-6">
                     Our AI will scan through your video and identify all faces that appear.
                   </p>
-
                   {detection.processing ? (
                     <ProgressBar
                       progress={detection.progress}
@@ -148,7 +111,7 @@ export default function UploadPage() {
                         <br />
                         <span className="text-zinc-400 text-xs">1 check per {sampleRate} frames</span>
                         <br /><br />
-                        Faces are only searched at these intervals, and not on every frame.
+                        Faces are only searched at these intervals, not every frame.
                         <br /><br />
                         <div className="flex justify-between text-xs mt-1">
                           <span className="text-emerald-400">Low = thorough</span>
@@ -161,10 +124,7 @@ export default function UploadPage() {
                   <div className="mt-4 flex items-center gap-3 bg-zinc-800 rounded-lg px-3 py-2">
                     <label className="text-xs text-zinc-400">Sample rate:</label>
                     <input
-                      type="range"
-                      min={1}
-                      max={10}
-                      value={sampleRate}
+                      type="range" min={1} max={10} value={sampleRate}
                       onChange={e => setSampleRate(Number(e.target.value))}
                       className="w-24 accent-indigo-500"
                     />
@@ -177,10 +137,8 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Step 3: Select & Export */}
         {currentStep === 'select' && upload.fileUrl && (
           <div className="max-w-6xl mx-auto">
-            {/* Status bar */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
               <div className="flex flex-row flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs sm:text-sm">
@@ -189,62 +147,44 @@ export default function UploadPage() {
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-xs sm:text-sm">
                   <EyeOff className="w-4 h-4 text-indigo-400" />
-                  <span className="text-indigo-400">
-                    <strong>{detection.selectedTrackIds.length}</strong> selected for blur
-                  </span>
+                  <span className="text-indigo-400"><strong>{detection.selectedTrackIds.length}</strong> selected for blur</span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20 text-xs sm:text-sm">
                   <Eye className="w-4 h-4 text-green-400" />
                   <span className="text-green-400">
-                    <strong>{detection.tracks.length - detection.selectedTrackIds.length}</strong> face{detection.tracks.length - detection.selectedTrackIds.length !== 1 ? 's' : ''} visible
+                    <strong>{detection.tracks.length - detection.selectedTrackIds.length}</strong>{' '}
+                    face{detection.tracks.length - detection.selectedTrackIds.length !== 1 ? 's' : ''} visible
                   </span>
                 </div>
               </div>
               <div className="flex flex-row items-center gap-2 shrink-0">
-                <button
-                  onClick={detection.selectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors cursor-pointer"
-                >
-                  <UserX className="w-4 h-4" />
-                  Blur All
+                <button onClick={detection.selectAll} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors cursor-pointer">
+                  <UserX className="w-4 h-4" /> Blur All
+                </button>
+                <button onClick={detection.deselectAll} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors cursor-pointer">
+                  <Eye className="w-4 h-4" /> Clear
                 </button>
                 <button
-                  onClick={detection.deselectAll}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs sm:text-sm transition-colors cursor-pointer"
-                >
-                  <Eye className="w-4 h-4" />
-                  Clear
-                </button>
-                <button
-                  onClick={handleExport}
+                  onClick={() => exportHook.exportVideo()}
                   disabled={exportHook.exporting || detection.selectedTrackIds.length === 0}
                   className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-zinc-700 disabled:to-zinc-700 disabled:text-zinc-500 font-medium text-white transition-all text-xs sm:text-sm cursor-pointer disabled:cursor-not-allowed"
                 >
                   {exportHook.exporting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Exporting... {exportHook.exportProgress}%
-                    </>
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Exporting... {exportHook.exportProgress}%</>
                   ) : (
-                    <>
-                      <Download className="w-4 h-4" />
-                      Download Video
-                    </>
+                    <><Download className="w-4 h-4" /> Download Video</>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Instructions */}
             <div className="mb-6 p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
               <p className="text-sm text-zinc-400">
-                <strong className="text-indigo-400">Tip:</strong> Click faces in the gallery below or play the video and click on faces with{' '}
+                <strong className="text-indigo-400">Tip:</strong> Click faces in the gallery or play the video and click faces with{' '}
                 <span className="text-red-400">red frames</span> to blur them.
-                Selected faces will appear pixelated.
               </p>
             </div>
 
-            {/* Video Player */}
             <div className="glass rounded-2xl p-2 mb-6">
               <PlayerWithMask
                 videoUrl={upload.fileUrl}
@@ -253,20 +193,20 @@ export default function UploadPage() {
                 onToggleTrack={detection.toggleTrack}
                 blur={true}
                 sampleRate={sampleRate}
+                fps={upload.videoMetadata?.fps || 30}
               />
             </div>
 
-            {/* Face Gallery */}
             <div className="glass rounded-2xl p-6">
               <FaceGallery
                 tracks={detection.tracks}
                 selectedTrackIds={detection.selectedTrackIds}
                 onToggleTrack={detection.toggleTrack}
                 videoUrl={upload.fileUrl}
+                fps={upload.videoMetadata?.fps || 30}
               />
             </div>
 
-            {/* Action bar */}
             <div className="mt-6 flex justify-end">
               <div className="text-sm text-zinc-500">{upload.fileName}</div>
             </div>

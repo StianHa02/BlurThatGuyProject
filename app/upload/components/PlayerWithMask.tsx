@@ -25,6 +25,7 @@ interface Props {
   onToggleTrack: (trackId: number) => void;
   blur: boolean;
   sampleRate: number;
+  fps: number;
 }
 
 // Pre-create reusable canvas for pixelation (performance optimization)
@@ -46,7 +47,7 @@ function getPixelCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx:
 }
 
 /**
- * Find detection for frame - simplified for speed
+ * Find detection for frame - with interpolation for smoother playback
  */
 function findDetectionForFrame(
   frames: Detection[],
@@ -55,30 +56,60 @@ function findDetectionForFrame(
 ): { bbox: BBox; score: number } | null {
   if (!frames || frames.length === 0) return null;
 
-  const firstFrame = frames[0].frameIndex;
-  const lastFrame = frames[frames.length - 1].frameIndex;
-  const tolerance = sampleRate * 2;
+  // Binary search for the interval containing frameIndex
+  let left = 0;
+  let right = frames.length - 1;
 
-  if (frameIndex < firstFrame - tolerance || frameIndex > lastFrame + tolerance) {
-    return null;
-  }
+  if (frameIndex < frames[0].frameIndex - 20) return null;
+  if (frameIndex > frames[frames.length - 1].frameIndex + 20) return null;
 
-  // Quick binary-ish search for nearest frame
-  let best: Detection | null = null;
-  let bestDiff = Infinity;
-
-  for (const f of frames) {
-    const diff = Math.abs(f.frameIndex - frameIndex);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = f;
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    if (frames[mid].frameIndex === frameIndex) {
+      return { bbox: frames[mid].bbox, score: frames[mid].score };
     }
-    // Early exit if we found exact match
-    if (diff === 0) break;
+    if (frames[mid].frameIndex < frameIndex) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
   }
 
-  if (best && bestDiff <= sampleRate * 2) {
-    return { bbox: best.bbox, score: best.score };
+  // If not found, left is the index of the first element greater than frameIndex
+  const prev = frames[left - 1];
+  const next = frames[left];
+
+  const maxGap = 20; // Match tracker maxMisses
+
+  // No padding for first/last detections as per user request to avoid "ghost" masks.
+  const padding = 0;
+
+  if (prev && !next) {
+    return (frameIndex - prev.frameIndex <= padding) ? { bbox: prev.bbox, score: prev.score } : null;
+  }
+  if (!prev && next) {
+    return (next.frameIndex - frameIndex <= padding) ? { bbox: next.bbox, score: next.score } : null;
+  }
+
+  if (prev && next) {
+    const gap = next.frameIndex - prev.frameIndex;
+    if (gap > maxGap) {
+      if (frameIndex === prev.frameIndex) return { bbox: prev.bbox, score: prev.score };
+      if (frameIndex === next.frameIndex) return { bbox: next.bbox, score: next.score };
+      return null;
+    }
+
+    // Interpolate
+    const t = (frameIndex - prev.frameIndex) / gap;
+    return {
+      bbox: [
+        prev.bbox[0] + (next.bbox[0] - prev.bbox[0]) * t,
+        prev.bbox[1] + (next.bbox[1] - prev.bbox[1]) * t,
+        prev.bbox[2] + (next.bbox[2] - prev.bbox[2]) * t,
+        prev.bbox[3] + (next.bbox[3] - prev.bbox[3]) * t,
+      ],
+      score: prev.score * (1 - t) + next.score * t
+    };
   }
 
   return null;
@@ -90,7 +121,8 @@ export default function PlayerWithMask({
   selectedTrackIds,
   onToggleTrack,
   blur,
-  sampleRate
+  sampleRate,
+  fps
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -155,7 +187,7 @@ export default function PlayerWithMask({
         return;
       }
 
-      const frameIndex = Math.round(video.currentTime * 30);
+      const frameIndex = Math.round(video.currentTime * fps);
 
       // Skip if same frame (optimization)
       const frameChanged = frameIndex !== lastFrameRef.current;
@@ -231,7 +263,7 @@ export default function PlayerWithMask({
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
     };
-  }, [tracksMap, selectedSet, blur, sampleRate]);
+  }, [tracksMap, selectedSet, blur, sampleRate, fps]);
 
   // Calculate scale for overlay positioning
   const getOverlayStyle = useCallback((bbox: BBox) => {
