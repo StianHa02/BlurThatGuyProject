@@ -1,9 +1,9 @@
 // lib/faceClient.ts
 // Face detection via Python backend (YuNet), proxied through Next.js API routes.
-// detectFacesInBatch is kept as a no-op stub — all detection now happens
-// server-side via detectFacesInVideo. FaceGallery thumbnails use track data directly.
+// Tracking now happens server-side. Detection stream returns Track objects directly.
 
 import { API_URL } from './config';
+import { Track } from './tracker';
 
 let isReady = false;
 
@@ -16,11 +16,15 @@ export async function loadModels(): Promise<void> {
   isReady = true;
 }
 
+/**
+ * Stream detection progress from backend.
+ * Tracking is server-side — results are Track[] not raw detections.
+ */
 export async function detectFacesInVideo(
   videoId: string,
   sampleRate = 3,
   onProgress?: (progress: number) => void
-): Promise<{ frameIndex: number; faces: { bbox: [number, number, number, number]; score: number }[] }[]> {
+): Promise<Track[]> {
   if (!isReady) throw new Error('Face detector not loaded. Call loadModels() first.');
 
   const response = await fetch(`${API_URL}/detect-video/${videoId}?sample_rate=${sampleRate}`, {
@@ -35,7 +39,7 @@ export async function detectFacesInVideo(
   const reader = response.body?.getReader();
   if (!reader) throw new Error('Response body is not readable');
 
-  let results: any[] = [];
+  let tracks: Track[] = [];
   const decoder = new TextDecoder();
   let buffer = '';
 
@@ -45,7 +49,7 @@ export async function detectFacesInVideo(
     try {
       const data = JSON.parse(trimmed);
       if (data.type === 'progress') onProgress?.(data.progress);
-      else if (data.type === 'results') results = data.results;
+      else if (data.type === 'results') tracks = data.results as Track[];
       else if (data.type === 'error') throw new Error(data.error || 'Detection failed');
     } catch (e) {
       if (!(e instanceof SyntaxError)) throw e;
@@ -66,25 +70,17 @@ export async function detectFacesInVideo(
 
   if (buffer.trim()) processLine(buffer);
 
-  return results.map((r: any) => ({
-    frameIndex: r.frameIndex,
-    faces: r.faces.map((f: { bbox: number[]; score: number }) => ({
-      bbox: f.bbox as [number, number, number, number],
-      score: f.score,
-    })),
-  }));
+  return tracks;
 }
 
 /**
- * @deprecated No-op stub. All detection is server-side via detectFacesInVideo.
- * Kept to avoid breaking FaceGallery until it is updated to use track data directly.
+ * @deprecated No-op stub.
  */
 export async function detectFacesInBatch(
   batch: { frameIndex: number; image: string }[]
 ): Promise<{ frameIndex: number; faces: { bbox: [number, number, number, number]; score: number }[] }[]> {
-  // Returns empty results immediately — zero API calls made.
   return batch.map(b => ({ frameIndex: b.frameIndex, faces: [] }));
 }
 
-/** @deprecated No-op. Tracking state is managed in tracker.ts. */
+/** @deprecated No-op. */
 export function resetTrackers(): void {}

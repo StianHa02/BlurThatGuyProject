@@ -15,6 +15,8 @@ import re
 import logging
 import asyncio
 import threading
+import subprocess
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
 from datetime import datetime, timedelta
@@ -34,7 +36,7 @@ except Exception:
 # =============================================================================
 
 FACE_DETECTION_CONFIG = {
-    "score_threshold": 0.6,  # Raised from 0.35 — reduces false positives significantly
+    "score_threshold": 0.6,
     "nms_threshold": 0.3,
     "max_faces": 5000,
 }
@@ -45,6 +47,13 @@ VIDEO_PROCESSING_CONFIG = {
     "max_padding": 2.0,
     "max_blur_amount": 50,
     "min_blur_amount": 1,
+}
+
+TRACKER_CONFIG = {
+    "iou_threshold": 0.1,
+    "max_misses": 20,
+    "min_track_length": 5,
+    "max_center_distance": 2.0,
 }
 
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".avi"}
@@ -79,8 +88,6 @@ def validate_environment() -> None:
 # Detector Pool
 # =============================================================================
 
-# c7i.large-flex: 2 vCPUs. Keep pool at 2 to avoid context-switch overhead.
-# Override via DETECTOR_POOL_SIZE env var if you scale up instance type.
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
 
 _thread_pool: ThreadPoolExecutor | None = None
@@ -106,7 +113,7 @@ def _get_model_path() -> Path:
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
-        logger.info(f"Downloading YuNet model...")
+        logger.info("Downloading YuNet model...")
         urllib.request.urlretrieve(url, path)
         logger.info("Model downloaded successfully")
     _model_path = path
@@ -181,6 +188,144 @@ def _run_detection(image: np.ndarray) -> list[dict]:
 
 def detect_faces(image: np.ndarray) -> list[dict]:
     return _run_detection(image)
+
+
+# =============================================================================
+# Server-side Tracker (mirrors frontend tracker.ts exactly)
+# =============================================================================
+
+def _iou(a: list, b: list) -> float:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    ix1 = max(ax, bx)
+    iy1 = max(ay, by)
+    ix2 = min(ax + aw, bx + bw)
+    iy2 = min(ay + ah, by + bh)
+    iw = max(0.0, ix2 - ix1)
+    ih = max(0.0, iy2 - iy1)
+    intersection = iw * ih
+    union = aw * ah + bw * bh - intersection
+    return intersection / union if union > 0 else 0.0
+
+
+def _center_distance(a: list, b: list) -> float:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    dx = (ax + aw / 2) - (bx + bw / 2)
+    dy = (ay + ah / 2) - (by + bh / 2)
+    avg_size = (aw + ah + bw + bh) / 4
+    return (dx * dx + dy * dy) ** 0.5 / avg_size if avg_size > 0 else 9999.0
+
+
+def _similar_size(a: list, b: list) -> bool:
+    area_a = a[2] * a[3]
+    area_b = b[2] * b[3]
+    if area_b == 0:
+        return False
+    ratio = area_a / area_b
+    return 0.5 < ratio < 2.0
+
+
+def track_detections(detections_per_frame: dict) -> list[dict]:
+    """IOU + distance tracker — mirrors tracker.ts trackDetections() exactly."""
+    iou_threshold = TRACKER_CONFIG["iou_threshold"]
+    max_misses = TRACKER_CONFIG["max_misses"]
+    min_track_length = TRACKER_CONFIG["min_track_length"]
+    max_center_distance = TRACKER_CONFIG["max_center_distance"]
+
+    tracks = []
+    next_id = 1
+
+    for frame_index in sorted(detections_per_frame.keys()):
+        detections = sorted(detections_per_frame[frame_index], key=lambda d: -d["score"])
+        used_track_ids = set()
+
+        for det in detections:
+            best_track = None
+            best_score = -float("inf")
+
+            for t in tracks:
+                if t["id"] in used_track_ids:
+                    continue
+                if frame_index - t["last_frame"] > max_misses + 1:
+                    continue
+
+                iou_val = _iou(det["bbox"], t["last_box"])
+                dist_val = _center_distance(det["bbox"], t["last_box"])
+                size_match = _similar_size(det["bbox"], t["last_box"])
+
+                score = iou_val
+                if iou_val < iou_threshold and dist_val < max_center_distance and size_match:
+                    score = max(score, 0.5 - dist_val * 0.2)
+
+                if score > best_score:
+                    best_score = score
+                    best_track = t
+
+            if best_track and best_score >= iou_threshold:
+                best_track["frames"].append({
+                    "frameIndex": frame_index,
+                    "bbox": det["bbox"],
+                    "score": det["score"],
+                })
+                best_track["last_box"] = det["bbox"]
+                best_track["last_frame"] = frame_index
+                used_track_ids.add(best_track["id"])
+            else:
+                t = {
+                    "id": next_id,
+                    "frames": [{"frameIndex": frame_index, "bbox": det["bbox"], "score": det["score"]}],
+                    "last_box": det["bbox"],
+                    "last_frame": frame_index,
+                    "misses": 0,
+                }
+                next_id += 1
+                tracks.append(t)
+                used_track_ids.add(t["id"])
+
+        for t in tracks:
+            if t["last_frame"] < frame_index:
+                t["misses"] += 1
+
+    result = []
+    for t in tracks:
+        if len(t["frames"]) < min_track_length:
+            continue
+        start_frame = t["frames"][0]["frameIndex"]
+        end_frame = t["frames"][-1]["frameIndex"]
+        mid_idx = len(t["frames"]) // 2
+        result.append({
+            "id": t["id"],
+            "frames": t["frames"],
+            "startFrame": start_frame,
+            "endFrame": end_frame,
+            "thumbnailFrameIndex": t["frames"][mid_idx]["frameIndex"],
+        })
+
+    return sorted(result, key=lambda t: -len(t["frames"]))
+
+
+# =============================================================================
+# Detection Results Store (in-memory, keyed by video_id)
+# =============================================================================
+
+_detection_store: dict[str, list[dict]] = {}
+_store_lock = threading.Lock()
+
+
+def store_tracks(video_id: str, tracks: list[dict]):
+    with _store_lock:
+        _detection_store[video_id] = tracks
+
+
+def get_tracks(video_id: str) -> list[dict] | None:
+    with _store_lock:
+        return _detection_store.get(video_id)
+
+
+def clear_tracks(video_id: str):
+    with _store_lock:
+        _detection_store.pop(video_id, None)
 
 
 # =============================================================================
@@ -337,22 +482,9 @@ class BatchDetectResponse(BaseModel):
     results: List[BatchFrameResult]
 
 
-class TrackFrame(BaseModel):
-    frameIndex: int
-    bbox: List[float]
-    score: float
-
-
-class Track(BaseModel):
-    id: int
-    frames: List[TrackFrame]  # Typed properly — fixes 422 on export
-    startFrame: int
-    endFrame: int
-
-
 class ExportRequest(BaseModel):
-    tracks: List[Track]
-    selectedTrackIds: List[int] = Field(default_factory=list, max_length=100)
+    # Tracks removed — backend uses stored detection results
+    selectedTrackIds: List[int] = Field(..., max_length=400)
     padding: float = Field(default=VIDEO_PROCESSING_CONFIG["default_padding"],
                            ge=0.0, le=VIDEO_PROCESSING_CONFIG["max_padding"])
     blurAmount: int = Field(default=VIDEO_PROCESSING_CONFIG["default_blur_amount"],
@@ -379,61 +511,46 @@ def validate_video_file(filename: str | None, content_type: str | None):
 # Helpers
 # =============================================================================
 
-def find_detection_for_frame(frames: list, frame_idx: int, sample_rate: int = 1) -> dict | None:
-    """Find or interpolate detection for a given frame index.
-    Matches frontend PlayerWithMask.tsx findDetectionForFrame logic exactly:
-    - Binary search for exact match
-    - Interpolate between surrounding detections if gap <= maxGap (20)
-    - Return None if frame is beyond track bounds (padding = 0)
-    """
+def find_detection_for_frame(frames: list, frame_idx: int) -> dict | None:
+    """Binary search + interpolation. Matches frontend PlayerWithMask logic exactly."""
     if not frames:
         return None
 
     max_gap = 20
-    padding = 0  # No ghost masks beyond actual detections — matches frontend
+    padding = 0
 
-    # Early exit if frame is well outside track bounds
-    if frame_idx < frames[0].frameIndex - 20:
+    if frame_idx < frames[0]["frameIndex"] - 20:
         return None
-    if frame_idx > frames[-1].frameIndex + 20:
+    if frame_idx > frames[-1]["frameIndex"] + 20:
         return None
 
-    # Binary search for exact match or insertion point
     left, right = 0, len(frames) - 1
     while left <= right:
         mid = (left + right) // 2
-        if frames[mid].frameIndex == frame_idx:
-            return {"frameIndex": frames[mid].frameIndex, "bbox": frames[mid].bbox, "score": frames[mid].score}
-        elif frames[mid].frameIndex < frame_idx:
+        if frames[mid]["frameIndex"] == frame_idx:
+            return frames[mid]
+        elif frames[mid]["frameIndex"] < frame_idx:
             left = mid + 1
         else:
             right = mid - 1
 
-    # left = index of first frame greater than frame_idx
     prev_f = frames[left - 1] if left > 0 else None
     next_f = frames[left] if left < len(frames) else None
 
     if prev_f and not next_f:
-        # Track has ended — only return if within padding (0 = must be exact)
-        return {"frameIndex": prev_f.frameIndex, "bbox": prev_f.bbox, "score": prev_f.score} \
-            if (frame_idx - prev_f.frameIndex) <= padding else None
-
+        return prev_f if (frame_idx - prev_f["frameIndex"]) <= padding else None
     if next_f and not prev_f:
-        # Track hasn't started yet — only return if within padding
-        return {"frameIndex": next_f.frameIndex, "bbox": next_f.bbox, "score": next_f.score} \
-            if (next_f.frameIndex - frame_idx) <= padding else None
-
+        return next_f if (next_f["frameIndex"] - frame_idx) <= padding else None
     if prev_f and next_f:
-        gap = next_f.frameIndex - prev_f.frameIndex
+        gap = next_f["frameIndex"] - prev_f["frameIndex"]
         if gap > max_gap:
             return None
-        # Interpolate bbox and score between surrounding detections
-        t = (frame_idx - prev_f.frameIndex) / gap
-        pb, nb = prev_f.bbox, next_f.bbox
+        t = (frame_idx - prev_f["frameIndex"]) / gap
+        pb, nb = prev_f["bbox"], next_f["bbox"]
         return {
             "frameIndex": frame_idx,
             "bbox": [pb[i] + (nb[i] - pb[i]) * t for i in range(4)],
-            "score": prev_f.score * (1 - t) + next_f.score * t,
+            "score": prev_f["score"] * (1 - t) + next_f["score"] * t,
         }
 
     return None
@@ -533,12 +650,11 @@ def detect_video_id_endpoint(
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             total_steps = max(1, (total_frames + sample_rate - 1) // sample_rate) if total_frames > 0 else 1
             completed_steps = 0
-            results = []
+            detections_per_frame = {}
 
             pool = get_thread_pool()
             pending_futures = []
             MAX_PENDING = DETECTOR_POOL_SIZE * 2
-
             target_idx = 0
             current_frame = 0
 
@@ -561,11 +677,12 @@ def detect_video_id_endpoint(
                     try:
                         faces = fut.result()
                         if faces:
-                            results.append({"frameIndex": idx, "faces": faces})
+                            detections_per_frame[idx] = faces
                     except Exception as e:
                         logger.error(f"Detection failed frame {idx}: {e}")
                     completed_steps += 1
-                    yield json.dumps({"type": "progress", "progress": round(completed_steps / total_steps * 100, 1)}) + "\n"
+                    # Detection = 0-80%, tracking = 80-100%
+                    yield json.dumps({"type": "progress", "progress": round(completed_steps / total_steps * 80, 1)}) + "\n"
 
                 target_idx += sample_rate
 
@@ -573,15 +690,25 @@ def detect_video_id_endpoint(
                 try:
                     faces = fut.result()
                     if faces:
-                        results.append({"frameIndex": idx, "faces": faces})
+                        detections_per_frame[idx] = faces
                 except Exception as e:
                     logger.error(f"Detection failed frame {idx}: {e}")
                 completed_steps += 1
-                yield json.dumps({"type": "progress", "progress": min(100, round(completed_steps / total_steps * 100, 1))}) + "\n"
+                yield json.dumps({"type": "progress", "progress": min(80, round(completed_steps / total_steps * 80, 1))}) + "\n"
 
             cap.release()
-            logger.info(f"Detection done for {video_id}: {len(results)} frames with faces")
-            yield json.dumps({"type": "results", "results": results}) + "\n"
+            logger.info(f"Detection done for {video_id}: {len(detections_per_frame)} frames with faces")
+
+            # Track server-side
+            yield json.dumps({"type": "progress", "progress": 85}) + "\n"
+            tracks = track_detections(detections_per_frame)
+            logger.info(f"Tracking done for {video_id}: {len(tracks)} tracks")
+
+            # Store tracks for export — no need to resend from frontend
+            store_tracks(video_id, tracks)
+
+            yield json.dumps({"type": "progress", "progress": 100}) + "\n"
+            yield json.dumps({"type": "results", "results": tracks}) + "\n"
 
         except Exception as e:
             logger.error(f"Video detection stream error: {e}")
@@ -600,10 +727,16 @@ async def export_video(
     if not input_path.exists():
         raise HTTPException(status_code=404, detail="Video not found. Please upload again.")
 
+    # Use stored tracks — never sent back from frontend
+    tracks = get_tracks(video_id)
+    if tracks is None:
+        raise HTTPException(status_code=400, detail="Detection results not found. Please re-run detection.")
+
+    raw_path = get_safe_video_path(video_id, "_raw.mp4")
     output_path = get_safe_video_path(video_id, "_blurred.mp4")
 
     try:
-        tracks_map = {t.id: t for t in export_request.tracks if t.id in export_request.selectedTrackIds}
+        tracks_map = {t["id"]: t for t in tracks if t["id"] in export_request.selectedTrackIds}
 
         cap = cv2.VideoCapture(str(input_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -611,16 +744,14 @@ async def export_video(
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+        out = cv2.VideoWriter(str(raw_path), fourcc, fps, (width, height))
 
-        # On c7i.large-flex (2 vCPU), chunk_size=8 balances parallelism vs memory.
-        # Scales automatically if DETECTOR_POOL_SIZE is overridden on larger instances.
         chunk_size = DETECTOR_POOL_SIZE * 4
 
         def blur_frame(args):
             idx, frame = args
             for track in tracks_map.values():
-                det = find_detection_for_frame(track.frames, int(idx), export_request.sampleRate)
+                det = find_detection_for_frame(track["frames"], int(idx))
                 if det is None:
                     continue
                 ox, oy, ow, oh = det["bbox"]
@@ -632,7 +763,8 @@ async def export_video(
                 if w > 0 and h > 0:
                     blur_amt = export_request.blurAmount
                     region = frame[y:y + h, x:x + w]
-                    small = cv2.resize(region, (max(1, w // blur_amt), max(1, h // blur_amt)), interpolation=cv2.INTER_NEAREST)
+                    small = cv2.resize(region, (max(1, w // blur_amt), max(1, h // blur_amt)),
+                                       interpolation=cv2.INTER_NEAREST)
                     frame[y:y + h, x:x + w] = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
             return (idx, frame)
 
@@ -655,6 +787,29 @@ async def export_video(
 
         cap.release()
         out.release()
+
+        # Re-encode with H.264 and mux original audio — dramatically smaller output
+        if shutil.which("ffmpeg"):
+            result = subprocess.run([
+                "ffmpeg", "-y",
+                "-i", str(raw_path),
+                "-i", str(input_path),
+                "-c:v", "libx264",
+                "-crf", "23",
+                "-preset", "fast",
+                "-c:a", "aac",
+                "-map", "0:v:0",
+                "-map", "1:a:0?",
+                "-shortest",
+                str(output_path),
+            ], capture_output=True, timeout=600)
+            raw_path.unlink(missing_ok=True)
+            if result.returncode != 0:
+                logger.error(f"ffmpeg failed: {result.stderr.decode()}")
+                raise HTTPException(status_code=500, detail="Failed to encode video")
+        else:
+            logger.warning("ffmpeg not found — serving uncompressed output")
+            raw_path.rename(output_path)
 
         logger.info(f"Export complete: {video_id}")
         return FileResponse(str(output_path), media_type="video/mp4", filename="blurred-video.mp4")
