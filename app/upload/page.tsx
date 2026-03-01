@@ -2,14 +2,26 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Eye, EyeOff, Users, UserX, Info, Film, Download, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Users, UserX, Info, Download, Loader2 } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
-import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery } from './components';
-import { BackgroundBlobs } from '../(landing)/components';
+import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery, SpotlightCard } from './components';
+import { BackgroundBlobs} from '../(landing)/components';
 
 const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
 
 type Step = 'upload' | 'detect' | 'select';
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 export default function UploadPage() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
@@ -45,23 +57,31 @@ export default function UploadPage() {
     setCurrentStep('upload');
   }
 
+  const fileSize = upload.fileRef?.current?.size ?? null;
+  const durationSecs = upload.videoMetadata
+    ? upload.videoMetadata.frameCount / upload.videoMetadata.fps
+    : null;
+  const shortName = upload.fileName.length > 28
+    ? upload.fileName.slice(0, 25) + '...'
+    : upload.fileName;
+
   return (
-    <div className="min-h-screen bg-[#070f1c] text-white">
+    <div className="min-h-screen bg-[#070f1c] text-white flex flex-col">
 
       <BackgroundBlobs />
 
       <Header currentStep={currentStep} onUploadNew={handleReset} />
 
-      <main className="relative z-10 max-w-7xl mx-auto px-6 py-8">
+      <main className="relative z-10 flex-1 flex flex-col max-w-6xl w-full mx-auto px-6 py-8">
         {upload.error && (
           <ErrorAlert message={upload.error} onDismiss={() => upload.setError(null)} />
         )}
 
         {/* ===== UPLOAD STEP ===== */}
         {currentStep === 'upload' && (
-          <div className="max-w-2xl mx-auto">
+          <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold mb-2 bg-gradient-to-b from-white to-slate-300 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold mb-2 bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">
                 Upload your video
               </h1>
               <p className="text-slate-400">Select or drag a video file to get started</p>
@@ -72,22 +92,30 @@ export default function UploadPage() {
 
         {/* ===== DETECT STEP ===== */}
         {currentStep === 'detect' && upload.fileUrl && (
-          <div className="max-w-4xl mx-auto">
-            <div className="grid lg:grid-cols-2 gap-8 items-stretch">
-              <div className="flex flex-col min-h-0">
-                <div className="rounded-2xl p-2 mb-4 flex-1 min-h-0 flex flex-col bg-white/5 border border-white/8 backdrop-blur-sm">
-                  <video src={upload.fileUrl} controls className="w-full h-full min-h-[240px] object-contain rounded-xl" />
-                </div>
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Film className="w-4 h-4" />
-                  <span className="truncate">{upload.fileName}</span>
-                </div>
-              </div>
+          <div className="flex-1 flex flex-col gap-4">
 
-              <div className="flex flex-col">
-                <div className="rounded-2xl p-6 flex-1 bg-white/5 border border-white/8 backdrop-blur-sm">
-                  <h2 className="text-xl font-semibold mb-2">Detect Faces</h2>
-                  <p className="text-slate-400 text-sm mb-6">
+            {/* Top row — constrained height on large screens; allow natural flow on mobile */}
+            <div className="grid lg:grid-cols-2 gap-4 min-h-0 lg:max-h-[70vh]">
+
+              {/* Left: video player */}
+              <SpotlightCard className="flex flex-col min-h-0" color="blue">
+                <div className="relative flex-1 flex items-center p-3 min-h-0">
+                  <video
+                    src={upload.fileUrl}
+                    controls
+                    playsInline
+                    disablePictureInPicture
+                    controlsList="nodownload"
+                    className="w-full h-full max-h-[55vh] rounded-xl object-contain bg-black"
+                  />
+                </div>
+              </SpotlightCard>
+
+              {/* Right: detect controls */}
+              <SpotlightCard className="flex flex-col min-h-0" color="blue">
+                <div className="relative p-7 flex flex-col flex-1 overflow-auto">
+                  <h2 className="text-2xl font-semibold mb-2 text-white">Detect Faces</h2>
+                  <p className="text-slate-400 text-sm mb-8 leading-relaxed">
                     Our AI will scan through your video and identify all faces that appear.
                   </p>
                   {detection.processing ? (
@@ -99,21 +127,23 @@ export default function UploadPage() {
                   ) : (
                     <button
                       onClick={handleStartDetection}
-                      className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-600/20"
+                      className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-600/20 text-base"
                     >
                       <Eye className="w-5 h-5" />
                       Start Detection
                     </button>
                   )}
-                </div>
 
-                <div className="mt-4 p-4 rounded-xl bg-white/4 border border-white/8">
-                  <div className="flex items-center gap-2 text-sm text-slate-400">
-                    <span className="relative group">
+                  <div className="flex-1" />
+
+                  <div className="h-px bg-white/6 my-6" />
+
+                  <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
+                    <span className="relative group/tip">
                       <span className="inline-flex cursor-help text-slate-500 hover:text-blue-400 transition-colors">
                         <Info className="w-4 h-4" />
                       </span>
-                      <span className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-10 w-64 p-3 text-sm text-left text-slate-300 bg-[#0d1b2e] border border-white/10 rounded-lg shadow-xl pointer-events-none">
+                      <span className="absolute left-0 bottom-full mb-2 hidden group-hover/tip:block z-10 w-64 p-3 text-sm text-left text-slate-300 bg-[#0d1b2e] border border-white/10 rounded-lg shadow-xl pointer-events-none">
                         <span className="font-medium text-white">Frame sampling</span>
                         <br />
                         <span className="text-slate-400 text-xs">1 check per {sampleRate} frames</span>
@@ -128,25 +158,50 @@ export default function UploadPage() {
                     </span>
                     <span>Sample every <strong className="text-white">{sampleRate}</strong> frames</span>
                   </div>
-                  <div className="mt-4 flex items-center gap-3 bg-white/5 rounded-lg px-3 py-2">
-                    <label className="text-xs text-slate-400">Sample rate:</label>
+                  <div className="flex items-center gap-3 bg-white/5 rounded-lg px-4 py-3">
+                    <label className="text-xs text-slate-400 shrink-0">Sample rate:</label>
                     <input
                       type="range" min={1} max={10} value={sampleRate}
                       onChange={e => setSampleRate(Number(e.target.value))}
-                      className="w-24 accent-blue-500"
+                      className="flex-1 accent-blue-500"
                     />
-                    <span className="text-xs font-mono w-6 text-white">{sampleRate}</span>
-                    <span className="text-xs text-slate-500">frames</span>
+                    <span className="text-sm font-mono w-5 text-white text-right">{sampleRate}</span>
                   </div>
                 </div>
-              </div>
+              </SpotlightCard>
             </div>
+
+            {/* Bottom: Video Details full width */}
+            <SpotlightCard color="blue">
+              <div className="relative px-6 py-4 border-b border-white/6">
+                <h3 className="font-bold text-white text-base">Video Details</h3>
+              </div>
+              <div className="relative grid grid-cols-3 divide-x divide-white/6">
+                <div className="flex flex-col px-6 py-4">
+                  <span className="text-xs text-slate-500 mb-1.5">Filename</span>
+                  <span className="text-sm text-white font-semibold truncate">{shortName}</span>
+                </div>
+                <div className="flex flex-col px-6 py-4">
+                  <span className="text-xs text-slate-500 mb-1.5">Size</span>
+                  <span className="text-sm text-white font-semibold">
+                    {fileSize !== null ? formatFileSize(fileSize) : '—'}
+                  </span>
+                </div>
+                <div className="flex flex-col px-6 py-4">
+                  <span className="text-xs text-slate-500 mb-1.5">Duration</span>
+                  <span className="text-sm text-white font-semibold">
+                    {durationSecs !== null ? formatDuration(durationSecs) : '—'}
+                  </span>
+                </div>
+              </div>
+            </SpotlightCard>
+
           </div>
         )}
 
         {/* ===== SELECT STEP ===== */}
         {currentStep === 'select' && upload.fileUrl && (
-          <div className="max-w-6xl mx-auto">
+          <div className="max-w-6xl mx-auto w-full">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
               <div className="flex flex-row flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs sm:text-sm">
