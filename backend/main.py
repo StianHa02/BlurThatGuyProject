@@ -24,6 +24,7 @@ from typing import List
 
 try:
     import importlib
+
     spec = importlib.util.find_spec("dotenv")
     if spec is not None:
         dotenv = importlib.import_module("dotenv")
@@ -65,6 +66,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 # =============================================================================
 # Environment Validation
 # =============================================================================
@@ -90,11 +92,11 @@ def validate_environment() -> None:
 
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
 
-_thread_pool: ThreadPoolExecutor | None = None
-_model_path: Path | None = None
+_thread_pool: ThreadPoolExecutor = None
+_model_path: Path = None
 _detector_pool: list = []
 _pool_lock = threading.Lock()
-_pool_semaphore: threading.Semaphore | None = None
+_pool_semaphore: threading.Semaphore = None
 
 
 def get_thread_pool() -> ThreadPoolExecutor:
@@ -318,9 +320,10 @@ def store_tracks(video_id: str, tracks: list[dict]):
         _detection_store[video_id] = tracks
 
 
-def get_tracks(video_id: str) -> list[dict] | None:
+def get_tracks(video_id: str) -> list[dict]:
     with _store_lock:
         return _detection_store.get(video_id)
+    return None
 
 
 def clear_tracks(video_id: str):
@@ -448,6 +451,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-API-Key"],
 )
 
+
 # =============================================================================
 # Pydantic Models
 # =============================================================================
@@ -502,7 +506,8 @@ def validate_video_file(filename: str | None, content_type: str | None):
         raise HTTPException(status_code=400, detail="Filename is required")
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_VIDEO_EXTENSIONS:
-        raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_VIDEO_EXTENSIONS)}")
+        raise HTTPException(status_code=400,
+                            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_VIDEO_EXTENSIONS)}")
     if content_type and content_type not in ALLOWED_VIDEO_MIMETYPES:
         raise HTTPException(status_code=400, detail="Invalid video MIME type")
 
@@ -578,9 +583,9 @@ async def health_authenticated(_: bool = Depends(verify_api_key)):
 
 @app.post("/upload-video")
 async def upload_video(
-    request: Request,
-    file: UploadFile = File(...),
-    _: bool = Depends(verify_api_key),
+        request: Request,
+        file: UploadFile = File(...),
+        _: bool = Depends(verify_api_key),
 ):
     validate_video_file(file.filename or "video.mp4", file.content_type)
 
@@ -603,7 +608,8 @@ async def upload_video(
                 size += len(chunk)
                 if size > max_size:
                     video_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
+                    raise HTTPException(status_code=413,
+                                        detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
                 f.write(chunk)
 
         cap = cv2.VideoCapture(str(video_path))
@@ -617,7 +623,8 @@ async def upload_video(
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
-        logger.info(f"Uploaded {video_id} ({size/1024/1024:.1f}MB, {fps}fps, {width}x{height}, {frame_count} frames)")
+        logger.info(
+            f"Uploaded {video_id} ({size / 1024 / 1024:.1f}MB, {fps}fps, {width}x{height}, {frame_count} frames)")
         return {
             "videoId": video_id,
             "metadata": {"fps": fps, "width": width, "height": height, "frameCount": frame_count},
@@ -632,9 +639,9 @@ async def upload_video(
 
 @app.post("/detect-video/{video_id}")
 def detect_video_id_endpoint(
-    video_id: str,
-    sample_rate: int = 3,
-    _: bool = Depends(verify_api_key),
+        video_id: str,
+        sample_rate: int = 3,
+        _: bool = Depends(verify_api_key),
 ):
     video_path = get_safe_video_path(video_id, ".mp4")
     if not video_path.exists():
@@ -682,7 +689,8 @@ def detect_video_id_endpoint(
                         logger.error(f"Detection failed frame {idx}: {e}")
                     completed_steps += 1
                     # Detection = 0-80%, tracking = 80-100%
-                    yield json.dumps({"type": "progress", "progress": round(completed_steps / total_steps * 80, 1)}) + "\n"
+                    yield json.dumps(
+                        {"type": "progress", "progress": round(completed_steps / total_steps * 80, 1)}) + "\n"
 
                 target_idx += sample_rate
 
@@ -694,7 +702,8 @@ def detect_video_id_endpoint(
                 except Exception as e:
                     logger.error(f"Detection failed frame {idx}: {e}")
                 completed_steps += 1
-                yield json.dumps({"type": "progress", "progress": min(80, round(completed_steps / total_steps * 80, 1))}) + "\n"
+                yield json.dumps(
+                    {"type": "progress", "progress": min(80, round(completed_steps / total_steps * 80, 1))}) + "\n"
 
             cap.release()
             logger.info(f"Detection done for {video_id}: {len(detections_per_frame)} frames with faces")
@@ -719,9 +728,9 @@ def detect_video_id_endpoint(
 
 @app.post("/export/{video_id}")
 async def export_video(
-    video_id: str,
-    export_request: ExportRequest,
-    _: bool = Depends(verify_api_key),
+        video_id: str,
+        export_request: ExportRequest,
+        _: bool = Depends(verify_api_key),
 ):
     input_path = get_safe_video_path(video_id, ".mp4")
     if not input_path.exists():
@@ -823,8 +832,8 @@ async def export_video(
 
 @app.post("/detect-batch", response_model=BatchDetectResponse)
 async def detect_batch_endpoint(
-    batch_request: BatchDetectRequest,
-    _: bool = Depends(verify_api_key),
+        batch_request: BatchDetectRequest,
+        _: bool = Depends(verify_api_key),
 ):
     def process_frame(frame_req: BatchFrameRequest) -> BatchFrameResult:
         image_data = frame_req.image.split(",", 1)[-1] if "," in frame_req.image else frame_req.image

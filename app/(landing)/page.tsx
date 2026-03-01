@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
-import { Navbar, FeatureCard, Footer } from './components';
+import { Navbar, FeatureCard, Footer, BackgroundBlobs } from './components';
 import { useEffect, useState } from 'react';
 
 const FEATURES = [
@@ -60,16 +60,10 @@ export default function Home() {
 		<div className="bg-[#070f1c] text-white">
 
 			{/* Global blobs — fixed so they span both sections with no seam */}
-			<div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-				<div className="absolute -top-40 -left-40 w-[700px] h-[700px] rounded-full bg-blue-600/20 blur-[120px]" />
-				<div className="absolute -top-20 right-0 w-[500px] h-[500px] rounded-full bg-indigo-600/15 blur-[100px]" />
-				<div className="absolute top-[80vh] left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-blue-500/10 blur-[100px]" />
-				<div className="absolute top-[130vh] right-0 w-[400px] h-[400px] rounded-full bg-indigo-600/10 blur-[100px]" />
-				<div className="absolute top-[160vh] left-0 w-[400px] h-[400px] rounded-full bg-blue-600/10 blur-[100px]" />
-			</div>
+			<BackgroundBlobs />
 
 			{/* ================= HERO ================= */}
-			<div className="relative min-h-[100svh] flex items-center justify-center overflow-hidden">
+			<div className="relative min-h-svh flex items-center justify-center overflow-hidden">
 
 				{/* Navbar */}
 				<div className="absolute top-0 left-0 w-full z-20">
@@ -88,7 +82,7 @@ export default function Home() {
 
 						{/* Headline */}
 						<h1 className="font-bold tracking-tight mb-4 leading-tight">
-							<span className="text-6xl sm:text-7xl md:text-8xl block font-nippo bg-gradient-to-b from-white via-white to-blue-200 bg-clip-text text-transparent">
+							<span className="text-6xl sm:text-7xl md:text-8xl block font-nippo bg-linear-to-b from-white via-white to-blue-200 bg-clip-text text-transparent">
 								BLUR THAT GUY
 							</span>
 						</h1>
@@ -155,7 +149,7 @@ export default function Home() {
 			</div>
 
 			{/* ================= HOW IT WORKS ================= */}
-			<div className="relative flex flex-col min-h-[100svh]">
+			<div className="relative flex flex-col min-h-svh">
 				<section
 					id="how-it-works"
 					className="flex-1 flex flex-col items-center justify-center px-6 py-16 relative z-10"
@@ -163,7 +157,7 @@ export default function Home() {
 					<div className="max-w-7xl mx-auto w-full flex flex-col items-center">
 
 						<div className="text-center mb-12">
-							<h2 className="text-4xl font-bold mb-4 bg-gradient-to-b from-white to-slate-300 bg-clip-text text-transparent">
+							<h2 className="text-4xl font-bold mb-4 bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">
 								How it works
 							</h2>
 							<p className="text-slate-400 text-lg max-w-2xl mx-auto">
@@ -178,7 +172,7 @@ export default function Home() {
 						</div>
 
 						{/* Divider */}
-						<div className="w-full h-px bg-gradient-to-r from-transparent via-white/8 to-transparent mb-16" />
+						<div className="w-full h-px bg-linear-to-r from-transparent via-white/8 to-transparent mb-16" />
 
 						<div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full">
 							{BENEFITS.map((b) => {
