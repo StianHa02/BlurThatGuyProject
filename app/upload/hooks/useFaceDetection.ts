@@ -1,19 +1,17 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { loadModels, detectFacesInVideo, resetTrackers } from '@/lib/faceClient';
-import { trackDetections } from '@/lib/tracker';
+import { loadModels, detectFacesInVideo } from '@/lib/faceClient';
+import { trackDetections, Track } from '@/lib/tracker';
 
 interface UseDetectionOptions {
   sampleRate: number;
-  fileUrl: string | null;
   videoId: string | null;
-  fileRef: React.RefObject<File | null>;
   onError: (error: string) => void;
 }
 
-export function useFaceDetection({ sampleRate, fileUrl, videoId, fileRef, onError }: UseDetectionOptions) {
-  const [tracks, setTracks] = useState<any[]>([]);
+export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionOptions) {
+  const [tracks, setTracks] = useState<Track[]>([]);
   const [selectedTrackIds, setSelectedTrackIds] = useState<number[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -29,71 +27,53 @@ export function useFaceDetection({ sampleRate, fileUrl, videoId, fileRef, onErro
     setProgress(0);
     setStatus('Connecting to face detector...');
 
-    resetTrackers();
-
     try {
       await loadModels();
-      setStatus('Face detector ready');
-    } catch (err) {
-      console.error('Failed to load face detector:', err);
-      onError('Failed to connect to face detector. Make sure the Python backend is running on port 8000.');
+      setStatus('Detecting faces...');
+      setProgress(10);
+    } catch {
+      onError('Failed to connect to face detector. Make sure the Python backend is running.');
       setProcessing(false);
       setStatus('');
       return false;
     }
 
-    setStatus('Detecting faces (server-side)...');
-    setProgress(10);
-
     try {
-      // Use the new server-side detection endpoint with progress support
       const allResults = await detectFacesInVideo(videoId, sampleRate, (p) => {
-        // Map 0-100 to 10-80% for smoother integration with existing progress steps
-        const scaledProgress = 10 + (p * 0.7);
-        setProgress(Math.round(scaledProgress));
+        setProgress(Math.round(10 + p * 0.7));
       });
-      
+
       setProgress(80);
       setStatus('Building face tracks...');
 
       const detectionsPerFrame: Record<number, { bbox: [number, number, number, number]; score: number }[]> = {};
       for (const res of allResults) {
-        if (res.faces && res.faces.length > 0) {
-          detectionsPerFrame[res.frameIndex] = res.faces.map(d => ({
-            bbox: d.bbox as [number, number, number, number],
-            score: d.score,
-          }));
+        if (res.faces.length > 0) {
+          detectionsPerFrame[res.frameIndex] = res.faces;
         }
       }
 
       const builtTracks = trackDetections(detectionsPerFrame, {
         iouThreshold: 0.1,
         maxMisses: 20,
-        minTrackLength: 2,
-      });
+        minTrackLength: 5, // Raised from 2 — filters out brief false detections
+      }).sort((a, b) => b.frames.length - a.frames.length);
 
-      const filteredTracks = [...builtTracks];
-
-      filteredTracks.sort((a, b) => b.frames.length - a.frames.length);
-
-      setTracks(filteredTracks);
+      setTracks(builtTracks);
       setSelectedTrackIds([]);
 
-      if (filteredTracks.length === 0) {
+      if (builtTracks.length === 0) {
         setStatus('No faces detected');
-        onError('No faces were detected in this video. Try adjusting the sample rate.');
+        onError('No faces were detected. Try adjusting the sample rate.');
       } else {
-        setStatus(`${filteredTracks.length} ${filteredTracks.length === 1 ? 'person' : 'people'} detected`);
+        setStatus(`${builtTracks.length} ${builtTracks.length === 1 ? 'person' : 'people'} detected`);
       }
 
       setProgress(100);
       setProcessing(false);
-      return filteredTracks.length > 0;
-
+      return builtTracks.length > 0;
     } catch (err) {
-      console.error('Detection error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'An error occurred during face detection.';
-      onError(errorMessage);
+      onError(err instanceof Error ? err.message : 'An error occurred during face detection.');
       setProcessing(false);
       setStatus('');
       return false;
@@ -102,20 +82,12 @@ export function useFaceDetection({ sampleRate, fileUrl, videoId, fileRef, onErro
 
   const toggleTrack = useCallback((trackId: number) => {
     setSelectedTrackIds(prev =>
-      prev.includes(trackId)
-        ? prev.filter(id => id !== trackId)
-        : [...prev, trackId]
+      prev.includes(trackId) ? prev.filter(id => id !== trackId) : [...prev, trackId]
     );
   }, []);
 
-  const selectAll = useCallback(() => {
-    setSelectedTrackIds(tracks.map(t => t.id));
-  }, [tracks]);
-
-  const deselectAll = useCallback(() => {
-    setSelectedTrackIds([]);
-  }, []);
-
+  const selectAll = useCallback(() => setSelectedTrackIds(tracks.map(t => t.id)), [tracks]);
+  const deselectAll = useCallback(() => setSelectedTrackIds([]), []);
   const reset = useCallback(() => {
     setTracks([]);
     setSelectedTrackIds([]);
@@ -123,16 +95,5 @@ export function useFaceDetection({ sampleRate, fileUrl, videoId, fileRef, onErro
     setStatus('');
   }, []);
 
-  return {
-    tracks,
-    selectedTrackIds,
-    processing,
-    progress,
-    status,
-    runDetection,
-    toggleTrack,
-    selectAll,
-    deselectAll,
-    reset,
-  };
+  return { tracks, selectedTrackIds, processing, progress, status, runDetection, toggleTrack, selectAll, deselectAll, reset };
 }
