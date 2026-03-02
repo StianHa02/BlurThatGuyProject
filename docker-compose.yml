@@ -22,3 +22,6 @@ services:
     volumes:
       - video_uploads:/tmp/blurthatguy
     restart: unless-stopped
+
+volumes:
+  video_uploads:
