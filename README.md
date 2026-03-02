@@ -144,6 +144,8 @@ MAX_UPLOAD_SIZE_MB=100
 
 For production (EC2) or using just backend as a standalone API:
 
+*Make sure to remove environment in docker file and point to your own .env file*
+
 **Frontend** (`.env.prod`):
 ```bash
 API_URL=http://backend:8000
