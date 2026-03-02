@@ -8,7 +8,7 @@
 
 ## Preface
 
-As part of this competition, I wanted to specialize in building **frontend** and **infrastructure** using React/Next.js and deploying AWS EC2 with Docker.
+As part of this coding challenge, I wanted to specialize in **frontend** and **infrastructure** using React/Next.js and deploying AWS EC2.
 
 The application was initially developed with a backend hosted on EC2 and a frontend deployed on Vercel. However, due to payload size limitations, I chose to deploy both the frontend and backend on AWS EC2.
 
@@ -53,15 +53,11 @@ The backend was implemented with FastAPI to align with the original architecture
 
 **Requirements:**
 - Docker Desktop
-- Setup Environment Variable (look av setup section under)
 
 **For Regular Use:**
 ```bash
 # Start everything
 docker-compose up --build
-
-# Or run in background
-docker-compose up -d --build
 
 # Stop
 docker-compose down
@@ -146,7 +142,7 @@ MAX_UPLOAD_SIZE_MB=100
 
 ### Production Deployment (API Key Required)
 
-For production (EC2, VPS, etc.), you need to configure API keys for security:
+For production (EC2) or using just backend as a standalone API:
 
 **Frontend** (`.env.prod`):
 ```bash
@@ -161,21 +157,6 @@ API_KEY=same-api-key-as-frontend
 ALLOWED_ORIGINS=https://your-domain.com
 MAX_UPLOAD_SIZE_MB=100
 ```
-
-**Generate a secure API key:**
-```bash
-# On Mac/Linux
-openssl rand -hex 32
-
-# Or use Python
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
->  **Important**:
-> - Never commit `.env.local` or `.env.prod` files to git
-> - Only commit `.env.local.example` files as templates
-> - Use the same API key for both frontend and backend in production
-
 ---
 
 
