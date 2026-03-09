@@ -18,8 +18,9 @@ export async function POST(
       const error = await response.json().catch(() => ({ detail: 'Export failed' }));
       return NextResponse.json({ error: error.detail || 'Export failed' }, { status: response.status });
     }
-    return new NextResponse(await response.blob(), {
-      headers: { 'Content-Type': 'video/mp4', 'Content-Disposition': 'attachment; filename="blurred-video.mp4"' },
+    // Stream the NDJSON straight through — no buffering
+    return new NextResponse(response.body, {
+      headers: { 'Content-Type': 'application/x-ndjson' },
     });
   } catch (error) {
     console.error('Export error:', error);

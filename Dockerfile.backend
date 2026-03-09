@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    wget \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,13 +18,9 @@ RUN apt-get update && apt-get install -y \
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code
+# Copy backend code (includes models/ directory)
 COPY backend/ .
 
-# Create models directory and download model at build time
-RUN mkdir -p models && \
-    wget -q -O models/face_detection_yunet_2023mar.onnx \
-    https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
 
 # Create temp directory for video uploads
 RUN mkdir -p /tmp/blurthatguy

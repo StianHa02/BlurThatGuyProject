@@ -7,7 +7,6 @@ import cv2
 import numpy as np
 import json
 from pathlib import Path
-import urllib.request
 import tempfile
 import os
 import uuid
@@ -87,24 +86,16 @@ def validate_environment() -> None:
 
 
 # =============================================================================
-# Detector Pool
+# Detector Pool — ThreadPoolExecutor (low RAM, OpenCV releases GIL)
 # =============================================================================
 
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
 
-_thread_pool: ThreadPoolExecutor = None
-_model_path: Path = None
+_thread_pool: ThreadPoolExecutor | None = None
+_model_path: Path | None = None
 _detector_pool: list = []
 _pool_lock = threading.Lock()
-_pool_semaphore: threading.Semaphore = None
-
-
-def get_thread_pool() -> ThreadPoolExecutor:
-    global _thread_pool
-    if _thread_pool is None:
-        _thread_pool = ThreadPoolExecutor(max_workers=DETECTOR_POOL_SIZE)
-        logger.info(f"Thread pool created with {DETECTOR_POOL_SIZE} workers")
-    return _thread_pool
+_pool_semaphore: threading.Semaphore | None = None
 
 
 def _get_model_path() -> Path:
@@ -113,11 +104,10 @@ def _get_model_path() -> Path:
         return _model_path
     path = Path(__file__).parent / "models" / "face_detection_yunet_2023mar.onnx"
     if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
-        logger.info("Downloading YuNet model...")
-        urllib.request.urlretrieve(url, path)
-        logger.info("Model downloaded successfully")
+        raise RuntimeError(
+            f"Model file not found at {path}. "
+            "Ensure the model is present (downloaded at Docker build time or placed manually)."
+        )
     _model_path = path
     return _model_path
 
@@ -133,17 +123,27 @@ def _create_detector() -> cv2.FaceDetectorYN:
     )
 
 
+def get_thread_pool() -> ThreadPoolExecutor:
+    global _thread_pool
+    if _thread_pool is None:
+        _thread_pool = ThreadPoolExecutor(max_workers=DETECTOR_POOL_SIZE)
+        logger.info(f"Thread pool created with {DETECTOR_POOL_SIZE} workers")
+    return _thread_pool
+
+
 def get_face_detector():
+    """Create the shared detector pool and thread pool at startup."""
     global _detector_pool, _pool_semaphore
     with _pool_lock:
         if not _detector_pool:
             logger.info(f"Creating detector pool with {DETECTOR_POOL_SIZE} instances")
             _detector_pool = [_create_detector() for _ in range(DETECTOR_POOL_SIZE)]
             _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
-    return _detector_pool[0]
+    get_thread_pool()
 
 
 class _DetectorLease:
+    """Context manager that checks out a detector from the shared pool."""
     def __enter__(self):
         _pool_semaphore.acquire()
         with _pool_lock:
@@ -186,6 +186,28 @@ def _run_detection(image: np.ndarray) -> list[dict]:
         }
         for f in faces
     ]
+
+
+def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
+    """Applies Gaussian blur to selected faces in a single frame."""
+    idx, frame, tracks_frames_list, padding, blur_amount, width, height = args
+
+    for track_frames in tracks_frames_list:
+        det = find_detection_for_frame(track_frames, int(idx))
+        if det is None:
+            continue
+        ox, oy, ow, oh = det["bbox"]
+        x = max(0, int(ox - ow * padding))
+        y = max(0, int(oy - oh * padding))
+        w = min(int(ow * (1 + padding * 2)), width - x)
+        h = min(int(oh * (1 + padding * 2)), height - y)
+        if w > 0 and h > 0:
+            # Gaussian blur — kernel size must be odd
+            k = blur_amount * 4 + 1
+            sigma = blur_amount * 3
+            region = frame[y:y + h, x:x + w]
+            frame[y:y + h, x:x + w] = cv2.GaussianBlur(region, (k, k), sigma)
+    return (idx, frame)
 
 
 def detect_faces(image: np.ndarray) -> list[dict]:
@@ -338,11 +360,14 @@ def clear_tracks(video_id: str):
 TEMP_DIR = Path(tempfile.gettempdir()) / "blurthatguy"
 TEMP_DIR.mkdir(exist_ok=True)
 
-try:
-    _max_upload_env = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "100"))
-except Exception:
-    _max_upload_env = 100
-MAX_UPLOAD_SIZE_MB = max(1, min(_max_upload_env, 100))
+_max_upload_env_raw = os.environ.get("MAX_UPLOAD_SIZE_MB", "")
+if _max_upload_env_raw:
+    try:
+        MAX_UPLOAD_SIZE_MB = max(1, int(_max_upload_env_raw))
+    except Exception:
+        MAX_UPLOAD_SIZE_MB = 0  # unlimited
+else:
+    MAX_UPLOAD_SIZE_MB = 0  # unlimited (no env var set)
 CHUNK_SIZE = 1024 * 1024  # 1MB
 
 UUID_PATTERN = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
@@ -589,24 +614,25 @@ async def upload_video(
 ):
     validate_video_file(file.filename or "video.mp4", file.content_type)
 
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-                raise HTTPException(status_code=413, detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
-        except ValueError:
-            pass
+    if MAX_UPLOAD_SIZE_MB > 0:
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
+            except ValueError:
+                pass
 
     video_id = str(uuid.uuid4())
     video_path = TEMP_DIR / f"{video_id}.mp4"
-    max_size = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    max_size = MAX_UPLOAD_SIZE_MB * 1024 * 1024 if MAX_UPLOAD_SIZE_MB > 0 else 0
     size = 0
 
     try:
         with open(video_path, "wb") as f:
             while chunk := await file.read(CHUNK_SIZE):
                 size += len(chunk)
-                if size > max_size:
+                if max_size and size > max_size:
                     video_path.unlink(missing_ok=True)
                     raise HTTPException(status_code=413,
                                         detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
@@ -727,7 +753,7 @@ def detect_video_id_endpoint(
 
 
 @app.post("/export/{video_id}")
-async def export_video(
+def export_video(
         video_id: str,
         export_request: ExportRequest,
         _: bool = Depends(verify_api_key),
@@ -744,90 +770,129 @@ async def export_video(
     raw_path = get_safe_video_path(video_id, "_raw.mp4")
     output_path = get_safe_video_path(video_id, "_blurred.mp4")
 
-    try:
-        tracks_map = {t["id"]: t for t in tracks if t["id"] in export_request.selectedTrackIds}
+    def generate():
+        try:
+            tracks_map = {t["id"]: t for t in tracks if t["id"] in export_request.selectedTrackIds}
 
-        cap = cv2.VideoCapture(str(input_path))
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap = cv2.VideoCapture(str(input_path))
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            total_frames = max(total_frames, 1)
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(str(raw_path), fourcc, fps, (width, height))
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(str(raw_path), fourcc, fps, (width, height))
 
-        chunk_size = DETECTOR_POOL_SIZE * 4
+            chunk_size = DETECTOR_POOL_SIZE * 4
 
-        def blur_frame(args):
-            idx, frame = args
-            for track in tracks_map.values():
-                det = find_detection_for_frame(track["frames"], int(idx))
-                if det is None:
-                    continue
-                ox, oy, ow, oh = det["bbox"]
-                pad = export_request.padding
-                x = max(0, int(ox - ow * pad))
-                y = max(0, int(oy - oh * pad))
-                w = min(int(ow * (1 + pad * 2)), width - x)
-                h = min(int(oh * (1 + pad * 2)), height - y)
-                if w > 0 and h > 0:
-                    blur_amt = export_request.blurAmount
-                    region = frame[y:y + h, x:x + w]
-                    small = cv2.resize(region, (max(1, w // blur_amt), max(1, h // blur_amt)),
-                                       interpolation=cv2.INTER_NEAREST)
-                    frame[y:y + h, x:x + w] = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
-            return (idx, frame)
+            # Serialize track frames once — passed to each worker thread
+            tracks_frames_list = [t["frames"] for t in tracks_map.values()]
+            pad = export_request.padding
+            blur_amt = export_request.blurAmount
 
-        pool = get_thread_pool()
-        chunk = []
+            pool = get_thread_pool()
+            chunk = []
+            frames_written = 0
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            chunk.append((cap.get(cv2.CAP_PROP_POS_FRAMES) - 1, frame))
-            if len(chunk) >= chunk_size:
-                for _, f in sorted(pool.map(blur_frame, chunk), key=lambda x: x[0]):
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES) - 1)
+                chunk.append((idx, frame, tracks_frames_list, pad, blur_amt, width, height))
+                if len(chunk) >= chunk_size:
+                    futures = [pool.submit(_blur_frame, args) for args in chunk]
+                    results = sorted([f.result() for f in futures], key=lambda x: x[0])
+                    for _, f in results:
+                        out.write(f)
+                        frames_written += 1
+                    chunk = []
+                    # Blur loop = 0–70%
+                    progress = round(frames_written / total_frames * 70, 1)
+                    yield json.dumps({"type": "progress", "progress": min(70, progress)}) + "\n"
+
+            if chunk:
+                futures = [pool.submit(_blur_frame, args) for args in chunk]
+                results = sorted([f.result() for f in futures], key=lambda x: x[0])
+                for _, f in results:
                     out.write(f)
-                chunk = []
+                    frames_written += 1
+                progress = round(frames_written / total_frames * 70, 1)
+                yield json.dumps({"type": "progress", "progress": min(70, progress)}) + "\n"
 
-        if chunk:
-            for _, f in sorted(pool.map(blur_frame, chunk), key=lambda x: x[0]):
-                out.write(f)
+            cap.release()
+            out.release()
 
-        cap.release()
-        out.release()
+            # Re-encode with H.264 and mux original audio — multi-threaded for speed
+            yield json.dumps({"type": "progress", "progress": 75}) + "\n"
 
-        # Re-encode with H.264 and mux original audio — dramatically smaller output
-        if shutil.which("ffmpeg"):
-            result = subprocess.run([
-                "ffmpeg", "-y",
-                "-i", str(raw_path),
-                "-i", str(input_path),
-                "-c:v", "libx264",
-                "-crf", "23",
-                "-preset", "fast",
-                "-c:a", "aac",
-                "-map", "0:v:0",
-                "-map", "1:a:0?",
-                "-shortest",
-                str(output_path),
-            ], capture_output=True, timeout=600)
-            raw_path.unlink(missing_ok=True)
-            if result.returncode != 0:
-                logger.error(f"ffmpeg failed: {result.stderr.decode()}")
-                raise HTTPException(status_code=500, detail="Failed to encode video")
-        else:
-            logger.warning("ffmpeg not found — serving uncompressed output")
-            raw_path.rename(output_path)
+            if shutil.which("ffmpeg"):
+                yield json.dumps({"type": "progress", "progress": 85}) + "\n"
+                result = subprocess.run([
+                    "ffmpeg", "-y",
+                    "-threads", "0",
+                    "-i", str(raw_path),
+                    "-i", str(input_path),
+                    "-c:v", "libx264",
+                    "-crf", "23",
+                    "-preset", "fast",
+                    "-threads", "0",
+                    "-c:a", "aac",
+                    "-map", "0:v:0",
+                    "-map", "1:a:0?",
+                    "-shortest",
+                    str(output_path),
+                ], capture_output=True, timeout=600)
+                raw_path.unlink(missing_ok=True)
+                if result.returncode != 0:
+                    logger.error(f"ffmpeg failed: {result.stderr.decode()}")
+                    yield json.dumps({"type": "error", "error": "Failed to encode video"}) + "\n"
+                    return
+            else:
+                logger.warning("ffmpeg not found — serving uncompressed output")
+                raw_path.rename(output_path)
 
-        logger.info(f"Export complete: {video_id}")
-        return FileResponse(str(output_path), media_type="video/mp4", filename="blurred-video.mp4")
+            yield json.dumps({"type": "progress", "progress": 90}) + "\n"
 
-    except HTTPException:
-        raise
+            logger.info(f"Export complete: {video_id}")
+            yield json.dumps({"type": "done"}) + "\n"
+
+        except Exception as e:
+            logger.error(f"Export error {video_id}: {e}")
+            yield json.dumps({"type": "error", "error": str(e)}) + "\n"
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@app.get("/download/{video_id}")
+async def download_video(
+        video_id: str,
+        _: bool = Depends(verify_api_key),
+):
+    output_path = get_safe_video_path(video_id, "_blurred.mp4")
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail="Blurred video not found. Please export first.")
+    return FileResponse(str(output_path), media_type="video/mp4", filename="blurred-video.mp4")
+
+
+def _process_batch_frame(frame_index: int, image_data: str) -> dict:
+    """Process a single base64 frame for batch detection."""
+    import base64
+    try:
+        raw = image_data.split(",", 1)[-1] if "," in image_data else image_data
+        nparr = np.frombuffer(base64.b64decode(raw), np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if image is None:
+            return {"frameIndex": frame_index, "faces": []}
+        faces = detect_faces(image)
+        return {
+            "frameIndex": frame_index,
+            "faces": [{"bbox": f["bbox"], "score": f["score"]} for f in faces],
+        }
     except Exception as e:
-        logger.error(f"Export error {video_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process video")
+        logger.error(f"Error processing frame {frame_index}: {e}")
+        return {"frameIndex": frame_index, "faces": []}
 
 
 @app.post("/detect-batch", response_model=BatchDetectResponse)
@@ -835,29 +900,22 @@ async def detect_batch_endpoint(
         batch_request: BatchDetectRequest,
         _: bool = Depends(verify_api_key),
 ):
-    def process_frame(frame_req: BatchFrameRequest) -> BatchFrameResult:
-        image_data = frame_req.image.split(",", 1)[-1] if "," in frame_req.image else frame_req.image
-        try:
-            nparr = np.frombuffer(__import__("base64").b64decode(image_data), np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if image is None:
-                return BatchFrameResult(frameIndex=frame_req.frameIndex, faces=[])
-            faces = detect_faces(image)
-            return BatchFrameResult(
-                frameIndex=frame_req.frameIndex,
-                faces=[FaceDetectionResult(bbox=f["bbox"], score=f["score"]) for f in faces],
-            )
-        except Exception as e:
-            logger.error(f"Error processing frame {frame_req.frameIndex}: {e}")
-            return BatchFrameResult(frameIndex=frame_req.frameIndex, faces=[])
-
     try:
         loop = asyncio.get_event_loop()
+        pool = get_thread_pool()
         results = await asyncio.gather(*[
-            loop.run_in_executor(get_thread_pool(), process_frame, fr)
+            loop.run_in_executor(pool, _process_batch_frame, fr.frameIndex, fr.image)
             for fr in batch_request.batch
         ])
-        return BatchDetectResponse(results=list(results))
+        return BatchDetectResponse(
+            results=[
+                BatchFrameResult(
+                    frameIndex=r["frameIndex"],
+                    faces=[FaceDetectionResult(bbox=f["bbox"], score=f["score"]) for f in r["faces"]],
+                )
+                for r in results
+            ]
+        )
     except Exception as e:
         logger.error(f"Batch detection error: {e}")
         raise HTTPException(status_code=500, detail="Failed to detect faces in batch")

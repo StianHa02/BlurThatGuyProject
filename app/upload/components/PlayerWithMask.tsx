@@ -28,24 +28,6 @@ interface Props {
   fps: number;
 }
 
-// Pre-create reusable canvas for pixelation (performance optimization)
-let pixelCanvas: HTMLCanvasElement | null = null;
-let pixelCtx: CanvasRenderingContext2D | null = null;
-
-function getPixelCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
-  if (!pixelCanvas) {
-    pixelCanvas = document.createElement('canvas');
-    pixelCtx = pixelCanvas.getContext('2d');
-  }
-  if (!pixelCtx) return null;
-
-  if (pixelCanvas.width !== w || pixelCanvas.height !== h) {
-    pixelCanvas.width = w;
-    pixelCanvas.height = h;
-  }
-  return { canvas: pixelCanvas, ctx: pixelCtx };
-}
-
 /**
  * Find detection for frame - with interpolation for smoother playback
  */
@@ -197,7 +179,6 @@ export default function PlayerWithMask({
 
       const currentVisibleFaces: {trackId: number, bbox: BBox, isSelected: boolean}[] = [];
       const padding = 0.4;
-      const blurAmount = 12;
 
       // Process all tracks
       for (const [trackId, track] of tracksMap) {
@@ -214,24 +195,39 @@ export default function PlayerWithMask({
         currentVisibleFaces.push({ trackId, bbox: [x, y, w, h], isSelected });
 
         if (isSelected) {
-          // Draw blur/pixelation for selected faces
+          // Blur matching backend _blur_frame_worker:
+          // Backend uses GaussianBlur with k=blur_amount*4+1, sigma=blur_amount*3
+          // We replicate this with downscale + CSS blur + upscale
           if (!blur) {
             ctx.fillStyle = 'black';
             ctx.fillRect(x, y, w, h);
           } else {
-            const tmpW = Math.max(1, Math.floor(w / blurAmount));
-            const tmpH = Math.max(1, Math.floor(h / blurAmount));
+            const blurAmount = 12; // matches backend default
+            // Downscale factor mirrors the large kernel effect
+            const downscale = Math.max(blurAmount, 8);
+            const tmpW = Math.max(1, Math.floor(w / downscale));
+            const tmpH = Math.max(1, Math.floor(h / downscale));
 
-            const pixel = getPixelCanvas(tmpW, tmpH);
-            if (pixel) {
-              try {
-                pixel.ctx.drawImage(video, x, y, w, h, 0, 0, tmpW, tmpH);
-                ctx.imageSmoothingEnabled = false;
-                ctx.drawImage(pixel.canvas, 0, 0, tmpW, tmpH, x, y, w, h);
-              } catch {
-                ctx.fillStyle = 'black';
-                ctx.fillRect(x, y, w, h);
-              }
+            // Use an offscreen canvas to pixelate + blur the region
+            const offscreen = new OffscreenCanvas(tmpW, tmpH);
+            const offCtx = offscreen.getContext('2d');
+            if (offCtx) {
+              // Step 1: draw downscaled (pixelation — destroys detail)
+              offCtx.drawImage(video, x, y, w, h, 0, 0, tmpW, tmpH);
+
+              // Step 2: apply Gaussian blur on the tiny image
+              offCtx.filter = 'blur(2px)';
+              offCtx.drawImage(offscreen, 0, 0);
+              offCtx.filter = 'none';
+
+              // Step 3: draw back to main canvas at full size (nearest-neighbor upscale)
+              ctx.imageSmoothingEnabled = false;
+              ctx.drawImage(offscreen, 0, 0, tmpW, tmpH, x, y, w, h);
+              ctx.imageSmoothingEnabled = true;
+            } else {
+              // Fallback if OffscreenCanvas not supported
+              ctx.fillStyle = 'black';
+              ctx.fillRect(x, y, w, h);
             }
           }
         } else {

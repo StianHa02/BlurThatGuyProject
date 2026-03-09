@@ -22,7 +22,7 @@ services:
     environment:
       DEV_MODE: "true"
       ALLOWED_ORIGINS: http://localhost:3000
-      MAX_UPLOAD_SIZE_MB: "100"
+      # MAX_UPLOAD_SIZE_MB: ""  # Unlimited by default. Set to a number (e.g. "500") to enforce a limit.
     volumes:
       - video_uploads:/tmp/blurthatguy
     restart: unless-stopped

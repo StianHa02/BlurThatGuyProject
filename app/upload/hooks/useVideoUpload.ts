@@ -16,16 +16,9 @@ export function useVideoUpload() {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<File | null>(null);
 
-  const MAX_UPLOAD_SIZE_MB = 100;
-
   const handleFile = useCallback(async (f: File) => {
     if (!f.type.startsWith('video/')) {
       setError('Please upload a video file (MP4, WebM, etc.)');
-      return false;
-    }
-
-    if (f.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
-      setError(`File is too large. Maximum allowed size is ${MAX_UPLOAD_SIZE_MB}MB.`);
       return false;
     }
 

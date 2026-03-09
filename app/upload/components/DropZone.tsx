@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { Upload, Info } from 'lucide-react';
+import { Upload } from 'lucide-react';
 
 interface DropZoneProps {
   onFileSelect: (file: File) => void;
@@ -72,10 +72,7 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
             </span>
           ))}
         </div>
-        <div className="flex items-center justify-center gap-1.5 text-sm text-slate-400">
-          <Info className="w-4 h-4 text-slate-500 shrink-0" />
-          <span>Maximum file size: 100MB</span>
-        </div>
+
       </div>
     </div>
   );
