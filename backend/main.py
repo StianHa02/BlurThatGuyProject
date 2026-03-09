@@ -327,16 +327,25 @@ def validate_video_file(filename: str | None, content_type: str | None):
 
 def cleanup_old_files():
     try:
-        cutoff = datetime.now() - timedelta(hours=24)
-        count = sum(1 for p in TEMP_DIR.glob("*")
-                    if p.is_file() and datetime.fromtimestamp(p.stat().st_mtime) < cutoff and not p.unlink())
-        if count: logger.info(f"Cleaned up {count} old temporary files")
+        cutoff = datetime.now() - timedelta(hours=1)
+        expired_ids = set()
+        count = 0
+        for p in TEMP_DIR.glob("*"):
+            if p.is_file() and datetime.fromtimestamp(p.stat().st_mtime) < cutoff:
+                stem = p.stem.split("_")[0]
+                if UUID_PATTERN.match(stem):
+                    expired_ids.add(stem)
+                p.unlink()
+                count += 1
+        for vid in expired_ids:
+            clear_tracks(vid)
+        if count: logger.info(f"Cleaned up {count} old temporary files ({len(expired_ids)} sessions)")
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
 async def periodic_cleanup():
     while True:
-        await asyncio.sleep(3600)
+        await asyncio.sleep(600)  # every 10 min → max age ~1h10m
         cleanup_old_files()
 
 def validate_environment() -> None:
