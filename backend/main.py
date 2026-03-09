@@ -19,7 +19,6 @@ import shutil
 import queue
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
-import urllib.request
 from datetime import datetime, timedelta
 from typing import List
 import onnxruntime as ort
@@ -47,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "blurthatguy"
 TEMP_DIR.mkdir(exist_ok=True)
-CHUNK_SIZE = 1024 * 1024
+CHUNK_SIZE = 1024 * 1024*2
 UUID_PATTERN = re.compile(r'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
 
 try:
@@ -111,17 +110,10 @@ _ENCODER_ARGS: dict[str, list[str]] = {
     "libx264":           ["-c:v", "libx264", "-crf", "26", "-preset", "veryfast", "-threads", "0"],
 }
 
-_SCRFD_MODEL_URL = "https://huggingface.co/crj/dl-ws/resolve/8f8ec345154a161633d8294fd5e21908c97d7f8a/scrfd_2.5g.onnx"
-
 def _get_model_path() -> Path:
     global _model_path
     if _model_path is None:
         path = Path(__file__).parent / "models" / "scrfd_2.5g.onnx"
-        if not path.exists():
-            logger.info(f"Downloading SCRFD model to {path} ...")
-            path.parent.mkdir(exist_ok=True)
-            urllib.request.urlretrieve(_SCRFD_MODEL_URL, path)
-            logger.info("SCRFD model downloaded.")
         _model_path = path
     return _model_path
 
