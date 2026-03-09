@@ -265,6 +265,8 @@ export default function UploadPage() {
                 blur={true}
                 sampleRate={sampleRate}
                 fps={upload.videoMetadata?.fps || 30}
+                padding={0.4}
+                targetBlocks={12}
               />
             </div>
 

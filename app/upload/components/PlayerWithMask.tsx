@@ -26,6 +26,8 @@ interface Props {
   blur: boolean;
   sampleRate: number;
   fps: number;
+  padding?: number;
+  targetBlocks?: number;
 }
 
 /**
@@ -104,7 +106,9 @@ export default function PlayerWithMask({
   onToggleTrack,
   blur,
   sampleRate,
-  fps
+  fps,
+  padding = 0.4,
+  targetBlocks = 8,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -178,7 +182,6 @@ export default function PlayerWithMask({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const currentVisibleFaces: {trackId: number, bbox: BBox, isSelected: boolean}[] = [];
-      const padding = 0.4;
 
       // Process all tracks
       for (const [trackId, track] of tracksMap) {
@@ -195,47 +198,52 @@ export default function PlayerWithMask({
         currentVisibleFaces.push({ trackId, bbox: [x, y, w, h], isSelected });
 
         if (isSelected) {
-          // Blur matching backend _blur_frame_worker:
-          // Backend uses GaussianBlur with k=blur_amount*4+1, sigma=blur_amount*3
-          // We replicate this with downscale + CSS blur + upscale
+          // Clip to ellipse — only the face oval is anonymised, not the full bounding box
+          ctx.save();
+          ctx.beginPath();
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+          ctx.clip();
+
           if (!blur) {
             ctx.fillStyle = 'black';
-            ctx.fillRect(x, y, w, h);
+            ctx.fill();
           } else {
-            const blurAmount = 12; // matches backend default
-            // Downscale factor mirrors the large kernel effect
-            const downscale = Math.max(blurAmount, 8);
-            const tmpW = Math.max(1, Math.floor(w / downscale));
-            const tmpH = Math.max(1, Math.floor(h / downscale));
+            // Adaptive pixelation matching backend: block density = targetBlocks across shortest dimension
+            const blockSize = Math.max(1, Math.floor(Math.min(w, h) / targetBlocks));
+            const tmpW = Math.max(1, Math.floor(w / blockSize));
+            const tmpH = Math.max(1, Math.floor(h / blockSize));
 
-            // Use an offscreen canvas to pixelate + blur the region
             const offscreen = new OffscreenCanvas(tmpW, tmpH);
             const offCtx = offscreen.getContext('2d');
             if (offCtx) {
-              // Step 1: draw downscaled (pixelation — destroys detail)
+              offCtx.imageSmoothingEnabled = true;  // INTER_LINEAR equivalent on downsample
               offCtx.drawImage(video, x, y, w, h, 0, 0, tmpW, tmpH);
-
-              // Step 2: apply Gaussian blur on the tiny image
-              offCtx.filter = 'blur(2px)';
-              offCtx.drawImage(offscreen, 0, 0);
-              offCtx.filter = 'none';
-
-              // Step 3: draw back to main canvas at full size (nearest-neighbor upscale)
-              ctx.imageSmoothingEnabled = false;
+              ctx.imageSmoothingEnabled = false;    // INTER_NEAREST equivalent on upsample
               ctx.drawImage(offscreen, 0, 0, tmpW, tmpH, x, y, w, h);
               ctx.imageSmoothingEnabled = true;
             } else {
-              // Fallback if OffscreenCanvas not supported
               ctx.fillStyle = 'black';
-              ctx.fillRect(x, y, w, h);
+              ctx.fill();
             }
           }
-        } else {
-          // Draw red outline for unselected faces (visible but not harsh)
-          ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)'; // red-500 with opacity
+
+          ctx.restore();
+
+          // Draw red ellipse outline around blurred faces too
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
           ctx.lineWidth = 2;
           ctx.setLineDash([]);
-          ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+          ctx.beginPath();
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 1, h / 2 - 1, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          // Draw red ellipse outline for unselected faces
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 1, h / 2 - 1, 0, 0, Math.PI * 2);
+          ctx.stroke();
         }
       }
 
@@ -259,7 +267,7 @@ export default function PlayerWithMask({
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
     };
-  }, [tracksMap, selectedSet, blur, sampleRate, fps]);
+  }, [tracksMap, selectedSet, blur, sampleRate, fps, padding, targetBlocks]);
 
   // Calculate scale for overlay positioning
   const getOverlayStyle = useCallback((bbox: BBox) => {
@@ -312,7 +320,7 @@ export default function PlayerWithMask({
             className="absolute cursor-pointer hover:bg-white/10 transition-colors"
             style={{
               ...style,
-              borderRadius: '4px',
+              borderRadius: '50%',
               zIndex: 10,
             }}
             title={face.isSelected ? 'Click to unblur' : 'Click to blur'}
