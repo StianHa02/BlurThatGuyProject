@@ -19,8 +19,10 @@ import shutil
 import queue
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
+import urllib.request
 from datetime import datetime, timedelta
 from typing import List
+import onnxruntime as ort
 
 try:
     import importlib
@@ -54,7 +56,7 @@ except Exception:
     MAX_UPLOAD_SIZE_MB = 0
 
 # =============================================================================
-# Detector Pool — ThreadPoolExecutor (low RAM, OpenCV releases GIL)
+# Detector Pool — onnxruntime SCRFD (thread-safe session, releases GIL)
 # =============================================================================
 
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
@@ -63,7 +65,19 @@ _model_path: Path | None = None
 _detector_pool: list = []
 _pool_lock = threading.Lock()
 _pool_semaphore: threading.Semaphore | None = None
-_h264_encoder: str | None = None  # None = not yet probed
+_h264_encoder: str | None = None
+# scrfd_2.5g.onnx output layout (640x640 input):
+#   scores: '446'(12800,1) '466'(3200,1) '486'(800,1)  → strides 8, 16, 32
+#   bboxes: '449'(12800,4) '469'(3200,4) '489'(800,4)
+#   kps:    '452'         '472'         '492'           → ignored
+_SCRFD_SIZE = 640
+_scrfd_anchors: dict = {}
+_SCRFD_INPUT  = "input.1"
+_SCRFD_STRIDES = [
+    ("446", "449", 8),
+    ("466", "469", 16),
+    ("486", "489", 32),
+]
 
 
 def _get_encoder() -> str:
@@ -90,20 +104,24 @@ def _get_encoder() -> str:
     return _h264_encoder
 
 _ENCODER_ARGS: dict[str, list[str]] = {
-    "h264_nvenc":        ["-c:v", "h264_nvenc", "-preset", "p1"],
-    "h264_amf":          ["-c:v", "h264_amf", "-quality", "speed"],
-    "h264_videotoolbox": ["-c:v", "h264_videotoolbox"],
+    "h264_nvenc":        ["-c:v", "h264_nvenc", "-preset", "p3", "-cq", "26"],
+    "h264_amf":          ["-c:v", "h264_amf", "-quality", "balanced", "-qp_i", "26"],
+    "h264_videotoolbox": ["-c:v", "h264_videotoolbox", "-q:v", "55"],
     "h264_qsv":          ["-c:v", "h264_qsv", "-preset", "veryfast"],
-    "libx264":           ["-c:v", "libx264", "-crf", "23", "-preset", "ultrafast", "-threads", "0"],
+    "libx264":           ["-c:v", "libx264", "-crf", "26", "-preset", "veryfast", "-threads", "0"],
 }
 
+_SCRFD_MODEL_URL = "https://huggingface.co/crj/dl-ws/resolve/8f8ec345154a161633d8294fd5e21908c97d7f8a/scrfd_2.5g.onnx"
 
 def _get_model_path() -> Path:
     global _model_path
     if _model_path is None:
-        path = Path(__file__).parent / "models" / "face_detection_yunet_2023mar.onnx"
+        path = Path(__file__).parent / "models" / "scrfd_2.5g.onnx"
         if not path.exists():
-            raise RuntimeError(f"Model file not found at {path}.")
+            logger.info(f"Downloading SCRFD model to {path} ...")
+            path.parent.mkdir(exist_ok=True)
+            urllib.request.urlretrieve(_SCRFD_MODEL_URL, path)
+            logger.info("SCRFD model downloaded.")
         _model_path = path
     return _model_path
 
@@ -117,17 +135,21 @@ def get_thread_pool() -> ThreadPoolExecutor:
 
 
 def get_face_detector():
-    """Create the shared detector pool and thread pool at startup."""
+    """Create shared ort session + semaphore. Session is thread-safe; pool slots are references."""
     global _detector_pool, _pool_semaphore
     with _pool_lock:
         if not _detector_pool:
-            logger.info(f"Creating detector pool with {DETECTOR_POOL_SIZE} instances")
-            _detector_pool = [cv2.FaceDetectorYN.create(
-                model=str(_get_model_path()), config="", input_size=(320, 320),
-                score_threshold=FACE_DETECTION_CONFIG["score_threshold"],
-                nms_threshold=FACE_DETECTION_CONFIG["nms_threshold"],
-                top_k=FACE_DETECTION_CONFIG["max_faces"],
-            ) for _ in range(DETECTOR_POOL_SIZE)]
+            opts = ort.SessionOptions()
+            opts.inter_op_num_threads = 1   # parallelism is via our thread pool
+            opts.intra_op_num_threads = 2
+            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            session = ort.InferenceSession(
+                str(_get_model_path()), sess_options=opts,
+                providers=["CPUExecutionProvider"])
+            logger.info(f"SCRFD session ready, pool size {DETECTOR_POOL_SIZE}")
+
+            # ort session is thread-safe — share one instance across all pool slots
+            _detector_pool = [session] * DETECTOR_POOL_SIZE
             _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
     get_thread_pool()
 
@@ -146,19 +168,59 @@ class _DetectorLease:
         _pool_semaphore.release()
 
 
+def _get_scrfd_anchors() -> dict:
+    """Precompute anchor centers {stride: ndarray[N,2]} for a 640×640 input. Cached."""
+    if not _scrfd_anchors:
+        for stride in (8, 16, 32):
+            n = _SCRFD_SIZE // stride
+            cols = np.tile(np.arange(n), n)
+            rows = np.repeat(np.arange(n), n)
+            centers = np.stack([cols, rows], axis=1) * stride  # (cx, cy)
+            _scrfd_anchors[stride] = np.repeat(centers, 2, axis=0).astype(np.float32)
+    return _scrfd_anchors
+
+
+def _scrfd_decode(outputs: list, output_names: list, scale: float) -> list[dict]:
+    """Decode SCRFD raw outputs → [{bbox:[x,y,w,h], score}] in original image coords."""
+    named = {n: o for n, o in zip(output_names, outputs)}
+    anchors = _get_scrfd_anchors()
+    thresh = FACE_DETECTION_CONFIG["score_threshold"]
+    all_boxes, all_scores = [], []
+    for score_key, bbox_key, stride in _SCRFD_STRIDES:
+        score = named[score_key].reshape(-1)
+        bbox  = named[bbox_key].reshape(-1, 4) * stride
+        mask = score >= thresh
+        if not mask.any():
+            continue
+        a = anchors[stride][mask]
+        b = bbox[mask]
+        x1 = (a[:, 0] - b[:, 0]) / scale
+        y1 = (a[:, 1] - b[:, 1]) / scale
+        x2 = (a[:, 0] + b[:, 2]) / scale
+        y2 = (a[:, 1] + b[:, 3]) / scale
+        all_boxes.append(np.stack([x1, y1, x2 - x1, y2 - y1], axis=1))
+        all_scores.append(score[mask])
+    if not all_boxes:
+        return []
+    boxes  = np.concatenate(all_boxes).tolist()
+    scores = np.concatenate(all_scores).tolist()
+    idx = cv2.dnn.NMSBoxes(boxes, scores, thresh, FACE_DETECTION_CONFIG["nms_threshold"])
+    if not len(idx):
+        return []
+    return [{"bbox": boxes[i], "score": scores[i]} for i in idx.flatten()]
+
+
 def detect_faces(image: np.ndarray) -> list[dict]:
     h, w = image.shape[:2]
-    scale = 1.0
-    if max(h, w) > 1280:
-        scale = 1280 / max(h, w)
-        image = cv2.resize(image, (int(w * scale), int(h * scale)))
-    nh, nw = image.shape[:2]
-    with _DetectorLease() as det:
-        det.setInputSize((nw, nh))
-        _, faces = det.detect(image)
-    if faces is None:
-        return []
-    return [{"bbox": [float(f[i]) / scale for i in range(4)], "score": float(f[-1])} for f in faces]
+    scale = min(1.0, _SCRFD_SIZE / max(h, w))
+    nh, nw = int(h * scale), int(w * scale)
+    canvas = np.zeros((_SCRFD_SIZE, _SCRFD_SIZE, 3), dtype=np.uint8)
+    canvas[:nh, :nw] = cv2.resize(image, (nw, nh)) if scale < 1.0 else image[:nh, :nw]
+    blob = ((canvas[:, :, ::-1].astype(np.float32) - 127.5) / 128.0).transpose(2, 0, 1)[np.newaxis]
+    with _DetectorLease() as session:
+        output_names = [o.name for o in session.get_outputs()]
+        outputs = session.run(None, {_SCRFD_INPUT: blob})
+    return _scrfd_decode(outputs, output_names, scale)
 
 
 def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
@@ -278,8 +340,8 @@ def _find_detection(frames: list, frame_idx: int) -> dict | None:
         else: right = mid - 1
     prev_f = frames[left-1] if left > 0 else None
     next_f = frames[left] if left < len(frames) else None
-    if prev_f and not next_f: return prev_f if (frame_idx - prev_f["frameIndex"]) <= 0 else None
-    if next_f and not prev_f: return next_f if (next_f["frameIndex"] - frame_idx) <= 0 else None
+    if prev_f and not next_f: return prev_f if (frame_idx - prev_f["frameIndex"]) <= 8 else None
+    if next_f and not prev_f: return next_f if (next_f["frameIndex"] - frame_idx) <= 8 else None
     if prev_f and next_f:
         gap = next_f["frameIndex"] - prev_f["frameIndex"]
         if gap > 20: return None
@@ -327,25 +389,16 @@ def validate_video_file(filename: str | None, content_type: str | None):
 
 def cleanup_old_files():
     try:
-        cutoff = datetime.now() - timedelta(hours=1)
-        expired_ids = set()
-        count = 0
-        for p in TEMP_DIR.glob("*"):
-            if p.is_file() and datetime.fromtimestamp(p.stat().st_mtime) < cutoff:
-                stem = p.stem.split("_")[0]
-                if UUID_PATTERN.match(stem):
-                    expired_ids.add(stem)
-                p.unlink()
-                count += 1
-        for vid in expired_ids:
-            clear_tracks(vid)
-        if count: logger.info(f"Cleaned up {count} old temporary files ({len(expired_ids)} sessions)")
+        cutoff = datetime.now() - timedelta(hours=24)
+        count = sum(1 for p in TEMP_DIR.glob("*")
+                    if p.is_file() and datetime.fromtimestamp(p.stat().st_mtime) < cutoff and not p.unlink())
+        if count: logger.info(f"Cleaned up {count} old temporary files")
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
 async def periodic_cleanup():
     while True:
-        await asyncio.sleep(600)  # every 10 min → max age ~1h10m
+        await asyncio.sleep(3600)
         cleanup_old_files()
 
 def validate_environment() -> None:
@@ -440,11 +493,11 @@ class ExportRequest(BaseModel):
 # =============================================================================
 
 @app.get("/health")
-async def health(): return {"status": "ok", "model": "YuNet"}
+async def health(): return {"status": "ok", "model": "SCRFD-2.5G"}
 
 @app.get("/health/auth")
 async def health_authenticated(_: bool = Depends(verify_api_key)):
-    return {"status": "ok", "model": "YuNet", "authenticated": True,
+    return {"status": "ok", "model": "SCRFD-2.5G", "authenticated": True,
             "max_upload_mb": MAX_UPLOAD_SIZE_MB, "temp_dir": str(TEMP_DIR)}
 
 @app.post("/upload-video")
@@ -584,6 +637,7 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
+
 @app.post("/export/{video_id}")
 def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends(verify_api_key)):
     input_path = get_safe_video_path(video_id, ".mp4")
@@ -596,60 +650,88 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
     output_path = get_safe_video_path(video_id, "_blurred.mp4")
 
     def generate():
-        cap = out = ffmpeg_proc = None
+        cap = out = ffmpeg_proc = dec = None
         try:
             tracks_map = {t["id"]: t for t in tracks if t["id"] in export_request.selectedTrackIds}
             cap = cv2.VideoCapture(str(input_path))
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = max(int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), 1)
+            cap.release(); cap = None
 
             track_lookup_dicts = _precompute_track_lookups([t["frames"] for t in tracks_map.values()], total_frames)
             pad, target_blocks = export_request.padding, export_request.targetBlocks
             pool = get_thread_pool()
             chunk, frames_written = [], 0
             chunk_size = DETECTOR_POOL_SIZE * 4
+            use_ffmpeg = shutil.which("ffmpeg") and width > 0 and height > 0
 
-            if shutil.which("ffmpeg") and width > 0 and height > 0:
+            yield json.dumps({"type": "progress", "progress": 5}) + "\n"
+
+            if use_ffmpeg:
                 enc = _get_encoder()
-                cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-                       "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{width}x{height}", "-r", str(fps),
-                       "-i", "pipe:0", "-i", str(input_path),
-                       *_ENCODER_ARGS[enc],
-                       "-pix_fmt", "yuv420p", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0?", "-shortest",
-                       str(output_path)]
-                ffmpeg_proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+                ffmpeg_proc = subprocess.Popen(
+                    ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                     "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{width}x{height}", "-r", str(fps),
+                     "-i", "pipe:0", "-i", str(input_path),
+                     *_ENCODER_ARGS[enc],
+                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0?", "-shortest",
+                     str(output_path)],
+                    stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+                dec = subprocess.Popen(
+                    ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(input_path),
+                     "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             else:
                 raw_path = get_safe_video_path(video_id, "_raw.mp4")
                 out = cv2.VideoWriter(str(raw_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+                cap = cv2.VideoCapture(str(input_path))
+
+            def write_frame(f):
+                nonlocal frames_written
+                if ffmpeg_proc:
+                    if ffmpeg_proc.poll() is not None:
+                        raise RuntimeError(f"ffmpeg exited: {ffmpeg_proc.stderr.read().decode(errors='ignore')}")
+                    try:
+                        ffmpeg_proc.stdin.write(f.tobytes())
+                    except (BrokenPipeError, ValueError):
+                        raise RuntimeError(f"ffmpeg pipe broken: {ffmpeg_proc.stderr.read().decode(errors='ignore')}")
+                else:
+                    out.write(f)
+                frames_written += 1
 
             def flush_chunk(ch):
-                nonlocal frames_written
                 results = sorted([f.result() for f in [pool.submit(_blur_frame, a) for a in ch]], key=lambda x: x[0])
                 for _, f in results:
-                    if ffmpeg_proc:
-                        if ffmpeg_proc.poll() is not None:
-                            # ffmpeg exited early — surface the real error
-                            err = ffmpeg_proc.stderr.read().decode(errors="ignore")
-                            raise RuntimeError(f"ffmpeg exited early: {err}")
-                        try:
-                            ffmpeg_proc.stdin.write(f.tobytes())
-                        except (BrokenPipeError, ValueError):
-                            err = ffmpeg_proc.stderr.read().decode(errors="ignore")
-                            raise RuntimeError(f"ffmpeg pipe broken: {err}")
-                    else:
-                        out.write(f)
-                    frames_written += 1
-                return json.dumps({"type": "progress", "progress": min(70, round(frames_written / total_frames * 70, 1))}) + "\n"
+                    write_frame(f)
+                return json.dumps({"type": "progress", "progress": min(70, round(5 + frames_written / total_frames * 65, 1))}) + "\n"
 
+            frame_size = width * height * 3
+            fi = 0
             while True:
-                ret, frame = cap.read()
-                if not ret: break
-                chunk.append((int(cap.get(cv2.CAP_PROP_POS_FRAMES) - 1), frame, track_lookup_dicts, pad, target_blocks, width, height))
+                if dec:
+                    raw = dec.stdout.read(frame_size)
+                    if not raw or len(raw) < frame_size: break
+                    frame = np.frombuffer(raw, np.uint8).reshape((height, width, 3)).copy()
+                else:
+                    ret, frame = cap.read()
+                    if not ret: break
+
+                # Fast path: no face on this frame — write directly, skip thread pool
+                if not any(fi in lu for lu in track_lookup_dicts):
+                    write_frame(frame)
+                    if frames_written % 60 == 0:
+                        yield json.dumps({"type": "progress", "progress": min(70, round(5 + frames_written / total_frames * 65, 1))}) + "\n"
+                    fi += 1
+                    continue
+
+                chunk.append((fi, frame, track_lookup_dicts, pad, target_blocks, width, height))
                 if len(chunk) >= chunk_size:
                     yield flush_chunk(chunk); chunk = []
+                fi += 1
 
             if chunk: yield flush_chunk(chunk)
+            if dec: dec.wait(timeout=30)
 
             yield json.dumps({"type": "progress", "progress": 75}) + "\n"
 
@@ -657,20 +739,17 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                 try:
                     if ffmpeg_proc.stdin and not ffmpeg_proc.stdin.closed:
                         ffmpeg_proc.stdin.close()
-                except Exception:
-                    pass
-                stderr_data = b""
+                except Exception: pass
                 try:
                     ffmpeg_proc.wait(timeout=600)
                     stderr_data = ffmpeg_proc.stderr.read()
                 except subprocess.TimeoutExpired:
-                    ffmpeg_proc.kill()
-                    ffmpeg_proc.wait()
+                    ffmpeg_proc.kill(); ffmpeg_proc.wait()
                     stderr_data = ffmpeg_proc.stderr.read()
                 if ffmpeg_proc.returncode != 0:
                     logger.error(f"ffmpeg failed: {stderr_data.decode(errors='ignore')}")
                     yield json.dumps({"type": "error", "error": "Failed to encode video"}) + "\n"; return
-            else:
+            elif out:
                 out.release(); out = None
                 raw_path = get_safe_video_path(video_id, "_raw.mp4")
                 logger.warning("ffmpeg not found — serving uncompressed output")
@@ -686,6 +765,9 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
         finally:
             if cap: cap.release()
             if out: out.release()
+            if dec:
+                try: dec.stdout.close()
+                except Exception: pass
             if ffmpeg_proc:
                 try:
                     if ffmpeg_proc.stdin and not ffmpeg_proc.stdin.closed: ffmpeg_proc.stdin.close()
