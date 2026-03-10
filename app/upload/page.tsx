@@ -4,7 +4,7 @@ import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Eye, EyeOff, Users, UserX, Info, Download, Loader2 } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
-import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery, SpotlightCard, BlurModeToggle } from './components';
+import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery, Bentobox, BlurModeToggle } from './components';
 import type { BlurMode } from './components';
 import { BackgroundBlobs} from '../(landing)/components';
 
@@ -106,7 +106,7 @@ export default function UploadPage() {
             <div className="grid lg:grid-cols-2 gap-4 min-h-0 lg:max-h-[70vh]">
 
               {/* Left: video player */}
-              <SpotlightCard className="flex flex-col min-h-0" color="blue">
+              <Bentobox className="flex flex-col min-h-0">
                 <div className="relative flex-1 flex items-center p-3 min-h-0">
                   <video
                     src={upload.fileUrl}
@@ -117,10 +117,10 @@ export default function UploadPage() {
                     className="w-full h-full max-h-[55vh] rounded-xl object-contain bg-black"
                   />
                 </div>
-              </SpotlightCard>
+              </Bentobox>
 
               {/* Right: detect controls */}
-              <SpotlightCard className="flex flex-col min-h-0" color="blue">
+              <Bentobox className="flex flex-col min-h-0">
                 <div className="relative p-7 flex flex-col flex-1 overflow-auto">
                   <h2 className="text-2xl font-semibold mb-2 text-white">Detect Faces</h2>
                   <p className="text-slate-400 text-sm mb-8 leading-relaxed">
@@ -176,11 +176,11 @@ export default function UploadPage() {
                     <span className="text-sm font-mono w-5 text-white text-right">{sampleRate}</span>
                   </div>
                 </div>
-              </SpotlightCard>
+              </Bentobox>
             </div>
 
             {/* Bottom: Video Details full width */}
-            <SpotlightCard color="blue">
+            <Bentobox>
               <div className="relative px-6 py-4 border-b border-white/6">
                 <h3 className="font-bold text-white text-base">Video Details</h3>
               </div>
@@ -202,7 +202,7 @@ export default function UploadPage() {
                   </span>
                 </div>
               </div>
-            </SpotlightCard>
+            </Bentobox>
 
           </div>
         )}
