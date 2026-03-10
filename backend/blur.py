@@ -7,7 +7,7 @@ import numpy as np
 
 
 def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
-    idx, frame, track_lookup_dicts, padding, target_blocks, width, height = args
+    idx, frame, track_lookup_dicts, padding, target_blocks, width, height, blur_mode = args
     for lookup in track_lookup_dicts:
         det = lookup.get(int(idx))
         if det is None:
@@ -19,17 +19,19 @@ def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
         h = min(int(oh * (1 + padding * 2)), height - y)
         if w > 0 and h > 0:
             region = frame[y:y + h, x:x + w]
-            # Adaptive block size: same block density regardless of face size
-            block_size = max(1, min(w, h) // target_blocks)
-            small = cv2.resize(
-                region,
-                (max(1, w // block_size), max(1, h // block_size)),
-                interpolation=cv2.INTER_LINEAR,
-            )
-            pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
             # Ellipse mask: only anonymise the face oval, not the full bounding box
             mask = np.zeros((h, w), dtype=np.uint8)
             cv2.ellipse(mask, (w // 2, h // 2), (w // 2, h // 2), 0, 0, 360, 255, -1)
-            frame[y:y + h, x:x + w] = np.where(mask[:, :, np.newaxis], pixelated, region)
+            if blur_mode == "blackout":
+                replacement = np.zeros_like(region)
+            else:
+                # Adaptive block size: same block density regardless of face size
+                block_size = max(1, min(w, h) // target_blocks)
+                small = cv2.resize(
+                    region,
+                    (max(1, w // block_size), max(1, h // block_size)),
+                    interpolation=cv2.INTER_LINEAR,
+                )
+                replacement = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
+            frame[y:y + h, x:x + w] = np.where(mask[:, :, np.newaxis], replacement, region)
     return (idx, frame)
-

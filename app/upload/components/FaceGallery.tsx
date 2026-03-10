@@ -119,12 +119,12 @@ export function FaceGallery({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-4">
         <h3 className="text-lg font-semibold text-white">
           All Detected Faces ({tracks.length})
-          {loading && <span className="text-sm text-slate-500 ml-2">(Loading thumbnails...)</span>}
+          {loading && <span className="text-sm text-slate-500 ml-2 font-normal">(Loading thumbnails...)</span>}
         </h3>
-        <p className="text-sm text-slate-500">Click to select/deselect for blurring</p>
+        <p className="text-sm text-slate-500 shrink-0">Click to select / deselect</p>
       </div>
 
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">

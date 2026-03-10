@@ -77,6 +77,70 @@ export async function detectFacesInVideo(
   return tracks;
 }
 
+export type BlurMode = 'pixelate' | 'blackout';
+
+/**
+ * Stream export progress from backend, returns the download URL when done.
+ */
+export async function exportVideo(
+  videoId: string,
+  selectedTrackIds: number[],
+  options: {
+    padding?: number;
+    targetBlocks?: number;
+    sampleRate?: number;
+    blurMode?: BlurMode;
+    onProgress?: (progress: number) => void;
+    signal?: AbortSignal;
+  } = {}
+): Promise<void> {
+  const { padding = 0.4, targetBlocks = 8, sampleRate = 1, blurMode = 'pixelate', onProgress, signal } = options;
+
+  const response = await fetch(`${API_URL}/export/${videoId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ selectedTrackIds, padding, targetBlocks, sampleRate, blurMode }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(`Export failed: ${response.status} ${body.detail || body.error || ''}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Response body is not readable');
+
+  signal?.addEventListener('abort', () => reader.cancel(), { once: true });
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const processLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    try {
+      const data = JSON.parse(trimmed);
+      if (data.type === 'progress') onProgress?.(data.progress);
+      else if (data.type === 'error') throw new Error(data.error || 'Export failed');
+    } catch (e) {
+      if (!(e instanceof SyntaxError)) throw e;
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (value) {
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
+      for (const line of lines) processLine(line);
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) processLine(buffer);
+}
+
 /**
  * @deprecated No-op stub.
  */

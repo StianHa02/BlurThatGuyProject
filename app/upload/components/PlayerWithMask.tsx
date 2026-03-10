@@ -23,7 +23,7 @@ interface Props {
   tracks: Track[];
   selectedTrackIds: number[];
   onToggleTrack: (trackId: number) => void;
-  blur: boolean;
+  blurMode: 'pixelate' | 'blackout';
   sampleRate: number;
   fps: number;
   padding?: number;
@@ -104,7 +104,7 @@ export default function PlayerWithMask({
   tracks,
   selectedTrackIds,
   onToggleTrack,
-  blur,
+  blurMode,
   sampleRate,
   fps,
   padding = 0.4,
@@ -204,7 +204,7 @@ export default function PlayerWithMask({
           ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
           ctx.clip();
 
-          if (!blur) {
+          if (blurMode === 'blackout') {
             ctx.fillStyle = 'black';
             ctx.fill();
           } else {
@@ -267,7 +267,7 @@ export default function PlayerWithMask({
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
     };
-  }, [tracksMap, selectedSet, blur, sampleRate, fps, padding, targetBlocks]);
+  }, [tracksMap, selectedSet, blurMode, sampleRate, fps, padding, targetBlocks]);
 
   // Calculate scale for overlay positioning
   const getOverlayStyle = useCallback((bbox: BBox) => {

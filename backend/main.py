@@ -233,6 +233,7 @@ class ExportRequest(BaseModel):
     padding: float = Field(default=VIDEO_PROCESSING_CONFIG["default_padding"], ge=0.0, le=VIDEO_PROCESSING_CONFIG["max_padding"])
     targetBlocks: int = Field(default=VIDEO_PROCESSING_CONFIG["default_target_blocks"], ge=VIDEO_PROCESSING_CONFIG["min_target_blocks"], le=VIDEO_PROCESSING_CONFIG["max_target_blocks"])
     sampleRate: int = Field(default=1, ge=1, le=60)
+    blurMode: str = Field(default="pixelate", pattern="^(pixelate|blackout)$")
 
 # =============================================================================
 # Endpoints
@@ -407,7 +408,7 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
             cap.release(); cap = None
 
             track_lookup_dicts = _precompute_track_lookups([t["frames"] for t in tracks_map.values()], total_frames)
-            pad, target_blocks = export_request.padding, export_request.targetBlocks
+            pad, target_blocks, blur_mode = export_request.padding, export_request.targetBlocks, export_request.blurMode
             pool = get_thread_pool()
             chunk, frames_written = [], 0
             chunk_size = DETECTOR_POOL_SIZE * 4
@@ -472,7 +473,7 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                     fi += 1
                     continue
 
-                chunk.append((fi, frame, track_lookup_dicts, pad, target_blocks, width, height))
+                chunk.append((fi, frame, track_lookup_dicts, pad, target_blocks, width, height, blur_mode))
                 if len(chunk) >= chunk_size:
                     yield flush_chunk(chunk); chunk = []
                 fi += 1

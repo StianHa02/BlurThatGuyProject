@@ -8,11 +8,12 @@ interface UseExportOptions {
   fileName: string;
   selectedTrackIds: number[];
   sampleRate: number;
+  blurMode: 'pixelate' | 'blackout';
   onError: (error: string) => void;
   signal?: AbortSignal;
 }
 
-export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate, onError, signal }: UseExportOptions) {
+export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate, blurMode, onError, signal }: UseExportOptions) {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
 
@@ -30,8 +31,9 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
         body: JSON.stringify({
           selectedTrackIds,
           padding: 0.4,
-          blurAmount: 12,
+          targetBlocks: 12,
           sampleRate,
+          blurMode,
         }),
         signal,
       });
@@ -101,7 +103,7 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
     } finally {
       setExporting(false);
     }
-  }, [videoId, fileName, selectedTrackIds, sampleRate, onError]);
+  }, [videoId, fileName, selectedTrackIds, sampleRate, blurMode, onError]);
 
   return { exporting, exportProgress, exportVideo };
 }
