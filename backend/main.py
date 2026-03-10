@@ -381,7 +381,7 @@ def validate_video_file(filename: str | None, content_type: str | None):
 
 def cleanup_old_files():
     try:
-        cutoff = datetime.now() - timedelta(hours=24)
+        cutoff = datetime.now() - timedelta(hours=1)
         count = sum(1 for p in TEMP_DIR.glob("*")
                     if p.is_file() and datetime.fromtimestamp(p.stat().st_mtime) < cutoff and not p.unlink())
         if count: logger.info(f"Cleaned up {count} old temporary files")
