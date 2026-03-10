@@ -15,6 +15,7 @@ export interface Track {
   startFrame: number;
   endFrame: number;
   thumbnailFrameIndex: number;
+  mergedFrom?: number[];  // original track IDs that were merged into this one
 }
 
 // Calculate IOU (Intersection over Union)

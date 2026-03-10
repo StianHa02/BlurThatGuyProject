@@ -10,6 +10,7 @@ export interface Track {
     bbox: [number, number, number, number];
     score: number;
   }>;
+  mergedFrom?: number[];
 }
 
 interface FaceGalleryProps {
@@ -144,7 +145,7 @@ export function FaceGallery({
                     : 'border-white/10 hover:border-white/25 hover:scale-105'
                   }
                 `}
-                title={`Face ${index + 1} - Appears in ${track.frames.length} frames`}
+                title={`Face ${index + 1} - Appears in ${track.frames.length} frames${(track.mergedFrom?.length ?? 1) > 1 ? ` · ${track.mergedFrom!.length} scenes merged` : ''}`}
               >
                 {thumbnail ? (
                   <img src={thumbnail} alt={`Face ${index + 1}`} className="w-full h-full object-cover" />
@@ -171,6 +172,13 @@ export function FaceGallery({
                 `}>
                   {index + 1}
                 </div>
+
+                {/* Badge: number of scenes this identity spans */}
+                {(track.mergedFrom?.length ?? 1) > 1 && (
+                  <div className="absolute bottom-1 right-1 px-1 rounded text-[9px] font-bold bg-teal-500/80 text-white backdrop-blur-sm leading-4">
+                    {track.mergedFrom!.length}×
+                  </div>
+                )}
               </button>
             );
           })}
