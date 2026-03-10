@@ -15,7 +15,7 @@ export function Footer() {
         </Link>
 
         <p className="text-sm text-slate-500">
-          Built with privacy in mind. Face detection powered by YuNet.
+          Built with privacy in mind. Face detection powered by scrfd.
         </p>
 
         <a

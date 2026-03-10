@@ -11,21 +11,21 @@ const FEATURES = [
 		step: 1,
 		title: 'Upload Video',
 		description: 'Upload your video to get started. Supports MP4, MOV, and WebM.',
-		color: 'indigo' as const,
+		color: 'blue' as const,
 	},
 	{
 		icon: MousePointerClick,
 		step: 2,
 		title: 'Select Faces',
 		description: 'AI automatically detects all faces. Click on any face to toggle blur on or off.',
-		color: 'purple' as const,
+		color: 'teal' as const,
 	},
 	{
 		icon: Download,
 		step: 3,
 		title: 'Export',
 		description: 'Download your processed video with faces permanently blurred.',
-		color: 'pink' as const,
+		color: 'green' as const,
 	},
 ];
 
@@ -193,7 +193,6 @@ export default function Home() {
 
 					</div>
 				</section>
-
 				<Footer />
 			</div>
 

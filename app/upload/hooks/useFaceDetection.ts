@@ -8,9 +8,10 @@ interface UseDetectionOptions {
   sampleRate: number;
   videoId: string | null;
   onError: (error: string) => void;
+  signal?: AbortSignal;
 }
 
-export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionOptions) {
+export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDetectionOptions) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [selectedTrackIds, setSelectedTrackIds] = useState<number[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -57,7 +58,7 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
 
         if (num < 85) setStatus('Detecting faces...');
         else setStatus('Building face tracks...');
-      });
+      }, signal);
 
       setTracks(builtTracks);
       setSelectedTrackIds([]);
@@ -75,6 +76,7 @@ export function useFaceDetection({ sampleRate, videoId, onError }: UseDetectionO
       setProcessing(false);
       return builtTracks.length > 0;
     } catch (err) {
+      if ((err as Error).name === 'AbortError') { setProcessing(false); setStatus(''); return false; }
       onError(err instanceof Error ? err.message : 'An error occurred during face detection.');
       setProcessing(false);
       setStatus('');

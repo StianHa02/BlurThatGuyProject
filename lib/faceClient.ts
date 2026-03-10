@@ -23,12 +23,14 @@ export async function loadModels(): Promise<void> {
 export async function detectFacesInVideo(
   videoId: string,
   sampleRate = 3,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  signal?: AbortSignal
 ): Promise<Track[]> {
   if (!isReady) throw new Error('Face detector not loaded. Call loadModels() first.');
 
   const response = await fetch(`${API_URL}/detect-video/${videoId}?sample_rate=${sampleRate}`, {
     method: 'POST',
+    signal,
   });
 
   if (!response.ok) {
@@ -38,6 +40,8 @@ export async function detectFacesInVideo(
 
   const reader = response.body?.getReader();
   if (!reader) throw new Error('Response body is not readable');
+
+  signal?.addEventListener('abort', () => reader.cancel(), { once: true });
 
   let tracks: Track[] = [];
   const decoder = new TextDecoder();

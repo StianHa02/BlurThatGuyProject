@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { API_URL } from '@/lib/config';
 
 interface UseExportOptions {
@@ -9,19 +9,16 @@ interface UseExportOptions {
   selectedTrackIds: number[];
   sampleRate: number;
   onError: (error: string) => void;
+  signal?: AbortSignal;
 }
 
-export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate, onError }: UseExportOptions) {
+export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate, onError, signal }: UseExportOptions) {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
-  const abortRef = useRef<AbortController | null>(null);
 
   const exportVideo = useCallback(async () => {
     if (!videoId) { onError('No video uploaded.'); return false; }
     if (selectedTrackIds.length === 0) { onError('Please select at least one face to blur.'); return false; }
-
-    const abort = new AbortController();
-    abortRef.current = abort;
 
     setExporting(true);
     setExportProgress(0);
@@ -36,7 +33,7 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
           blurAmount: 12,
           sampleRate,
         }),
-        signal: abort.signal,
+        signal,
       });
 
       if (!response.ok) {
@@ -102,7 +99,6 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
       onError(error instanceof Error ? error.message : 'Failed to export video.');
       return false;
     } finally {
-      abortRef.current = null;
       setExporting(false);
     }
   }, [videoId, fileName, selectedTrackIds, sampleRate, onError]);

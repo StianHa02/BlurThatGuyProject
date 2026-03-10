@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Eye, EyeOff, Users, UserX, Info, Download, Loader2 } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
@@ -26,12 +26,14 @@ function formatDuration(seconds: number): string {
 export default function UploadPage() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [sampleRate, setSampleRate] = useState(3);
+  const abortRef = useRef<AbortController>(new AbortController());
 
   const upload = useVideoUpload();
   const detection = useFaceDetection({
     sampleRate,
     videoId: upload.videoId,
     onError: upload.setError,
+    signal: abortRef.current.signal,
   });
   const exportHook = useVideoExport({
     videoId: upload.videoId,
@@ -39,6 +41,7 @@ export default function UploadPage() {
     selectedTrackIds: detection.selectedTrackIds,
     sampleRate,
     onError: upload.setError,
+    signal: abortRef.current.signal,
   });
 
   async function handleFileSelect(file: File) {
@@ -52,6 +55,8 @@ export default function UploadPage() {
   }
 
   function handleReset() {
+    abortRef.current.abort();
+    abortRef.current = new AbortController();
     upload.reset();
     detection.reset();
     setCurrentStep('upload');
