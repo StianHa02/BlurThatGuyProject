@@ -13,8 +13,8 @@ _reid_lock = threading.Lock()
 _loaded = False
 
 # Constants
-REID_THRESHOLD = 0.65  # Increased slightly to be more strict on CPU
-REID_SAMPLES = 5  # 5 samples is the "sweet spot" for CPU speed vs accuracy
+REID_THRESHOLD = 0.70  # Stricter threshold to prevent false positives
+REID_SAMPLES = 5  # 5 samples is the best balance for CPU
 _REID_SIZE = 112
 
 
@@ -31,10 +31,9 @@ def get_reid_model() -> ort.InferenceSession | None:
         if not path.exists(): return None
         try:
             opts = ort.SessionOptions()
-            opts.intra_op_num_threads = 2  # Best for most CPUs to avoid overhead
-            # Force CPU Provider as requested
+            opts.intra_op_num_threads = 2
             _reid_session = ort.InferenceSession(str(path), sess_options=opts, providers=["CPUExecutionProvider"])
-            logger.info("ReID model loaded on CPU")
+            logger.info("ReID model loaded on CPU (Conflict-Aware Mode)")
         except Exception as e:
             logger.error(f"ReID load failed: {e}")
     return _reid_session
@@ -43,11 +42,7 @@ def get_reid_model() -> ort.InferenceSession | None:
 def _preprocess(crop: np.ndarray) -> np.ndarray:
     img = cv2.resize(crop, (_REID_SIZE, _REID_SIZE))
     img = (img.astype(np.float32) - 127.5) / 127.5
-    return img.transpose(2, 0, 1)[np.newaxis, ...]  # Result shape: [1, 3, 112, 112]
-
-
-def _tracks_overlap(a: dict, b: dict) -> bool:
-    return a["startFrame"] <= b["endFrame"] and b["startFrame"] <= a["endFrame"]
+    return img.transpose(2, 0, 1)[np.newaxis, ...]
 
 
 def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]:
@@ -58,11 +53,15 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened(): return tracks
 
+    # Pre-calculate frame sets for every track for instant overlap checking
+    for t in tracks:
+        t["_frame_set"] = set(f["frameIndex"] for f in t["frames"])
+
     valid_embs = []
     track_indices = []
     input_name = session.get_inputs()[0].name
 
-    # 1. Extraction: Process 1-by-1 to fix "same person" bug
+    # 1. Feature Extraction (One-by-one to avoid shape errors)
     for idx, t in enumerate(tracks):
         frames = t["frames"]
         step = max(1, len(frames) // REID_SAMPLES)
@@ -78,7 +77,6 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
             crop = frame[max(0, y):y + h, max(0, x):x + w]
             if crop.size > 0:
                 blob = _preprocess(crop)
-                # single-run inference avoids shape mismatch
                 out = session.run(None, {input_name: blob})[0]
                 feats.append(out.flatten())
 
@@ -91,28 +89,45 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
     cap.release()
     if not valid_embs: return tracks
 
-    # 2. Fast O(N^2) Comparison using Matrix Math
+    # 2. Similarity Matrix
     embs_matrix = np.array(valid_embs)
     sim_matrix = np.dot(embs_matrix, embs_matrix.T)
 
-    # 3. Union-Find Merge logic
+    # 3. Greedy Conflict-Aware Merging
+    # We collect all potential merges and sort them by highest similarity first
+    candidates = []
+    for i_ptr in range(len(track_indices)):
+        for j_ptr in range(i_ptr + 1, len(track_indices)):
+            score = sim_matrix[i_ptr, j_ptr]
+            if score >= REID_THRESHOLD:
+                candidates.append((score, track_indices[i_ptr], track_indices[j_ptr]))
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    # Union-Find state
     parent = list(range(len(tracks)))
+    # Track which frames each identity "owns"
+    group_frames = {i: tracks[i]["_frame_set"].copy() for i in range(len(tracks))}
 
     def find(i):
         if parent[i] == i: return i
-        parent[i] = find(parent[i]);
+        parent[i] = find(parent[i])
         return parent[i]
 
-    for i_ptr, i_idx in enumerate(track_indices):
-        for j_ptr, j_idx in enumerate(track_indices):
-            if i_ptr >= j_ptr: continue
-            if _tracks_overlap(tracks[i_idx], tracks[j_idx]): continue
+    for score, idx_a, idx_b in candidates:
+        root_a, root_b = find(idx_a), find(idx_b)
+        if root_a == root_b: continue
 
-            if sim_matrix[i_ptr, j_ptr] >= REID_THRESHOLD:
-                root_i, root_j = find(i_idx), find(j_idx)
-                if root_i != root_j: parent[root_i] = root_j
+        # PHYSICAL CONSTRAINT: Check if Identity A and Identity B ever exist at the same time
+        # If their frame sets intersect, they CANNOT be the same person.
+        if not group_frames[root_a].isdisjoint(group_frames[root_b]):
+            continue
 
-    # 4. Final Grouping
+        # Merge B into A
+        parent[root_b] = root_a
+        group_frames[root_a].update(group_frames[root_b])
+
+    # 4. Final Grouping and Result Construction
     groups = {}
     for i in range(len(tracks)):
         root = find(i)
@@ -122,15 +137,29 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
     new_id = 1
     for indices in sorted(groups.values(), key=lambda g: -sum(len(tracks[i]["frames"]) for i in g)):
         group_ts = [tracks[i] for i in indices]
-        all_f = sorted({f["frameIndex"]: f for t in group_ts for f in t["frames"]}.values(),
-                       key=lambda x: x["frameIndex"])
+
+        # Merge frames and remove duplicates (keep best score for each frame)
+        frame_map = {}
+        for t in group_ts:
+            for f in t["frames"]:
+                f_idx = f["frameIndex"]
+                if f_idx not in frame_map or f["score"] > frame_map[f_idx]["score"]:
+                    frame_map[f_idx] = f
+
+        sorted_f = [frame_map[k] for k in sorted(frame_map.keys())]
+
         result.append({
             "id": new_id,
-            "frames": all_f,
-            "startFrame": all_f[0]["frameIndex"],
-            "endFrame": all_f[-1]["frameIndex"],
+            "frames": sorted_f,
+            "startFrame": sorted_f[0]["frameIndex"],
+            "endFrame": sorted_f[-1]["frameIndex"],
             "thumbnailFrameIndex": group_ts[0]["thumbnailFrameIndex"],
             "mergedFrom": [t["id"] for t in group_ts]
         })
         new_id += 1
+
+    # Cleanup internal helper
+    for t in tracks: t.pop("_frame_set", None)
+
+    logger.info(f"ReID: {len(tracks)} tracks -> {len(result)} identities (Conflict-Aware).")
     return result
