@@ -17,11 +17,13 @@ import threading
 import subprocess
 import shutil
 import queue
-from concurrent.futures import ThreadPoolExecutor
-import multiprocessing
 from datetime import datetime, timedelta
 from typing import List
-import onnxruntime as ort
+
+from detector import detect_faces, get_face_detector, get_thread_pool, DETECTOR_POOL_SIZE
+from tracker import track_detections, _precompute_track_lookups
+from blur import _blur_frame
+from reid import merge_tracks_by_identity, get_reid_model
 
 try:
     import importlib
@@ -35,14 +37,16 @@ except Exception:
 # Configuration
 # =============================================================================
 
-FACE_DETECTION_CONFIG = {"score_threshold": 0.6, "nms_threshold": 0.3, "max_faces": 5000}
 VIDEO_PROCESSING_CONFIG = {"default_padding": 0.4, "default_target_blocks": 8, "max_padding": 2.0, "max_target_blocks": 24, "min_target_blocks": 4}
-TRACKER_CONFIG = {"iou_threshold": 0.1, "max_misses": 20, "min_track_length": 5, "max_center_distance": 2.0}
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".avi"}
 ALLOWED_VIDEO_MIMETYPES = {"video/mp4", "video/webm", "video/quicktime", "video/x-msvideo"}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+# Suppress noisy FFmpeg/H.264 decoder warnings (e.g. "mmco: unref short failure")
+# that come from slightly malformed but perfectly readable video files.
+os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")  # AV_LOG_QUIET
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "blurthatguy"
 TEMP_DIR.mkdir(exist_ok=True)
@@ -55,28 +59,10 @@ except Exception:
     MAX_UPLOAD_SIZE_MB = 0
 
 # =============================================================================
-# Detector Pool — onnxruntime SCRFD (thread-safe session, releases GIL)
+# H.264 encoder selection
 # =============================================================================
 
-DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
-_thread_pool: ThreadPoolExecutor | None = None
-_model_path: Path | None = None
-_detector_pool: list = []
-_pool_lock = threading.Lock()
-_pool_semaphore: threading.Semaphore | None = None
 _h264_encoder: str | None = None
-# scrfd_2.5g.onnx output layout (640x640 input):
-#   scores: '446'(12800,1) '466'(3200,1) '486'(800,1)  → strides 8, 16, 32
-#   bboxes: '449'(12800,4) '469'(3200,4) '489'(800,4)
-#   kps:    '452'         '472'         '492'           → ignored
-_SCRFD_SIZE = 640
-_scrfd_anchors: dict = {}
-_SCRFD_INPUT  = "input.1"
-_SCRFD_STRIDES = [
-    ("446", "449", 8),
-    ("466", "469", 16),
-    ("486", "489", 32),
-]
 
 
 def _get_encoder() -> str:
@@ -90,7 +76,7 @@ def _get_encoder() -> str:
     for enc in ("h264_nvenc", "h264_amf", "h264_videotoolbox", "h264_qsv"):
         try:
             r = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-loglevel", "error",
+                ["ffmpeg", "-hide_banner", "-loglevel", "fatal",
                  "-f", "lavfi", "-i", "nullsrc=s=128x128:d=1",
                  "-c:v", enc, "-f", "null", "-"],
                 capture_output=True, timeout=10)
@@ -110,198 +96,6 @@ _ENCODER_ARGS: dict[str, list[str]] = {
     "libx264":           ["-c:v", "libx264", "-crf", "26", "-preset", "veryfast", "-threads", "0"],
 }
 
-def _get_model_path() -> Path:
-    global _model_path
-    if _model_path is None:
-        path = Path(__file__).parent / "models" / "scrfd_2.5g.onnx"
-        _model_path = path
-    return _model_path
-
-
-def get_thread_pool() -> ThreadPoolExecutor:
-    global _thread_pool
-    if _thread_pool is None:
-        _thread_pool = ThreadPoolExecutor(max_workers=DETECTOR_POOL_SIZE)
-        logger.info(f"Thread pool created with {DETECTOR_POOL_SIZE} workers")
-    return _thread_pool
-
-
-def get_face_detector():
-    """Create shared ort session + semaphore. Session is thread-safe; pool slots are references."""
-    global _detector_pool, _pool_semaphore
-    with _pool_lock:
-        if not _detector_pool:
-            opts = ort.SessionOptions()
-            opts.inter_op_num_threads = 1   # parallelism is via our thread pool
-            opts.intra_op_num_threads = 2
-            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-            session = ort.InferenceSession(
-                str(_get_model_path()), sess_options=opts,
-                providers=["CPUExecutionProvider"])
-            logger.info(f"SCRFD session ready, pool size {DETECTOR_POOL_SIZE}")
-
-            # ort session is thread-safe — share one instance across all pool slots
-            _detector_pool = [session] * DETECTOR_POOL_SIZE
-            _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
-    get_thread_pool()
-
-
-class _DetectorLease:
-    """Context manager that checks out a detector from the shared pool."""
-    def __enter__(self):
-        _pool_semaphore.acquire()
-        with _pool_lock:
-            self._det = _detector_pool.pop()
-        return self._det
-
-    def __exit__(self, *_):
-        with _pool_lock:
-            _detector_pool.append(self._det)
-        _pool_semaphore.release()
-
-
-def _get_scrfd_anchors() -> dict:
-    """Precompute anchor centers {stride: ndarray[N,2]} for a 640×640 input. Cached."""
-    if not _scrfd_anchors:
-        for stride in (8, 16, 32):
-            n = _SCRFD_SIZE // stride
-            cols = np.tile(np.arange(n), n)
-            rows = np.repeat(np.arange(n), n)
-            centers = np.stack([cols, rows], axis=1) * stride  # (cx, cy)
-            _scrfd_anchors[stride] = np.repeat(centers, 2, axis=0).astype(np.float32)
-    return _scrfd_anchors
-
-
-def _scrfd_decode(outputs: list, output_names: list, scale: float) -> list[dict]:
-    """Decode SCRFD raw outputs → [{bbox:[x,y,w,h], score}] in original image coords."""
-    named = {n: o for n, o in zip(output_names, outputs)}
-    anchors = _get_scrfd_anchors()
-    thresh = FACE_DETECTION_CONFIG["score_threshold"]
-    all_boxes, all_scores = [], []
-    for score_key, bbox_key, stride in _SCRFD_STRIDES:
-        score = named[score_key].reshape(-1)
-        bbox  = named[bbox_key].reshape(-1, 4) * stride
-        mask = score >= thresh
-        if not mask.any():
-            continue
-        a = anchors[stride][mask]
-        b = bbox[mask]
-        x1 = (a[:, 0] - b[:, 0]) / scale
-        y1 = (a[:, 1] - b[:, 1]) / scale
-        x2 = (a[:, 0] + b[:, 2]) / scale
-        y2 = (a[:, 1] + b[:, 3]) / scale
-        all_boxes.append(np.stack([x1, y1, x2 - x1, y2 - y1], axis=1))
-        all_scores.append(score[mask])
-    if not all_boxes:
-        return []
-    boxes  = np.concatenate(all_boxes).tolist()
-    scores = np.concatenate(all_scores).tolist()
-    idx = cv2.dnn.NMSBoxes(boxes, scores, thresh, FACE_DETECTION_CONFIG["nms_threshold"])
-    if not len(idx):
-        return []
-    return [{"bbox": boxes[i], "score": scores[i]} for i in idx.flatten()]
-
-
-def detect_faces(image: np.ndarray) -> list[dict]:
-    h, w = image.shape[:2]
-    scale = min(1.0, _SCRFD_SIZE / max(h, w))
-    nh, nw = int(h * scale), int(w * scale)
-    canvas = np.zeros((_SCRFD_SIZE, _SCRFD_SIZE, 3), dtype=np.uint8)
-    canvas[:nh, :nw] = cv2.resize(image, (nw, nh)) if scale < 1.0 else image[:nh, :nw]
-    blob = ((canvas[:, :, ::-1].astype(np.float32) - 127.5) / 128.0).transpose(2, 0, 1)[np.newaxis]
-    with _DetectorLease() as session:
-        output_names = [o.name for o in session.get_outputs()]
-        outputs = session.run(None, {_SCRFD_INPUT: blob})
-    return _scrfd_decode(outputs, output_names, scale)
-
-
-def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
-    idx, frame, track_lookup_dicts, padding, target_blocks, width, height = args
-    for lookup in track_lookup_dicts:
-        det = lookup.get(int(idx))
-        if det is None:
-            continue
-        ox, oy, ow, oh = det["bbox"]
-        x = max(0, int(ox - ow * padding))
-        y = max(0, int(oy - oh * padding))
-        w = min(int(ow * (1 + padding * 2)), width - x)
-        h = min(int(oh * (1 + padding * 2)), height - y)
-        if w > 0 and h > 0:
-            region = frame[y:y+h, x:x+w]
-            # Adaptive block size: same block density regardless of face size
-            block_size = max(1, min(w, h) // target_blocks)
-            small = cv2.resize(region, (max(1, w // block_size), max(1, h // block_size)), interpolation=cv2.INTER_LINEAR)
-            pixelated = cv2.resize(small, (w, h), interpolation=cv2.INTER_NEAREST)
-            # Ellipse mask: only anonymise the face oval, not the full bounding box
-            mask = np.zeros((h, w), dtype=np.uint8)
-            cv2.ellipse(mask, (w // 2, h // 2), (w // 2, h // 2), 0, 0, 360, 255, -1)
-            frame[y:y+h, x:x+w] = np.where(mask[:, :, np.newaxis], pixelated, region)
-    return (idx, frame)
-
-
-# =============================================================================
-# Tracker — mirrors frontend tracker.ts exactly
-# =============================================================================
-
-def _iou(a, b):
-    ax, ay, aw, ah = a; bx, by, bw, bh = b
-    iw = max(0.0, min(ax+aw, bx+bw) - max(ax, bx))
-    ih = max(0.0, min(ay+ah, by+bh) - max(ay, by))
-    union = aw*ah + bw*bh - iw*ih
-    return (iw*ih) / union if union > 0 else 0.0
-
-def _center_distance(a, b):
-    ax, ay, aw, ah = a; bx, by, bw, bh = b
-    avg = (aw+ah+bw+bh) / 4
-    return ((ax+aw/2 - bx-bw/2)**2 + (ay+ah/2 - by-bh/2)**2)**0.5 / avg if avg > 0 else 9999.0
-
-def _similar_size(a, b):
-    return 0.5 < (a[2]*a[3]) / (b[2]*b[3]) < 2.0 if b[2]*b[3] else False
-
-
-def track_detections(detections_per_frame: dict) -> list[dict]:
-    """IOU + distance tracker — mirrors tracker.ts trackDetections() exactly."""
-    iou_th = TRACKER_CONFIG["iou_threshold"]
-    max_misses = TRACKER_CONFIG["max_misses"]
-    min_len = TRACKER_CONFIG["min_track_length"]
-    max_dist = TRACKER_CONFIG["max_center_distance"]
-    tracks, next_id = [], 1
-
-    for fi in sorted(detections_per_frame):
-        used = set()
-        for det in sorted(detections_per_frame[fi], key=lambda d: -d["score"]):
-            best, best_score = None, -float("inf")
-            for t in tracks:
-                if t["id"] in used or fi - t["last_frame"] > max_misses + 1:
-                    continue
-                iou = _iou(det["bbox"], t["last_box"])
-                dist = _center_distance(det["bbox"], t["last_box"])
-                score = max(iou, 0.5 - dist*0.2 if iou < iou_th and dist < max_dist and _similar_size(det["bbox"], t["last_box"]) else -1)
-                if score > best_score:
-                    best_score, best = score, t
-            if best and best_score >= iou_th:
-                best["frames"].append({"frameIndex": fi, "bbox": det["bbox"], "score": det["score"]})
-                best["last_box"], best["last_frame"] = det["bbox"], fi
-                used.add(best["id"])
-            else:
-                t = {"id": next_id, "frames": [{"frameIndex": fi, "bbox": det["bbox"], "score": det["score"]}],
-                     "last_box": det["bbox"], "last_frame": fi, "misses": 0}
-                next_id += 1; tracks.append(t); used.add(t["id"])
-        for t in tracks:
-            if t["last_frame"] < fi:
-                t["misses"] += 1
-
-    result = []
-    for t in tracks:
-        if len(t["frames"]) < min_len:
-            continue
-        mid = len(t["frames"]) // 2
-        result.append({"id": t["id"], "frames": t["frames"],
-                        "startFrame": t["frames"][0]["frameIndex"], "endFrame": t["frames"][-1]["frameIndex"],
-                        "thumbnailFrameIndex": t["frames"][mid]["frameIndex"]})
-    return sorted(result, key=lambda t: -len(t["frames"]))
-
-
 # =============================================================================
 # Detection store & helpers
 # =============================================================================
@@ -318,48 +112,6 @@ def get_tracks(video_id):
 def clear_tracks(video_id):
     with _store_lock: _detection_store.pop(video_id, None)
 
-
-def _find_detection(frames: list, frame_idx: int) -> dict | None:
-    """Binary search + interpolation. Matches frontend PlayerWithMask logic exactly."""
-    if not frames: return None
-    if frame_idx < frames[0]["frameIndex"] - 20 or frame_idx > frames[-1]["frameIndex"] + 20:
-        return None
-    left, right = 0, len(frames) - 1
-    while left <= right:
-        mid = (left + right) // 2
-        if frames[mid]["frameIndex"] == frame_idx: return frames[mid]
-        elif frames[mid]["frameIndex"] < frame_idx: left = mid + 1
-        else: right = mid - 1
-    prev_f = frames[left-1] if left > 0 else None
-    next_f = frames[left] if left < len(frames) else None
-    if prev_f and not next_f: return prev_f if (frame_idx - prev_f["frameIndex"]) <= 8 else None
-    if next_f and not prev_f: return next_f if (next_f["frameIndex"] - frame_idx) <= 8 else None
-    if prev_f and next_f:
-        gap = next_f["frameIndex"] - prev_f["frameIndex"]
-        if gap > 20: return None
-        t = (frame_idx - prev_f["frameIndex"]) / gap
-        pb, nb = prev_f["bbox"], next_f["bbox"]
-        return {"frameIndex": frame_idx, "bbox": [pb[i] + (nb[i]-pb[i])*t for i in range(4)],
-                "score": prev_f["score"]*(1-t) + next_f["score"]*t}
-    return None
-
-
-def _precompute_track_lookups(tracks_frames_list: list, total_frames: int) -> list[dict]:
-    """Pre-build {frameIndex: detection} dicts for O(1) lookup during blur."""
-    if total_frames <= 0:
-        return [{} for _ in tracks_frames_list]
-    lookups = []
-    for frames in tracks_frames_list:
-        lookup = {}
-        if frames:
-            start = max(0, int(frames[0]["frameIndex"]) - 20)
-            end = min(total_frames - 1, int(frames[-1]["frameIndex"]) + 20)
-            for fi in range(start, end + 1):
-                det = _find_detection(frames, fi)
-                if det is not None:
-                    lookup[fi] = det
-        lookups.append(lookup)
-    return lookups
 
 
 def validate_video_id(video_id: str) -> str:
@@ -410,6 +162,7 @@ def validate_environment() -> None:
 async def lifespan(app: FastAPI):
     validate_environment()
     get_face_detector()
+    get_reid_model()
     logger.info(f"Face detector initialized, H.264 encoder: {_get_encoder()}")
     cleanup_old_files()
     task = asyncio.create_task(periodic_cleanup())
@@ -417,7 +170,8 @@ async def lifespan(app: FastAPI):
     task.cancel()
     try: await task
     except asyncio.CancelledError: pass
-    if _thread_pool: _thread_pool.shutdown(wait=False)
+    pool = get_thread_pool()
+    if pool: pool.shutdown(wait=False)
 
 
 app = FastAPI(title="Face Detection API", lifespan=lifespan)
@@ -479,6 +233,7 @@ class ExportRequest(BaseModel):
     padding: float = Field(default=VIDEO_PROCESSING_CONFIG["default_padding"], ge=0.0, le=VIDEO_PROCESSING_CONFIG["max_padding"])
     targetBlocks: int = Field(default=VIDEO_PROCESSING_CONFIG["default_target_blocks"], ge=VIDEO_PROCESSING_CONFIG["min_target_blocks"], le=VIDEO_PROCESSING_CONFIG["max_target_blocks"])
     sampleRate: int = Field(default=1, ge=1, le=60)
+    blurMode: str = Field(default="pixelate", pattern="^(pixelate|blackout)$")
 
 # =============================================================================
 # Endpoints
@@ -490,7 +245,7 @@ async def health(): return {"status": "ok", "model": "SCRFD-2.5G"}
 @app.get("/health/auth")
 async def health_authenticated(_: bool = Depends(verify_api_key)):
     return {"status": "ok", "model": "SCRFD-2.5G", "authenticated": True,
-            "max_upload_mb": MAX_UPLOAD_SIZE_MB, "temp_dir": str(TEMP_DIR)}
+            "max_upload_mb": MAX_UPLOAD_SIZE_MB}
 
 @app.post("/upload-video")
 async def upload_video(request: Request, file: UploadFile = File(...), _: bool = Depends(verify_api_key)):
@@ -523,7 +278,7 @@ async def upload_video(request: Request, file: UploadFile = File(...), _: bool =
         width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
-        logger.info(f"Uploaded {video_id} ({size/1024/1024:.1f}MB, {fps}fps, {width}x{height}, {frame_count} frames)")
+        logger.info(f"Uploaded video {video_id}")
         return {"videoId": video_id, "metadata": {"fps": fps, "width": width, "height": height, "frameCount": frame_count}}
     except HTTPException: raise
     except Exception as e:
@@ -568,7 +323,7 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
             if shutil.which("ffmpeg") and width > 0 and height > 0 and total_frames > 0:
                 frame_size = width * height * 3
                 proc = subprocess.Popen(
-                    ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(video_path),
+                    ["ffmpeg", "-hide_banner", "-loglevel", "fatal", "-i", str(video_path),
                      "-vf", f"select=not(mod(n\\,{sample_rate}))", "-vsync", "vfr",
                      "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -619,6 +374,7 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
             yield json.dumps({"type": "progress", "progress": 85}) + "\n"
             tracks = track_detections(detections_per_frame)
             logger.info(f"Tracking done for {video_id}: {len(tracks)} tracks")
+            tracks = merge_tracks_by_identity(tracks, video_path)
             store_tracks(video_id, tracks)  # store server-side — never resent from frontend
             yield json.dumps({"type": "progress", "progress": 100}) + "\n"
             yield json.dumps({"type": "results", "results": tracks}) + "\n"
@@ -652,7 +408,7 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
             cap.release(); cap = None
 
             track_lookup_dicts = _precompute_track_lookups([t["frames"] for t in tracks_map.values()], total_frames)
-            pad, target_blocks = export_request.padding, export_request.targetBlocks
+            pad, target_blocks, blur_mode = export_request.padding, export_request.targetBlocks, export_request.blurMode
             pool = get_thread_pool()
             chunk, frames_written = [], 0
             chunk_size = DETECTOR_POOL_SIZE * 4
@@ -671,7 +427,7 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                      str(output_path)],
                     stdin=subprocess.PIPE, stderr=subprocess.PIPE)
                 dec = subprocess.Popen(
-                    ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(input_path),
+                    ["ffmpeg", "-hide_banner", "-loglevel", "fatal", "-i", str(input_path),
                      "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             else:
@@ -717,7 +473,7 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                     fi += 1
                     continue
 
-                chunk.append((fi, frame, track_lookup_dicts, pad, target_blocks, width, height))
+                chunk.append((fi, frame, track_lookup_dicts, pad, target_blocks, width, height, blur_mode))
                 if len(chunk) >= chunk_size:
                     yield flush_chunk(chunk); chunk = []
                 fi += 1

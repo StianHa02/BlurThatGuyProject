@@ -10,6 +10,7 @@ export interface Track {
     bbox: [number, number, number, number];
     score: number;
   }>;
+  mergedFrom?: number[];
 }
 
 interface FaceGalleryProps {
@@ -118,12 +119,12 @@ export function FaceGallery({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-4">
         <h3 className="text-lg font-semibold text-white">
           All Detected Faces ({tracks.length})
-          {loading && <span className="text-sm text-slate-500 ml-2">(Loading thumbnails...)</span>}
+          {loading && <span className="text-sm text-slate-500 ml-2 font-normal">(Loading thumbnails...)</span>}
         </h3>
-        <p className="text-sm text-slate-500">Click to select/deselect for blurring</p>
+        <p className="text-sm text-slate-500 shrink-0">Click to select / deselect</p>
       </div>
 
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
@@ -144,7 +145,7 @@ export function FaceGallery({
                     : 'border-white/10 hover:border-white/25 hover:scale-105'
                   }
                 `}
-                title={`Face ${index + 1} - Appears in ${track.frames.length} frames`}
+                title={`Face ${index + 1} - Appears in ${track.frames.length} frames${(track.mergedFrom?.length ?? 1) > 1 ? ` · ${track.mergedFrom!.length} scenes merged` : ''}`}
               >
                 {thumbnail ? (
                   <img src={thumbnail} alt={`Face ${index + 1}`} className="w-full h-full object-cover" />
@@ -171,6 +172,13 @@ export function FaceGallery({
                 `}>
                   {index + 1}
                 </div>
+
+                {/* Badge: number of scenes this identity spans */}
+                {(track.mergedFrom?.length ?? 1) > 1 && (
+                  <div className="absolute bottom-1 right-1 px-1 rounded text-[9px] font-bold bg-teal-500/80 text-white backdrop-blur-sm leading-4">
+                    {track.mergedFrom!.length}×
+                  </div>
+                )}
               </button>
             );
           })}

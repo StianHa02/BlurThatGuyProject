@@ -4,7 +4,8 @@ import { useState, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { Eye, EyeOff, Users, UserX, Info, Download, Loader2 } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
-import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery, SpotlightCard } from './components';
+import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery, SpotlightCard, BlurModeToggle } from './components';
+import type { BlurMode } from './components';
 import { BackgroundBlobs} from '../(landing)/components';
 
 const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
@@ -26,6 +27,7 @@ function formatDuration(seconds: number): string {
 export default function UploadPage() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [sampleRate, setSampleRate] = useState(3);
+  const [blurMode, setBlurMode] = useState<BlurMode>('pixelate');
   const abortRef = useRef<AbortController>(new AbortController());
 
   const upload = useVideoUpload();
@@ -40,6 +42,7 @@ export default function UploadPage() {
     fileName: upload.fileName,
     selectedTrackIds: detection.selectedTrackIds,
     sampleRate,
+    blurMode,
     onError: upload.setError,
     signal: abortRef.current.signal,
   });
@@ -207,48 +210,80 @@ export default function UploadPage() {
         {/* ===== SELECT STEP ===== */}
         {currentStep === 'select' && upload.fileUrl && (
           <div className="max-w-6xl mx-auto w-full">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
-              <div className="flex flex-row flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs sm:text-sm">
-                  <Users className="w-4 h-4 text-blue-400" />
-                  <span><strong className="text-white">{detection.tracks.length}</strong> people detected</span>
+            {/* ── Mobile (< lg): 3 stacked full-width rows ── */}
+            <div className="flex flex-col gap-2 mb-6 lg:hidden">
+              {/* Row 1: Stats pill — flex-1 segments fill full width */}
+              <div className="flex w-full rounded-xl border border-white/10 bg-white/5 overflow-hidden text-xs divide-x divide-white/10">
+                <div className="flex flex-1 items-center justify-center gap-1.5 py-2 text-slate-300">
+                  <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span><strong className="text-white font-semibold">{detection.tracks.length}</strong> detected</span>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs sm:text-sm">
-                  <EyeOff className="w-4 h-4 text-blue-400" />
-                  <span className="text-blue-300"><strong>{detection.selectedTrackIds.length}</strong> selected for blur</span>
+                <div className="flex flex-1 items-center justify-center gap-1.5 py-2 text-slate-300">
+                  <EyeOff className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span><strong className="text-blue-300 font-semibold">{detection.selectedTrackIds.length}</strong> blurred</span>
                 </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs sm:text-sm">
-                  <Eye className="w-4 h-4 text-emerald-400" />
-                  <span className="text-emerald-400">
-                    <strong>{detection.tracks.length - detection.selectedTrackIds.length}</strong>{' '}
-                    face{detection.tracks.length - detection.selectedTrackIds.length !== 1 ? 's' : ''} visible
-                  </span>
+                <div className="flex flex-1 items-center justify-center gap-1.5 py-2 text-slate-300">
+                  <Eye className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span><strong className="text-emerald-300 font-semibold">{detection.tracks.length - detection.selectedTrackIds.length}</strong> visible</span>
                 </div>
               </div>
-              <div className="flex flex-row items-center gap-2 shrink-0">
-                <button onClick={detection.selectAll} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs sm:text-sm transition-colors cursor-pointer">
+              {/* Row 2: Blur All + Clear, toggle pushed right */}
+              <div className="flex w-full items-center gap-2">
+                <button onClick={detection.selectAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 transition-colors cursor-pointer whitespace-nowrap">
+                  <UserX className="w-3.5 h-3.5" /> Blur All
+                </button>
+                <button onClick={detection.deselectAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 transition-colors cursor-pointer whitespace-nowrap">
+                  <Eye className="w-3.5 h-3.5" /> Clear
+                </button>
+                <div className="ml-auto shrink-0">
+                  <BlurModeToggle value={blurMode} onChange={setBlurMode} />
+                </div>
+              </div>
+              {/* Row 3: Download full width */}
+              <button
+                onClick={() => exportHook.exportVideo()}
+                disabled={exportHook.exporting || detection.selectedTrackIds.length === 0}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-white/8 disabled:text-slate-500 font-semibold text-white text-sm transition-colors cursor-pointer disabled:cursor-not-allowed relative overflow-hidden"
+              >
+                {exportHook.exporting && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.exportProgress}%` }} />}
+                <span className="relative flex items-center gap-2">
+                  {exportHook.exporting ? <><Loader2 className="w-4 h-4 animate-spin" /> Exporting... {exportHook.exportProgress}%</> : <><Download className="w-4 h-4" /> Download Video</>}
+                </span>
+              </button>
+            </div>
+
+            {/* ── Desktop (≥ lg): original single compact row ── */}
+            <div className="hidden lg:flex lg:items-center lg:justify-between gap-2 mb-6">
+              <div className="flex items-stretch rounded-xl border border-white/10 bg-white/5 overflow-hidden text-sm divide-x divide-white/10 shrink-0">
+                <div className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
+                  <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span><strong className="text-white font-semibold">{detection.tracks.length}</strong> detected</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
+                  <EyeOff className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span><strong className="text-blue-300 font-semibold">{detection.selectedTrackIds.length}</strong> blurred</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
+                  <Eye className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span><strong className="text-emerald-300 font-semibold">{detection.tracks.length - detection.selectedTrackIds.length}</strong> visible</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={detection.selectAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer">
                   <UserX className="w-4 h-4" /> Blur All
                 </button>
-                <button onClick={detection.deselectAll} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs sm:text-sm transition-colors cursor-pointer">
+                <button onClick={detection.deselectAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer">
                   <Eye className="w-4 h-4" /> Clear
                 </button>
+                <BlurModeToggle value={blurMode} onChange={setBlurMode} />
                 <button
                   onClick={() => exportHook.exportVideo()}
                   disabled={exportHook.exporting || detection.selectedTrackIds.length === 0}
-                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-white/8 disabled:text-slate-500 font-medium text-white transition-all text-xs sm:text-sm cursor-pointer disabled:cursor-not-allowed relative overflow-hidden shadow-lg shadow-emerald-600/20"
+                  className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-white/8 disabled:text-slate-500 font-semibold text-white text-sm transition-colors cursor-pointer disabled:cursor-not-allowed relative overflow-hidden"
                 >
-                  {exportHook.exporting && (
-                    <span
-                      className="absolute inset-0 bg-emerald-400/20 transition-all duration-500"
-                      style={{ width: `${exportHook.exportProgress}%` }}
-                    />
-                  )}
+                  {exportHook.exporting && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.exportProgress}%` }} />}
                   <span className="relative flex items-center gap-2">
-                    {exportHook.exporting ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Exporting... {exportHook.exportProgress}%</>
-                    ) : (
-                      <><Download className="w-4 h-4" /> Download Video</>
-                    )}
+                    {exportHook.exporting ? <><Loader2 className="w-4 h-4 animate-spin" /> Exporting... {exportHook.exportProgress}%</> : <><Download className="w-4 h-4" /> Download Video</>}
                   </span>
                 </button>
               </div>
@@ -267,7 +302,7 @@ export default function UploadPage() {
                 tracks={detection.tracks}
                 selectedTrackIds={detection.selectedTrackIds}
                 onToggleTrack={detection.toggleTrack}
-                blur={true}
+                blurMode={blurMode}
                 sampleRate={sampleRate}
                 fps={upload.videoMetadata?.fps || 30}
                 padding={0.4}
