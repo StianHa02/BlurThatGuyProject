@@ -28,9 +28,9 @@ _SCRFD_SIZE = 480
 _scrfd_anchors: dict = {}
 _SCRFD_INPUT = "input.1"
 _SCRFD_STRIDES = [
-    ("446", "449", 8),
-    ("466", "469", 16),
-    ("486", "489", 32),
+    ("446", "449", "452", 8),
+    ("466", "469", "472", 16),
+    ("486", "489", "492", 32),
 ]
 
 # ---------------------------------------------------------------------------
@@ -110,29 +110,37 @@ def _scrfd_decode(outputs: list, output_names: list, scale: float) -> list[dict]
     named = {n: o for n, o in zip(output_names, outputs)}
     anchors = _get_scrfd_anchors()
     thresh = FACE_DETECTION_CONFIG["score_threshold"]
-    all_boxes, all_scores = [], []
-    for score_key, bbox_key, stride in _SCRFD_STRIDES:
+    all_boxes, all_scores, all_kps = [], [], []
+    for score_key, bbox_key, kps_key, stride in _SCRFD_STRIDES:
         score = named[score_key].reshape(-1)
         bbox  = named[bbox_key].reshape(-1, 4) * stride
+        kps   = named[kps_key].reshape(-1, 10) * stride  # 5 points × 2 coords
         mask = score >= thresh
         if not mask.any():
             continue
         a = anchors[stride][mask]
         b = bbox[mask]
+        k = kps[mask].copy().reshape(-1, 5, 2)
         x1 = (a[:, 0] - b[:, 0]) / scale
         y1 = (a[:, 1] - b[:, 1]) / scale
         x2 = (a[:, 0] + b[:, 2]) / scale
         y2 = (a[:, 1] + b[:, 3]) / scale
         all_boxes.append(np.stack([x1, y1, x2 - x1, y2 - y1], axis=1))
         all_scores.append(score[mask])
+        # Decode keypoints: anchor + offset, then rescale to original image coords
+        k[:, :, 0] = (k[:, :, 0] + a[:, 0:1]) / scale
+        k[:, :, 1] = (k[:, :, 1] + a[:, 1:2]) / scale
+        all_kps.append(k.reshape(-1, 10))
     if not all_boxes:
         return []
     boxes  = np.concatenate(all_boxes).tolist()
     scores = np.concatenate(all_scores).tolist()
+    kps_all = np.concatenate(all_kps).tolist()
     idx = cv2.dnn.NMSBoxes(boxes, scores, thresh, FACE_DETECTION_CONFIG["nms_threshold"])
     if not len(idx):
         return []
-    return [{"bbox": boxes[i], "score": float(scores[i])} for i in idx.flatten()]
+    return [{"bbox": boxes[i], "score": float(scores[i]),
+             "kps": kps_all[i]} for i in idx.flatten()]
 
 
 # ---------------------------------------------------------------------------

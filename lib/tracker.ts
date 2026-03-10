@@ -1,5 +1,7 @@
 // lib/tracker.ts
 // IOU + distance-based tracker for face detections across frames.
+// v2 – Anti-drift: max_misses=12, max_center_distance=1.5,
+//   tighter size ratio, distance decay on frame gap.
 
 export type BBox = [number, number, number, number]; // x,y,w,h
 
@@ -68,7 +70,7 @@ function similarSize(a: BBox, b: BBox): boolean {
   const areaB = bw * bh;
 
   const ratio = areaA / areaB;
-  return ratio > 0.5 && ratio < 2.0;
+  return ratio > 0.6 && ratio < 1.67;
 }
 
 export function trackDetections(
@@ -76,11 +78,11 @@ export function trackDetections(
   opts?: { iouThreshold?: number; maxMisses?: number; minTrackLength?: number }
 ): Track[] {
   const iouThreshold = opts?.iouThreshold ?? 0.2;
-  const maxMisses = opts?.maxMisses ?? 20;
+  const maxMisses = opts?.maxMisses ?? 12;
   const minTrackLength = opts?.minTrackLength ?? 5;
 
-  // Distance threshold - if centers are within 2x box size, consider same track
-  const maxCenterDistance = 2.0;
+  // Distance threshold - if centers are within 1.5x box size, consider same track
+  const maxCenterDistance = 1.5;
 
   type InternalTrack = {
     id: number;
@@ -119,13 +121,19 @@ export function trackDetections(
         const distVal = centerDistance(det.bbox, t.lastBox);
         const sizeMatch = similarSize(det.bbox, t.lastBox);
 
-        // Calculate match score
-        // High IOU is great, but also accept low IOU if distance is close and size matches
+        // Frame gap decay: the longer a track is unseen, the harder
+        // it is to match via distance.  Prevents stale tracks from
+        // grabbing a new person who walks into a nearby position.
+        const gap = frameIndex - t.lastFrame;
+        const gapDecay = 1.0 / (1.0 + gap * 0.15);
+
+        // IOU is unaffected by gap (still reliable for overlap)
         let score = iouVal;
 
         if (iouVal < iouThreshold && distVal < maxCenterDistance && sizeMatch) {
-          // Boost score for close boxes with similar size even if IOU is low
-          score = Math.max(score, 0.5 - distVal * 0.2);
+          // Distance-based fallback, penalised by how stale the track is
+          const distScore = (0.5 - distVal * 0.2) * gapDecay;
+          score = Math.max(score, distScore);
         }
 
         if (score > bestScore) {

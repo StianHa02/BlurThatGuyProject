@@ -2,6 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 
+// Long exports can take 10+ minutes for large videos.
+// undici (Node fetch) closes idle sockets quickly by default.
+const EXPORT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
@@ -13,6 +17,8 @@ export async function POST(
       method: 'POST',
       headers: backendHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(EXPORT_TIMEOUT_MS),
+      keepalive: true,
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Export failed' }));
@@ -20,7 +26,11 @@ export async function POST(
     }
     // Stream the NDJSON straight through — no buffering
     return new NextResponse(response.body, {
-      headers: { 'Content-Type': 'application/x-ndjson' },
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
   } catch (error) {
     console.error('Export error:', error);

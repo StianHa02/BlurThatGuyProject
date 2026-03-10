@@ -1,25 +1,23 @@
 # tracker.py
-# IOU + distance-based face tracker.
-#
-# NOTE: track_detections() mirrors lib/tracker.ts → trackDetections() exactly:
-#   same algorithm, same default constants (iouThreshold=0.2, maxMisses=20,
-#   minTrackLength=5, maxCenterDistance=2.0), same match-score formula, and
-#   the same miss-increment logic.  Any change here must be reflected in
-#   tracker.ts and vice-versa.
+# IOU + distance-based face tracker with appearance gating
+
+import numpy as np
 
 # ---------------------------------------------------------------------------
-# Config (kept in sync with main.py TRACKER_CONFIG)
+# Config
 # ---------------------------------------------------------------------------
 
 TRACKER_CONFIG = {
     "iou_threshold": 0.2,
-    "max_misses": 20,
+    "max_misses": 12,
     "min_track_length": 5,
-    "max_center_distance": 2.0,
+    "max_center_distance": 1.5,
 }
 
+APPEARANCE_THRESHOLD = 0.45
+
 # ---------------------------------------------------------------------------
-# Low-level geometry helpers
+# Geometry helpers
 # ---------------------------------------------------------------------------
 
 def _iou(a, b) -> float:
@@ -35,15 +33,25 @@ def _center_distance(a, b) -> float:
     ax, ay, aw, ah = a
     bx, by, bw, bh = b
     avg = (aw + ah + bw + bh) / 4
-    return (
-        ((ax + aw / 2 - bx - bw / 2) ** 2 + (ay + ah / 2 - by - bh / 2) ** 2) ** 0.5 / avg
-        if avg > 0
-        else 9999.0
-    )
+    if avg <= 0:
+        return 9999.0
+    return (((ax + aw/2 - bx - bw/2)**2 + (ay + ah/2 - by - bh/2)**2)**0.5) / avg
 
 
 def _similar_size(a, b) -> bool:
-    return 0.5 < (a[2] * a[3]) / (b[2] * b[3]) < 2.0 if b[2] * b[3] else False
+    area_b = b[2] * b[3]
+    if area_b <= 0:
+        return False
+    return 0.6 < (a[2] * a[3]) / area_b < 1.67
+
+
+def _cosine(a, b) -> float:
+    """Safe cosine similarity."""
+    na = np.linalg.norm(a)
+    nb = np.linalg.norm(b)
+    if na < 1e-8 or nb < 1e-8:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
 
 
 # ---------------------------------------------------------------------------
@@ -51,120 +59,155 @@ def _similar_size(a, b) -> bool:
 # ---------------------------------------------------------------------------
 
 def track_detections(detections_per_frame: dict) -> list[dict]:
-    """IOU + distance tracker — mirrors tracker.ts trackDetections() exactly."""
+
     iou_th = TRACKER_CONFIG["iou_threshold"]
     max_misses = TRACKER_CONFIG["max_misses"]
     min_len = TRACKER_CONFIG["min_track_length"]
     max_dist = TRACKER_CONFIG["max_center_distance"]
-    tracks, next_id = [], 1
+
+    tracks = []
+    next_id = 1
 
     for fi in sorted(detections_per_frame):
-        used = set()
+
+        used_tracks = set()
+
         for det in sorted(detections_per_frame[fi], key=lambda d: -d["score"]):
-            best, best_score = None, -float("inf")
+
+            best_track = None
+            best_score = -1e9
+
             for t in tracks:
-                if t["id"] in used or fi - t["last_frame"] > max_misses + 1:
+
+                if t["id"] in used_tracks:
                     continue
+
+                if fi - t["last_frame"] > max_misses:
+                    continue
+
                 iou = _iou(det["bbox"], t["last_box"])
                 dist = _center_distance(det["bbox"], t["last_box"])
-                score = max(
-                    iou,
-                    0.5 - dist * 0.2
-                    if iou < iou_th and dist < max_dist and _similar_size(det["bbox"], t["last_box"])
-                    else -1,
-                )
+
+                gap = fi - t["last_frame"]
+                gap_decay = 1.0 / (1.0 + gap * 0.15)
+
+                score = iou
+
+                # fallback distance matching
+                if iou < iou_th and dist < max_dist and _similar_size(det["bbox"], t["last_box"]):
+
+                    dist_score = (0.5 - dist * 0.2) * gap_decay
+
+                    # appearance gate ONLY for fallback matching
+                    det_emb = det.get("emb")
+                    t_centroid = t.get("centroid")
+
+                    if det_emb is not None and t_centroid is not None:
+                        sim = _cosine(det_emb, t_centroid)
+                        if sim < APPEARANCE_THRESHOLD:
+                            continue
+
+                    score = max(score, dist_score)
+
                 if score > best_score:
-                    best_score, best = score, t
-            if best and best_score >= iou_th:
-                best["frames"].append(
-                    {"frameIndex": fi, "bbox": det["bbox"], "score": det["score"]}
-                )
-                best["last_box"], best["last_frame"] = det["bbox"], fi
-                used.add(best["id"])
+                    best_score = score
+                    best_track = t
+
+            if best_track and best_score >= iou_th:
+
+                frame_entry = {
+                    "frameIndex": fi,
+                    "bbox": det["bbox"],
+                    "score": det["score"]
+                }
+
+                if "kps" in det:
+                    frame_entry["kps"] = det["kps"]
+
+                best_track["frames"].append(frame_entry)
+                best_track["last_box"] = det["bbox"]
+                best_track["last_frame"] = fi
+
+                # update appearance centroid
+                det_emb = det.get("emb")
+                if det_emb is not None:
+
+                    if best_track["centroid"] is None:
+                        best_track["centroid"] = det_emb.copy()
+                        best_track["emb_count"] = 1
+                    else:
+                        c = best_track["centroid"]
+                        n = best_track["emb_count"]
+
+                        new_c = (c * n + det_emb) / (n + 1)
+                        best_track["centroid"] = new_c
+                        best_track["emb_count"] = n + 1
+
+                used_tracks.add(best_track["id"])
+
             else:
-                t = {
+
+                frame_entry = {
+                    "frameIndex": fi,
+                    "bbox": det["bbox"],
+                    "score": det["score"]
+                }
+
+                if "kps" in det:
+                    frame_entry["kps"] = det["kps"]
+
+                tracks.append({
                     "id": next_id,
-                    "frames": [{"frameIndex": fi, "bbox": det["bbox"], "score": det["score"]}],
+                    "frames": [frame_entry],
                     "last_box": det["bbox"],
                     "last_frame": fi,
-                    "misses": 0,
-                }
+                    "centroid": det.get("emb"),
+                    "emb_count": 1 if det.get("emb") is not None else 0
+                })
+
+                used_tracks.add(next_id)
                 next_id += 1
-                tracks.append(t)
-                used.add(t["id"])
-        for t in tracks:
-            if t["last_frame"] < fi:
-                t["misses"] += 1
+
+    # -----------------------------------------------------------------------
+    # finalize tracks
+    # -----------------------------------------------------------------------
 
     result = []
+
     for t in tracks:
+
         if len(t["frames"]) < min_len:
             continue
+
         mid = len(t["frames"]) // 2
-        result.append(
-            {
-                "id": t["id"],
-                "frames": t["frames"],
-                "startFrame": t["frames"][0]["frameIndex"],
-                "endFrame": t["frames"][-1]["frameIndex"],
-                "thumbnailFrameIndex": t["frames"][mid]["frameIndex"],
-            }
-        )
+
+        result.append({
+            "id": t["id"],
+            "frames": t["frames"],
+            "startFrame": t["frames"][0]["frameIndex"],
+            "endFrame": t["frames"][-1]["frameIndex"],
+            "thumbnailFrameIndex": t["frames"][mid]["frameIndex"],
+        })
+
     return sorted(result, key=lambda t: -len(t["frames"]))
 
 
 # ---------------------------------------------------------------------------
-# Detection-store helpers (used by main.py endpoints)
+# Precompute per-track frame lookups for fast export
 # ---------------------------------------------------------------------------
 
-def _find_detection(frames: list, frame_idx: int) -> dict | None:
-    """Binary search + interpolation. Matches frontend PlayerWithMask logic exactly."""
-    if not frames:
-        return None
-    if frame_idx < frames[0]["frameIndex"] - 20 or frame_idx > frames[-1]["frameIndex"] + 20:
-        return None
-    left, right = 0, len(frames) - 1
-    while left <= right:
-        mid = (left + right) // 2
-        if frames[mid]["frameIndex"] == frame_idx:
-            return frames[mid]
-        elif frames[mid]["frameIndex"] < frame_idx:
-            left = mid + 1
-        else:
-            right = mid - 1
-    prev_f = frames[left - 1] if left > 0 else None
-    next_f = frames[left] if left < len(frames) else None
-    if prev_f and not next_f:
-        return prev_f if (frame_idx - prev_f["frameIndex"]) <= 8 else None
-    if next_f and not prev_f:
-        return next_f if (next_f["frameIndex"] - frame_idx) <= 8 else None
-    if prev_f and next_f:
-        gap = next_f["frameIndex"] - prev_f["frameIndex"]
-        if gap > 20:
-            return None
-        t = (frame_idx - prev_f["frameIndex"]) / gap
-        pb, nb = prev_f["bbox"], next_f["bbox"]
-        return {
-            "frameIndex": frame_idx,
-            "bbox": [pb[i] + (nb[i] - pb[i]) * t for i in range(4)],
-            "score": prev_f["score"] * (1 - t) + next_f["score"] * t,
-        }
-    return None
+def _precompute_track_lookups(
+    tracks_frames: list[list[dict]], total_frames: int
+) -> list[dict]:
+    """Build a list of {frameIndex: frame_entry} dicts, one per track.
 
-
-def _precompute_track_lookups(tracks_frames_list: list, total_frames: int) -> list[dict]:
-    """Pre-build {frameIndex: detection} dicts for O(1) lookup during blur."""
-    if total_frames <= 0:
-        return [{} for _ in tracks_frames_list]
-    lookups = []
-    for frames in tracks_frames_list:
-        lookup = {}
-        if frames:
-            start = max(0, int(frames[0]["frameIndex"]) - 20)
-            end = min(total_frames - 1, int(frames[-1]["frameIndex"]) + 20)
-            for fi in range(start, end + 1):
-                det = _find_detection(frames, fi)
-                if det is not None:
-                    lookup[fi] = det
-        lookups.append(lookup)
+    This allows O(1) lookup during the export loop to check whether a given
+    frame index has a detection for each selected track.
+    """
+    lookups: list[dict] = []
+    for frames in tracks_frames:
+        lu: dict[int, dict] = {}
+        for f in frames:
+            lu[f["frameIndex"]] = f
+        lookups.append(lu)
     return lookups

@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 
+// Detection + ReID can take a long time for large videos.
+const DETECT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
@@ -16,6 +19,8 @@ export async function POST(
       {
         method: 'POST',
         headers: backendHeaders(),
+        signal: AbortSignal.timeout(DETECT_TIMEOUT_MS),
+        keepalive: true,
       }
     );
 
@@ -29,7 +34,11 @@ export async function POST(
 
     // Stream the NDJSON response directly back to the client
     return new NextResponse(response.body, {
-      headers: { 'Content-Type': 'application/x-ndjson' },
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
   } catch (error) {
     console.error('Detect-video proxy error:', error);

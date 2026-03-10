@@ -23,7 +23,7 @@ from typing import List
 from detector import detect_faces, get_face_detector, get_thread_pool, DETECTOR_POOL_SIZE
 from tracker import track_detections, _precompute_track_lookups
 from blur import _blur_frame
-from reid import merge_tracks_by_identity, get_reid_model
+from reid import merge_tracks_by_identity, get_reid_model, embed_detections
 
 try:
     import importlib
@@ -308,6 +308,13 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
             pending_futures = []
             MAX_PENDING = DETECTOR_POOL_SIZE * 2
 
+            def _detect_and_embed(frame):
+                """Detect faces then compute embeddings while frame is in memory."""
+                faces = detect_faces(frame)
+                if faces:
+                    faces = embed_detections(frame, faces)
+                return faces
+
             def drain_one():
                 nonlocal completed_steps
                 idx, fut = pending_futures.pop(0)
@@ -346,7 +353,7 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
                     item = fq.get()
                     if item is None: break
                     fi, frame = item
-                    pending_futures.append((fi, pool.submit(detect_faces, frame)))
+                    pending_futures.append((fi, pool.submit(_detect_and_embed, frame)))
                     while len(pending_futures) >= MAX_PENDING:
                         yield drain_one()
                 proc.wait(timeout=30)
@@ -361,7 +368,7 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
                     ret, frame = cap.read()
                     if not ret: break
                     current_frame = target_idx + 1
-                    pending_futures.append((target_idx, pool.submit(detect_faces, frame)))
+                    pending_futures.append((target_idx, pool.submit(_detect_and_embed, frame)))
                     while len(pending_futures) >= MAX_PENDING:
                         yield drain_one()
                     target_idx += sample_rate
@@ -375,6 +382,10 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
             tracks = track_detections(detections_per_frame)
             logger.info(f"Tracking done for {video_id}: {len(tracks)} tracks")
             tracks = merge_tracks_by_identity(tracks, video_path)
+            # Strip numpy embeddings from frame entries before JSON serialization
+            for t in tracks:
+                for f in t.get("frames", []):
+                    f.pop("emb", None)
             store_tracks(video_id, tracks)  # store server-side — never resent from frontend
             yield json.dumps({"type": "progress", "progress": 100}) + "\n"
             yield json.dumps({"type": "results", "results": tracks}) + "\n"
@@ -468,7 +479,7 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                 # Fast path: no face on this frame — write directly, skip thread pool
                 if not any(fi in lu for lu in track_lookup_dicts):
                     write_frame(frame)
-                    if frames_written % 60 == 0:
+                    if frames_written % 30 == 0:
                         yield json.dumps({"type": "progress", "progress": min(70, round(5 + frames_written / total_frames * 65, 1))}) + "\n"
                     fi += 1
                     continue
