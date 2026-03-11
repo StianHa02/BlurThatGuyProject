@@ -23,7 +23,7 @@ FACE_DETECTION_CONFIG = {"score_threshold": 0.55, "nms_threshold": 0.25, "max_fa
 # Exported for main.py
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
 
-# Optimized size for CPU (480 is faster than 640)
+
 _SCRFD_SIZE = 480
 _scrfd_anchors: dict = {}
 _SCRFD_INPUT = "input.1"
@@ -69,15 +69,21 @@ def get_face_detector() -> None:
     global _detector_pool, _pool_semaphore
     with _pool_lock:
         if not _detector_pool:
-            opts = ort.SessionOptions()
-            opts.intra_op_num_threads = 2
-            # Force CPU Provider for stability
-            session = ort.InferenceSession(
-                str(_get_model_path()), sess_options=opts,
-                providers=["CPUExecutionProvider"])
-            logger.info(f"SCRFD session ready on CPU, size {_SCRFD_SIZE}")
-
-            _detector_pool = [session] * DETECTOR_POOL_SIZE
+            model_path = str(_get_model_path())
+            # Create independent sessions so ONNX Runtime can truly run them
+            # in parallel – a single session serialises concurrent .run() calls.
+            for i in range(DETECTOR_POOL_SIZE):
+                opts = ort.SessionOptions()
+                opts.intra_op_num_threads = 2
+                opts.inter_op_num_threads = 1
+                session = ort.InferenceSession(
+                    model_path, sess_options=opts,
+                    providers=["CPUExecutionProvider"])
+                _detector_pool.append(session)
+            logger.info(
+                f"SCRFD: {DETECTOR_POOL_SIZE} independent sessions on CPU, "
+                f"input size {_SCRFD_SIZE}"
+            )
             _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
     get_thread_pool()
 
@@ -133,14 +139,16 @@ def _scrfd_decode(outputs: list, output_names: list, scale: float) -> list[dict]
         all_kps.append(k.reshape(-1, 10))
     if not all_boxes:
         return []
-    boxes  = np.concatenate(all_boxes).tolist()
-    scores = np.concatenate(all_scores).tolist()
-    kps_all = np.concatenate(all_kps).tolist()
-    idx = cv2.dnn.NMSBoxes(boxes, scores, thresh, FACE_DETECTION_CONFIG["nms_threshold"])
+    boxes  = np.concatenate(all_boxes)
+    scores = np.concatenate(all_scores)
+    kps_all = np.concatenate(all_kps)
+    # cv2.dnn.NMSBoxes accepts ndarray; keep as lists-of-lists for the API
+    idx = cv2.dnn.NMSBoxes(boxes.tolist(), scores.tolist(), thresh, FACE_DETECTION_CONFIG["nms_threshold"])
     if not len(idx):
         return []
-    return [{"bbox": boxes[i], "score": float(scores[i]),
-             "kps": kps_all[i]} for i in idx.flatten()]
+    sel = idx.flatten()
+    return [{"bbox": boxes[i].tolist(), "score": float(scores[i]),
+             "kps": kps_all[i].tolist()} for i in sel]
 
 
 # ---------------------------------------------------------------------------

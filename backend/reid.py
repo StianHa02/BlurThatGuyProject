@@ -221,14 +221,38 @@ def _embed_single(session: ort.InferenceSession, input_name: str,
     return emb / norm if norm > 1e-8 else emb
 
 
+_EMBED_BATCH_SIZE = 32  # max crops per ONNX call — caps memory usage
+
+
 def _embed_crops(session: ort.InferenceSession,
                  crops: list[np.ndarray]) -> np.ndarray:
-    """Embed multiple 112×112 faces. Returns (N, D) L2-normed."""
+    """Embed multiple 112×112 faces with batched ONNX inference + flip augmentation.
+
+    Instead of 2*N individual session.run() calls, stacks crops into batches
+    of up to _EMBED_BATCH_SIZE and runs 2 calls per batch (original + flipped).
+    Returns (N, D) L2-normed embeddings.
+    """
     if not crops:
         return np.empty((0, 512), dtype=np.float32)
     input_name = session.get_inputs()[0].name
-    embs = [_embed_single(session, input_name, c) for c in crops]
-    return np.stack(embs, axis=0)
+    all_embs = []
+    for start in range(0, len(crops), _EMBED_BATCH_SIZE):
+        batch = crops[start:start + _EMBED_BATCH_SIZE]
+        # Stack originals: (B, 3, 112, 112)
+        blob_orig = np.concatenate(
+            [_preprocess_single(c) for c in batch], axis=0
+        )
+        # Stack flipped: (B, 3, 112, 112)
+        blob_flip = np.concatenate(
+            [_preprocess_single(c[:, ::-1].copy()) for c in batch], axis=0
+        )
+        out_orig = session.run(None, {input_name: blob_orig})[0]  # (B, D)
+        out_flip = session.run(None, {input_name: blob_flip})[0]  # (B, D)
+        embs = out_orig + out_flip  # (B, D)
+        norms = np.linalg.norm(embs, axis=1, keepdims=True)
+        norms = np.maximum(norms, 1e-8)
+        all_embs.append(embs / norms)
+    return np.concatenate(all_embs, axis=0)
 
 
 # ── Inline per-frame embedding (for tracker appearance gate) ────────────────
@@ -310,8 +334,9 @@ def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
         return (e / norm if norm > 1e-8 else e), 1.0
 
     # Incremental centroid with drift gate
-    accepted = [embeddings[0]]
-    centroid = embeddings[0].copy()
+    accepted_count = 1
+    running_sum = embeddings[0].copy()
+    centroid = running_sum.copy()
     norm = np.linalg.norm(centroid)
     if norm > 1e-8:
         centroid /= norm
@@ -319,19 +344,27 @@ def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
     for emb in embeddings[1:]:
         sim = float(emb @ centroid)
         if sim >= _DRIFT_GATE:
-            accepted.append(emb)
-            # Update centroid with new accepted embedding
-            raw = np.stack(accepted, axis=0).mean(axis=0)
-            norm = np.linalg.norm(raw)
-            centroid = raw / norm if norm > 1e-8 else raw
+            accepted_count += 1
+            running_sum += emb
+            # Update centroid incrementally
+            centroid = running_sum / accepted_count
+            norm = np.linalg.norm(centroid)
+            if norm > 1e-8:
+                centroid /= norm
 
-    if len(accepted) < len(embeddings):
-        logger.debug(f"Drift gate rejected {len(embeddings) - len(accepted)}/{len(embeddings)} embeddings")
+    rejected = len(embeddings) - accepted_count
+    if rejected > 0:
+        logger.debug(f"Drift gate rejected {rejected}/{len(embeddings)} embeddings")
 
     # Coherence = mean similarity of accepted embeddings to final centroid
-    acc_mat = np.stack(accepted, axis=0)
-    sims = acc_mat @ centroid
-    coherence = float(sims.mean())
+    sims_sum = 0.0
+    accepted_for_coherence = 0
+    for i, emb in enumerate(embeddings):
+        sim = float(emb @ centroid)
+        if sim >= _DRIFT_GATE or i == 0:
+            sims_sum += sim
+            accepted_for_coherence += 1
+    coherence = sims_sum / max(accepted_for_coherence, 1)
 
     return centroid, coherence
 

@@ -55,6 +55,42 @@ def _cosine(a, b) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Vectorized geometry for batch track-vs-detection scoring
+# ---------------------------------------------------------------------------
+
+def _batch_iou(track_boxes: np.ndarray, det_box: np.ndarray) -> np.ndarray:
+    """Compute IoU of (N, 4) xywh track boxes against a single (4,) det box.
+    Returns (N,) array of IoU values."""
+    tx, ty, tw, th = track_boxes[:, 0], track_boxes[:, 1], track_boxes[:, 2], track_boxes[:, 3]
+    dx, dy, dw, dh = det_box
+    iw = np.maximum(0.0, np.minimum(tx + tw, dx + dw) - np.maximum(tx, dx))
+    ih = np.maximum(0.0, np.minimum(ty + th, dy + dh) - np.maximum(ty, dy))
+    inter = iw * ih
+    union = tw * th + dw * dh - inter
+    return np.where(union > 0, inter / union, 0.0)
+
+
+def _batch_center_dist(track_boxes: np.ndarray, det_box: np.ndarray) -> np.ndarray:
+    """Normalized center distance of (N, 4) track boxes vs single (4,) det box.
+    Returns (N,) array."""
+    tx, ty, tw, th = track_boxes[:, 0], track_boxes[:, 1], track_boxes[:, 2], track_boxes[:, 3]
+    dx, dy, dw, dh = det_box
+    avg = (tw + th + dw + dh) / 4.0
+    avg = np.maximum(avg, 1e-8)
+    cx_diff = tx + tw / 2 - dx - dw / 2
+    cy_diff = ty + th / 2 - dy - dh / 2
+    return np.sqrt(cx_diff ** 2 + cy_diff ** 2) / avg
+
+
+def _batch_similar_size(track_boxes: np.ndarray, det_box: np.ndarray) -> np.ndarray:
+    """Check area ratio within [0.6, 1.67]. Returns (N,) bool array."""
+    t_area = track_boxes[:, 2] * track_boxes[:, 3]
+    d_area = det_box[2] * det_box[3]
+    ratio = np.where(d_area > 0, t_area / d_area, 0.0)
+    return (ratio > 0.6) & (ratio < 1.67)
+
+
+# ---------------------------------------------------------------------------
 # Tracker
 # ---------------------------------------------------------------------------
 
@@ -84,51 +120,75 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
 
         used_tracks = set()
 
+        # Pre-filter active tracks for this frame
+        active_tracks = [t for t in tracks if fi - t["last_frame"] <= max_misses]
+
+        # Initialize vectorized arrays (used inside the detection loop)
+        track_boxes = np.empty((0, 4), dtype=np.float64)
+        track_last_frames = np.empty(0, dtype=np.int64)
+        cut_mask = np.empty(0, dtype=bool)
+
+        if active_tracks and detections_per_frame[fi]:
+            # Build (N, 4) array of active track boxes for vectorized matching
+            track_boxes = np.array([t["last_box"] for t in active_tracks], dtype=np.float64)
+            track_last_frames = np.array([t["last_frame"] for t in active_tracks])
+
+            # Pre-compute cut masks: for each active track, check if there's a
+            # cut between its last_frame and fi
+            if cuts_sorted:
+                cut_mask = np.array([_cut_between(t["last_frame"], fi) for t in active_tracks])
+            else:
+                cut_mask = np.zeros(len(active_tracks), dtype=bool)
+
         for det in sorted(detections_per_frame[fi], key=lambda d: -d["score"]):
 
             best_track = None
             best_score = -1e9
 
-            for t in tracks:
+            if not active_tracks:
+                pass  # skip to new-track creation below
+            else:
+                det_box = np.array(det["bbox"], dtype=np.float64)
+                # Vectorized IoU and distance for ALL active tracks at once
+                ious = _batch_iou(track_boxes, det_box)
+                dists = _batch_center_dist(track_boxes, det_box)
+                sim_sizes = _batch_similar_size(track_boxes, det_box)
+                gaps = fi - track_last_frames
+                gap_decays = 1.0 / (1.0 + gaps * 0.15)
 
-                if t["id"] in used_tracks:
-                    continue
+                for ti, t in enumerate(active_tracks):
 
-                if fi - t["last_frame"] > max_misses:
-                    continue
+                    if t["id"] in used_tracks:
+                        continue
 
-                # Hard scene cut between last observation and now — positions
-                # and appearance are meaningless across a cut boundary.
-                if _cut_between(t["last_frame"], fi):
-                    continue
+                    # Skip tracks across scene cuts
+                    if cut_mask[ti]:
+                        continue
 
-                iou = _iou(det["bbox"], t["last_box"])
-                dist = _center_distance(det["bbox"], t["last_box"])
+                    iou = float(ious[ti])
+                    dist = float(dists[ti])
 
-                gap = fi - t["last_frame"]
-                gap_decay = 1.0 / (1.0 + gap * 0.15)
+                    score = iou
 
-                score = iou
+                    # fallback distance matching
+                    if iou < iou_th and dist < max_dist and sim_sizes[ti]:
 
-                # fallback distance matching
-                if iou < iou_th and dist < max_dist and _similar_size(det["bbox"], t["last_box"]):
+                        dist_score = (0.5 - dist * 0.2) * float(gap_decays[ti])
 
-                    dist_score = (0.5 - dist * 0.2) * gap_decay
+                        # appearance gate ONLY for fallback matching
+                        det_emb = det.get("emb")
+                        t_centroid = t.get("centroid")
 
-                    # appearance gate ONLY for fallback matching
-                    det_emb = det.get("emb")
-                    t_centroid = t.get("centroid")
+                        if det_emb is not None and t_centroid is not None:
+                            sim = _cosine(det_emb, t_centroid)
+                            if sim < APPEARANCE_THRESHOLD:
+                                continue
 
-                    if det_emb is not None and t_centroid is not None:
-                        sim = _cosine(det_emb, t_centroid)
-                        if sim < APPEARANCE_THRESHOLD:
-                            continue
+                        score = max(score, dist_score)
 
-                    score = max(score, dist_score)
-
-                if score > best_score:
-                    best_score = score
-                    best_track = t
+                    if score > best_score:
+                        best_score = score
+                        best_track = t
 
             if best_track and best_score >= iou_th:
 
