@@ -53,3 +53,6 @@ __pycache__/
 *.pyo
 .Python
 
+# Test model
+w600k_r50.onnx
+

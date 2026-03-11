@@ -25,8 +25,9 @@ def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
             if blur_mode == "blackout":
                 replacement = np.zeros_like(region)
             else:
-                # Adaptive block size: same block density regardless of face size
-                block_size = max(1, min(w, h) // target_blocks)
+                # Adaptive block size: same block density regardless of face size.
+                # Minimum 6px so pixelation is always visible even on small faces.
+                block_size = max(6, min(w, h) // target_blocks)
                 small = cv2.resize(
                     region,
                     (max(1, w // block_size), max(1, h // block_size)),

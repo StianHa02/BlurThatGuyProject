@@ -304,9 +304,23 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
             total_steps = max(1, (total_frames + sample_rate - 1) // sample_rate) if total_frames > 0 else 1
             completed_steps = 0
             detections_per_frame = {}
+            cut_frames: set[int] = set()   # frame indices where a hard scene cut was detected
             pool = get_thread_pool()
             pending_futures = []
             MAX_PENDING = DETECTOR_POOL_SIZE * 2
+
+            # Cut detection: compare consecutive sampled frames on a tiny
+            # downscaled grayscale image. MAD > threshold = hard cut.
+            # Threshold 45 (was 28): ignores camera pans, slow zooms, and
+            # lighting changes which read 15-35. True hard cuts read 50-120.
+            # _MIN_CUT_GAP: ignore cuts within N sampled frames of the last
+            # one — prevents a single slow pan triggering multiple cuts.
+            _CUT_THUMB = (64, 36)
+            _CUT_THRESHOLD = 45.0
+            _MIN_CUT_GAP = 8   # in sampled-frame units (= 8 * sample_rate real frames)
+            _prev_thumb: np.ndarray | None = None
+            _prev_fi: int = -1
+            _last_cut_fi: int = -999
 
             def _detect_and_embed(frame):
                 """Detect faces then compute embeddings while frame is in memory."""
@@ -314,6 +328,20 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
                 if faces:
                     faces = embed_detections(frame, faces)
                 return faces
+
+            def _check_cut(fi: int, frame: np.ndarray) -> None:
+                nonlocal _prev_thumb, _prev_fi, _last_cut_fi
+                small = cv2.resize(frame, _CUT_THUMB)
+                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32)
+                if _prev_thumb is not None:
+                    mad = float(np.mean(np.abs(gray - _prev_thumb)))
+                    sampled_gap = (fi - _last_cut_fi) // sample_rate
+                    if mad > _CUT_THRESHOLD and sampled_gap >= _MIN_CUT_GAP:
+                        cut_frames.add(fi)
+                        _last_cut_fi = fi
+                        logger.debug(f"Scene cut at frame {fi} (MAD={mad:.1f})")
+                _prev_thumb = gray
+                _prev_fi = fi
 
             def drain_one():
                 nonlocal completed_steps
@@ -353,6 +381,7 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
                     item = fq.get()
                     if item is None: break
                     fi, frame = item
+                    _check_cut(fi, frame)
                     pending_futures.append((fi, pool.submit(_detect_and_embed, frame)))
                     while len(pending_futures) >= MAX_PENDING:
                         yield drain_one()
@@ -368,6 +397,7 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
                     ret, frame = cap.read()
                     if not ret: break
                     current_frame = target_idx + 1
+                    _check_cut(target_idx, frame)
                     pending_futures.append((target_idx, pool.submit(_detect_and_embed, frame)))
                     while len(pending_futures) >= MAX_PENDING:
                         yield drain_one()
@@ -377,9 +407,9 @@ def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depe
             while pending_futures:
                 yield drain_one()
 
-            logger.info(f"Detection done for {video_id}: {len(detections_per_frame)} frames with faces")
+            logger.info(f"Detection done for {video_id}: {len(detections_per_frame)} frames with faces, {len(cut_frames)} scene cuts detected")
             yield json.dumps({"type": "progress", "progress": 85}) + "\n"
-            tracks = track_detections(detections_per_frame)
+            tracks = track_detections(detections_per_frame, cut_frames)
             logger.info(f"Tracking done for {video_id}: {len(tracks)} tracks")
             tracks = merge_tracks_by_identity(tracks, video_path)
             # Strip numpy embeddings from frame entries before JSON serialization
@@ -437,6 +467,20 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                      "-pix_fmt", "yuv420p", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0?", "-shortest",
                      str(output_path)],
                     stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+
+                # Drain stderr in a background thread to prevent the pipe buffer
+                # filling up (~64 KB on Linux) which would deadlock the stdin write loop.
+                _stderr_chunks: list[bytes] = []
+
+                def _drain_stderr():
+                    try:
+                        for chunk in iter(lambda: ffmpeg_proc.stderr.read(4096), b""):
+                            _stderr_chunks.append(chunk)
+                    except Exception:
+                        pass
+
+                _stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+                _stderr_thread.start()
                 dec = subprocess.Popen(
                     ["ffmpeg", "-hide_banner", "-loglevel", "fatal", "-i", str(input_path),
                      "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"],
@@ -450,11 +494,13 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                 nonlocal frames_written
                 if ffmpeg_proc:
                     if ffmpeg_proc.poll() is not None:
-                        raise RuntimeError(f"ffmpeg exited: {ffmpeg_proc.stderr.read().decode(errors='ignore')}")
+                        err = b"".join(_stderr_chunks).decode(errors="ignore")
+                        raise RuntimeError(f"ffmpeg exited early: {err}")
                     try:
                         ffmpeg_proc.stdin.write(f.tobytes())
                     except (BrokenPipeError, ValueError):
-                        raise RuntimeError(f"ffmpeg pipe broken: {ffmpeg_proc.stderr.read().decode(errors='ignore')}")
+                        err = b"".join(_stderr_chunks).decode(errors="ignore")
+                        raise RuntimeError(f"ffmpeg pipe broken: {err}")
                 else:
                     out.write(f)
                 frames_written += 1
@@ -501,10 +547,12 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                 except Exception: pass
                 try:
                     ffmpeg_proc.wait(timeout=600)
-                    stderr_data = ffmpeg_proc.stderr.read()
+                    _stderr_thread.join(timeout=5)
+                    stderr_data = b"".join(_stderr_chunks)
                 except subprocess.TimeoutExpired:
                     ffmpeg_proc.kill(); ffmpeg_proc.wait()
-                    stderr_data = ffmpeg_proc.stderr.read()
+                    _stderr_thread.join(timeout=5)
+                    stderr_data = b"".join(_stderr_chunks)
                 if ffmpeg_proc.returncode != 0:
                     logger.error(f"ffmpeg failed: {stderr_data.decode(errors='ignore')}")
                     yield json.dumps({"type": "error", "error": "Failed to encode video"}) + "\n"; return

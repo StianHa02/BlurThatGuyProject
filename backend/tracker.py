@@ -58,12 +58,24 @@ def _cosine(a, b) -> float:
 # Tracker
 # ---------------------------------------------------------------------------
 
-def track_detections(detections_per_frame: dict) -> list[dict]:
+def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = None) -> list[dict]:
 
     iou_th = TRACKER_CONFIG["iou_threshold"]
     max_misses = TRACKER_CONFIG["max_misses"]
     min_len = TRACKER_CONFIG["min_track_length"]
     max_dist = TRACKER_CONFIG["max_center_distance"]
+
+    # Pre-sort cuts once into a list so we can use bisect for O(log n) range
+    # queries instead of scanning the entire set for every track candidate.
+    import bisect
+    cuts_sorted = sorted(cut_frames) if cut_frames else []
+
+    def _cut_between(a: int, b: int) -> bool:
+        """Return True if any cut frame index falls in the range (a, b]."""
+        if not cuts_sorted:
+            return False
+        idx = bisect.bisect_right(cuts_sorted, a)
+        return idx < len(cuts_sorted) and cuts_sorted[idx] <= b
 
     tracks = []
     next_id = 1
@@ -83,6 +95,11 @@ def track_detections(detections_per_frame: dict) -> list[dict]:
                     continue
 
                 if fi - t["last_frame"] > max_misses:
+                    continue
+
+                # Hard scene cut between last observation and now — positions
+                # and appearance are meaningless across a cut boundary.
+                if _cut_between(t["last_frame"], fi):
                     continue
 
                 iou = _iou(det["bbox"], t["last_box"])

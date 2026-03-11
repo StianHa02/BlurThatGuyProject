@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-FACE_DETECTION_CONFIG = {"score_threshold": 0.5, "nms_threshold": 0.25, "max_faces": 5000}
+FACE_DETECTION_CONFIG = {"score_threshold": 0.55, "nms_threshold": 0.25, "max_faces": 5000}
 
 # Exported for main.py
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
