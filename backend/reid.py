@@ -14,13 +14,29 @@ import numpy as np
 import threading
 import logging
 import os
+import multiprocessing
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
 
-_reid_session: ort.InferenceSession | None = None
-_reid_lock = threading.Lock()
+# ── Session pool (mirrors detector.py's _DetectorLease pattern) ─────────────
+# Multiple independent sessions so concurrent threads (inline embed_detections
+# + parallel ReID embedding) never serialize through a single .run() call.
+#
+# Scaling rules (same logic applies on a 2-vCPU EC2 and a 16-core Ryzen):
+#   pool_size        = clamp(cpu_count // 2, 1, 4)
+#   intra_op_threads = clamp(cpu_count // pool_size, 1, 4)
+# This guarantees pool_size × intra_op_threads ≤ cpu_count so we never
+# over-subscribe — e.g. 2 vCPUs → pool=1, intra=2; 8 cores → pool=4, intra=2.
+_CPU_COUNT = multiprocessing.cpu_count()
+REID_POOL_SIZE = max(1, min(4, _CPU_COUNT // 2))
+_REID_INTRA_THREADS = max(1, min(4, _CPU_COUNT // REID_POOL_SIZE))
+
+_reid_pool: list = []
+_pool_lock = threading.Lock()
+_pool_semaphore: threading.Semaphore | None = None
 _loaded = False
 
 # ── Tunables (all overridable via env) ──────────────────────────────────────
@@ -65,26 +81,52 @@ def _model_path() -> Path:
 
 
 def get_reid_model() -> ort.InferenceSession | None:
-    global _reid_session, _loaded
-    with _reid_lock:
+    """Initialise the session pool and return one session (for startup checks)."""
+    global _reid_pool, _pool_semaphore, _loaded
+    with _pool_lock:
         if _loaded:
-            return _reid_session
+            return _reid_pool[0] if _reid_pool else None
         _loaded = True
         path = _model_path()
         if not path.exists():
+            logger.warning(f"ReID model not found at {path}")
             return None
         try:
-            opts = ort.SessionOptions()
-            opts.intra_op_num_threads = 2
-            opts.log_severity_level = 3
-            _reid_session = ort.InferenceSession(
-                str(path), sess_options=opts,
-                providers=["CPUExecutionProvider"],
+            for i in range(REID_POOL_SIZE):
+                opts = ort.SessionOptions()
+                opts.intra_op_num_threads = _REID_INTRA_THREADS
+                opts.inter_op_num_threads = 1
+                opts.log_severity_level = 3
+                session = ort.InferenceSession(
+                    str(path), sess_options=opts,
+                    providers=["CPUExecutionProvider"],
+                )
+                _reid_pool.append(session)
+            _pool_semaphore = threading.Semaphore(REID_POOL_SIZE)
+            logger.info(
+                f"ReID model loaded: {path.stem} — "
+                f"{REID_POOL_SIZE} sessions × {_REID_INTRA_THREADS} intra threads "
+                f"({_CPU_COUNT} logical CPUs) "
+                f"(v7 – drift-aware centroid, quality-filter, coherence)"
             )
-            logger.info(f"ReID model loaded: {path.stem} (v7 – drift-aware centroid, quality-filter, coherence)")
         except Exception as e:
             logger.error(f"ReID load failed: {e}")
-    return _reid_session
+            return None
+    return _reid_pool[0] if _reid_pool else None
+
+
+class _ReidLease:
+    """Borrow one ReID session from the pool; block if all are busy."""
+    def __enter__(self) -> ort.InferenceSession:
+        _pool_semaphore.acquire()
+        with _pool_lock:
+            self._session = _reid_pool.pop()
+        return self._session
+
+    def __exit__(self, *_):
+        with _pool_lock:
+            _reid_pool.append(self._session)
+        _pool_semaphore.release()
 
 
 # ── Quality checks ──────────────────────────────────────────────────────────
@@ -264,34 +306,34 @@ def embed_detections(frame: np.ndarray, detections: list[dict]) -> list[dict]:
     the tracker's appearance gate.  Skips profiles/blurry/tiny faces — those
     detections keep their bbox/score/kps but get no 'emb' key.
     """
-    session = get_reid_model()
-    if session is None or not detections:
+    if not _reid_pool or not detections:
         return detections
 
-    input_name = session.get_inputs()[0].name
+    with _ReidLease() as session:
+        input_name = session.get_inputs()[0].name
 
-    for det in detections:
-        kps = det.get("kps")
-        bbox = det["bbox"]
+        for det in detections:
+            kps = det.get("kps")
+            bbox = det["bbox"]
 
-        # Skip tiny faces
-        if bbox[2] < _MIN_CROP_PX or bbox[3] < _MIN_CROP_PX:
-            continue
+            # Skip tiny faces
+            if bbox[2] < _MIN_CROP_PX or bbox[3] < _MIN_CROP_PX:
+                continue
 
-        # Skip profiles
-        if kps and _is_profile(kps):
-            continue
+            # Skip profiles
+            if kps and _is_profile(kps):
+                continue
 
-        crop = _extract_face_crop(frame, bbox, kps)
-        if crop is None:
-            continue
+            crop = _extract_face_crop(frame, bbox, kps)
+            if crop is None:
+                continue
 
-        # Skip blurry
-        if _is_blurry(crop):
-            continue
+            # Skip blurry
+            if _is_blurry(crop):
+                continue
 
-        emb = _embed_single(session, input_name, crop)
-        det["emb"] = emb  # numpy array, shape (512,)
+            emb = _embed_single(session, input_name, crop)
+            det["emb"] = emb  # numpy array, shape (512,)
 
     return detections
 
@@ -372,8 +414,7 @@ def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
 # ── Main entry point ───────────────────────────────────────────────────────
 
 def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]:
-    session = get_reid_model()
-    if session is None or len(tracks) < 2:
+    if not _reid_pool or len(tracks) < 2:
         return [{**t, "mergedFrom": [t["id"]]} for t in tracks]
 
     cap = cv2.VideoCapture(str(video_path))
@@ -405,9 +446,6 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
         return [{**t, "mergedFrom": [t["id"]]} for t in tracks]
 
     # ── 1. Adaptive sampling — keep total seeks ≤ _MAX_TOTAL_SEEKS ──────────
-    # For an interview with 5 people across 1000 cut-fragments, this keeps
-    # total video seeks at ~3000 instead of ~15000. Even 3 good crops per
-    # track is enough for a reliable ArcFace centroid.
     n_embeddable = len(embeddable_indices)
     samples_per_track = max(
         _MIN_EMBEDDABLE_SAMPLES,
@@ -421,7 +459,6 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
         )
 
     # ── 2. Plan which frames to sample ──────────────────────────────────────
-    # Work only on embeddable_indices; map back to original track indices.
     emb_tracks = [tracks[i] for i in embeddable_indices]
     sample_plan: list[list[dict]] = []
     frame_requests: dict[int, list[tuple[int, int]]] = {}
@@ -464,27 +501,38 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
 
     cap.release()
 
-    # ── 4. Embed all crops → centroid per embeddable track ──────────────────
-    centroids: list[np.ndarray | None] = []
-    coherences: list[float] = []
-    valid_local_indices: list[int] = []   # indices into emb_tracks / centroids
+    # ── 4. Embed all crops in parallel → centroid per embeddable track ───────
+    # Each worker leases a session from the pool, embeds its track's crops, and
+    # returns (ti, embs). REID_POOL_SIZE workers run simultaneously, keeping all
+    # ReID cores busy instead of serialising through a single session.
+    centroids: list[np.ndarray | None] = [None] * len(emb_tracks)
+    coherences: list[float] = [0.0] * len(emb_tracks)
+    valid_local_indices: list[int] = []
 
-    for ti in range(len(emb_tracks)):
+    def _embed_track(ti: int) -> tuple[int, np.ndarray | None, float]:
         crops = track_crops[ti]
         if len(crops) < _MIN_EMBEDDABLE_SAMPLES:
-            centroids.append(None)
-            coherences.append(0.0)
-            continue
-        embs = _embed_crops(session, crops)
+            return ti, None, 0.0
+        with _ReidLease() as session:
+            embs = _embed_crops(session, crops)
         centroid, coherence = _build_centroid(embs)
-        centroids.append(centroid)
-        coherences.append(coherence)
-        if coherence >= _MIN_TRACK_COHERENCE:
-            valid_local_indices.append(ti)
-        else:
-            logger.debug(
-                f"Track {emb_tracks[ti]['id']}: low coherence {coherence:.3f}, excluded"
-            )
+        return ti, centroid, coherence
+
+    with ThreadPoolExecutor(max_workers=REID_POOL_SIZE) as embed_pool:
+        futures = {embed_pool.submit(_embed_track, ti): ti
+                   for ti in range(len(emb_tracks))}
+        for fut in as_completed(futures):
+            ti, centroid, coherence = fut.result()
+            centroids[ti] = centroid
+            coherences[ti] = coherence
+            if centroid is not None and coherence >= _MIN_TRACK_COHERENCE:
+                valid_local_indices.append(ti)
+            elif centroid is not None:
+                logger.debug(
+                    f"Track {emb_tracks[ti]['id']}: low coherence {coherence:.3f}, excluded"
+                )
+
+    valid_local_indices.sort()
 
     if len(valid_local_indices) < 2:
         return [{**t, "mergedFrom": [t["id"]]} for t in tracks]
@@ -493,9 +541,6 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
     emb_metas = [_track_meta(t) for t in emb_tracks]
 
     # ── 6. Vectorised pairwise cosine similarity ─────────────────────────────
-    # Build (M, 512) matrix from valid centroids, then do a single matmul
-    # instead of a Python loop over M*(M-1)/2 pairs. Even with 1000 valid
-    # tracks this takes ~1ms vs several seconds of Python looping.
     valid_centroids = np.stack(
         [centroids[i] for i in valid_local_indices], axis=0
     )  # (M, 512)
