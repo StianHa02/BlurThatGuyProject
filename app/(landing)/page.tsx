@@ -104,12 +104,12 @@ export default function Home() {
 								Start Uploading
 							</Link>
 
-							<a
+							<Link
 								href="/#how-it-works"
 								className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all font-medium backdrop-blur-sm"
 							>
 								Learn More
-							</a>
+							</Link>
 						</div>
 
 						{/* Social Proof */}
@@ -136,7 +136,7 @@ export default function Home() {
 						scrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'
 					}`}
 				>
-					<a
+					<Link
 						href="/#how-it-works"
 						className="flex flex-col items-center gap-2 text-slate-600 hover:text-slate-300 transition-colors"
 					>
@@ -144,7 +144,7 @@ export default function Home() {
 						<svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
 						</svg>
-					</a>
+					</Link>
 				</div>
 			</div>
 

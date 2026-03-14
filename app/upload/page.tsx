@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Eye, EyeOff, Users, UserX, Info, Download, Loader2 } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
@@ -30,14 +30,14 @@ export default function UploadPage() {
   const [uploadingFileName, setUploadingFileName] = useState('');
   const [sampleRate, setSampleRate] = useState(3);
   const [blurMode, setBlurMode] = useState<BlurMode>('pixelate');
-  const abortRef = useRef<AbortController>(new AbortController());
+  const [abortController, setAbortController] = useState(() => new AbortController());
 
   const upload = useVideoUpload();
   const detection = useFaceDetection({
     sampleRate,
     videoId: upload.videoId,
     onError: upload.setError,
-    signal: abortRef.current.signal,
+    signal: abortController.signal,
   });
   const exportHook = useVideoExport({
     videoId: upload.videoId,
@@ -46,7 +46,7 @@ export default function UploadPage() {
     sampleRate,
     blurMode,
     onError: upload.setError,
-    signal: abortRef.current.signal,
+    signal: abortController.signal,
   });
 
   async function handleFileSelect(file: File) {
@@ -63,8 +63,8 @@ export default function UploadPage() {
   }
 
   function handleReset() {
-    abortRef.current.abort();
-    abortRef.current = new AbortController();
+    abortController.abort();
+    setAbortController(new AbortController());
     upload.reset();
     detection.reset();
     setCurrentStep('upload');
@@ -295,15 +295,15 @@ export default function UploadPage() {
             <div className="hidden lg:flex lg:items-center lg:justify-between gap-2 mb-6">
               <div className="flex items-stretch rounded-xl border border-white/10 bg-white/5 overflow-hidden text-sm divide-x divide-white/10 shrink-0">
                 <div className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
-                  <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <Users className="w-4 h-4 text-slate-400 shrink-0" />
                   <span><strong className="text-white font-semibold">{detection.tracks.length}</strong> detected</span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
-                  <EyeOff className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <EyeOff className="w-4 h-4 text-blue-400 shrink-0" />
                   <span><strong className="text-blue-300 font-semibold">{detection.selectedTrackIds.length}</strong> blurred</span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
-                  <Eye className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <Eye className="w-4 h-4 text-emerald-400 shrink-0" />
                   <span><strong className="text-emerald-300 font-semibold">{detection.tracks.length - detection.selectedTrackIds.length}</strong> visible</span>
                 </div>
               </div>

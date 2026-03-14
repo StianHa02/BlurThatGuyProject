@@ -82,7 +82,7 @@ export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDe
       setStatus('');
       return false;
     }
-  }, [videoId, sampleRate, onError]);
+  }, [videoId, sampleRate, onError, signal]);
 
   const toggleTrack = useCallback((trackId: number) => {
     setSelectedTrackIds(prev =>

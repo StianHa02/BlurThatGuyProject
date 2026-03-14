@@ -103,7 +103,7 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
     } finally {
       setExporting(false);
     }
-  }, [videoId, fileName, selectedTrackIds, sampleRate, blurMode, onError]);
+  }, [videoId, fileName, selectedTrackIds, sampleRate, blurMode, onError, signal]);
 
   return { exporting, exportProgress, exportVideo };
 }

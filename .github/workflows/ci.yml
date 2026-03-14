@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eslint:
+    name: Frontend Lint (ESLint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run ESLint
+        run: pnpm lint --max-warnings=0
+
+  backend-health:
+    name: Backend Health
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Start backend and check /health
+        shell: bash
+        env:
+          DEV_MODE: "true"
+          ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+        run: |
+          set -euo pipefail
+          cd backend
+          uvicorn main:app --host 127.0.0.1 --port 8000 --log-level warning &
+          BACKEND_PID=$!
+          trap "kill $BACKEND_PID 2>/dev/null || true" EXIT
+
+          for i in {1..45}; do
+            if curl -fsS http://127.0.0.1:8000/health | grep -q '"status":"ok"'; then
+              echo "Backend health check passed"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Backend did not become healthy in time"
+          exit 1
+
+  frontend-health:
+    name: Frontend API Health
+    runs-on: ubuntu-latest
+    needs: [eslint]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Start backend + frontend and check /api/health
+        shell: bash
+        env:
+          DEV_MODE: "true"
+          ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+          API_URL: "http://127.0.0.1:8000"
+        run: |
+          set -euo pipefail
+
+          (cd backend && uvicorn main:app --host 127.0.0.1 --port 8000 --log-level warning) &
+          BACKEND_PID=$!
+
+          pnpm dev --hostname 127.0.0.1 --port 3000 &
+          FRONTEND_PID=$!
+
+          trap "kill $FRONTEND_PID $BACKEND_PID 2>/dev/null || true" EXIT
+
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:3000/api/health | grep -q '"status":"ok"'; then
+              echo "Frontend API health check passed"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Frontend API health check failed"
+          exit 1
+
+  smoke-build:
+    name: Build Smoke Checks
+    runs-on: ubuntu-latest
+    needs: [eslint]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Next.js production build
+        run: pnpm build
+
+      - name: Backend import smoke check
+        working-directory: backend
+        env:
+          DEV_MODE: "true"
+          ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+        run: python -c "import main; print('backend import ok')"

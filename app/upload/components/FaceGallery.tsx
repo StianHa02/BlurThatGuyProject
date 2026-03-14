@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { Check, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -115,7 +116,7 @@ export function FaceGallery({
       console.error('Thumbnail extraction failed:', err);
       setLoading(false);
     });
-  }, [tracks, videoUrl]);
+  }, [tracks, videoUrl, fps]);
 
   return (
     <div>
@@ -148,7 +149,14 @@ export function FaceGallery({
                 title={`Face ${index + 1} - Appears in ${track.frames.length} frames${(track.mergedFrom?.length ?? 1) > 1 ? ` · ${track.mergedFrom!.length} scenes merged` : ''}`}
               >
                 {thumbnail ? (
-                  <img src={thumbnail} alt={`Face ${index + 1}`} className="w-full h-full object-cover" />
+                  <Image
+                    src={thumbnail}
+                    alt={`Face ${index + 1}`}
+                    width={96}
+                    height={96}
+                    unoptimized
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
                   <div className={`
                     w-full h-full flex items-center justify-center text-2xl font-bold transition-colors

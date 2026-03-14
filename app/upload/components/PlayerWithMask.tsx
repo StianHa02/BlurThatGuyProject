@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 
 export type BBox = [number, number, number, number];
 
@@ -35,8 +35,7 @@ interface Props {
  */
 function findDetectionForFrame(
   frames: Detection[],
-  frameIndex: number,
-  sampleRate: number
+  frameIndex: number
 ): { bbox: BBox; score: number } | null {
   if (!frames || frames.length === 0) return null;
 
@@ -115,7 +114,7 @@ export default function PlayerWithMask({
   const rafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number>(-1);
   const [visibleFaces, setVisibleFaces] = useState<{trackId: number, bbox: BBox, isSelected: boolean}[]>([]);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [videoScale, setVideoScale] = useState<{ scaleX: number; scaleY: number } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
 
   // Memoize tracks map
@@ -141,20 +140,17 @@ export default function PlayerWithMask({
       canvas.style.height = rect.height + 'px';
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      setVideoScale({
+        scaleX: rect.width / video.videoWidth,
+        scaleY: rect.height / video.videoHeight,
+      });
       setVideoReady(true);
     };
-
-    const handlePlay = () => { syncCanvasSize(); setIsPlaying(true); };
-    const handlePause = () => setIsPlaying(false);
-    const handleEnded = () => setIsPlaying(false);
 
     video.addEventListener('loadedmetadata', syncCanvasSize);
     video.addEventListener('resize', syncCanvasSize);
     video.addEventListener('canplay', syncCanvasSize);
     window.addEventListener('resize', syncCanvasSize);
-    video.addEventListener('play', handlePlay);
-    video.addEventListener('pause', handlePause);
-    video.addEventListener('ended', handleEnded);
 
     if (video.readyState >= 1) syncCanvasSize();
 
@@ -185,7 +181,7 @@ export default function PlayerWithMask({
 
       // Process all tracks
       for (const [trackId, track] of tracksMap) {
-        const det = findDetectionForFrame(track.frames, frameIndex, sampleRate);
+        const det = findDetectionForFrame(track.frames, frameIndex);
         if (!det) continue;
 
         const isSelected = selectedSet.has(trackId);
@@ -263,29 +259,8 @@ export default function PlayerWithMask({
       video.removeEventListener('resize', syncCanvasSize);
       video.removeEventListener('canplay', syncCanvasSize);
       window.removeEventListener('resize', syncCanvasSize);
-      video.removeEventListener('play', handlePlay);
-      video.removeEventListener('pause', handlePause);
-      video.removeEventListener('ended', handleEnded);
     };
   }, [tracksMap, selectedSet, blurMode, sampleRate, fps, padding, targetBlocks]);
-
-  // Calculate scale for overlay positioning
-  const getOverlayStyle = useCallback((bbox: BBox) => {
-    const video = videoRef.current;
-    if (!video || video.videoWidth === 0) return null;
-
-    const rect = video.getBoundingClientRect();
-    const scaleX = rect.width / video.videoWidth;
-    const scaleY = rect.height / video.videoHeight;
-    const [x, y, w, h] = bbox;
-
-    return {
-      left: x * scaleX,
-      top: y * scaleY,
-      width: w * scaleX,
-      height: h * scaleY,
-    };
-  }, []);
 
   return (
     <div className="relative rounded-xl overflow-hidden bg-black">
@@ -309,9 +284,8 @@ export default function PlayerWithMask({
       />
 
       {/* Clickable face overlays */}
-      {videoReady && visibleFaces.map((face, i) => {
-        const style = getOverlayStyle(face.bbox);
-        if (!style) return null;
+      {videoReady && videoScale && visibleFaces.map((face, i) => {
+        const [x, y, w, h] = face.bbox;
 
         return (
           <div
@@ -319,7 +293,10 @@ export default function PlayerWithMask({
             onClick={() => onToggleTrack(face.trackId)}
             className="absolute cursor-pointer hover:bg-white/10 transition-colors"
             style={{
-              ...style,
+              left: x * videoScale.scaleX,
+              top: y * videoScale.scaleY,
+              width: w * videoScale.scaleX,
+              height: h * videoScale.scaleY,
               borderRadius: '50%',
               zIndex: 10,
             }}
