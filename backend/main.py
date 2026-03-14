@@ -93,7 +93,7 @@ _ENCODER_ARGS: dict[str, list[str]] = {
     "h264_amf":          ["-c:v", "h264_amf", "-quality", "balanced", "-qp_i", "26"],
     "h264_videotoolbox": ["-c:v", "h264_videotoolbox", "-q:v", "55"],
     "h264_qsv":          ["-c:v", "h264_qsv", "-preset", "veryfast"],
-    "libx264":           ["-c:v", "libx264", "-crf", "26", "-preset", "veryfast", "-threads", "0"],
+    "libx264":           ["-c:v", "libx264", "-crf", "26", "-preset", "ultrafast", "-threads", "0"],
 }
 
 # =============================================================================
@@ -437,7 +437,20 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
     def generate():
         cap = out = ffmpeg_proc = dec = None
         try:
-            tracks_map = {t["id"]: t for t in tracks if t["id"] in export_request.selectedTrackIds}
+            # Convert to set for O(1) membership — also catches any stray type
+            # mismatches by normalising both sides to int.
+            selected_set = set(int(i) for i in export_request.selectedTrackIds)
+            tracks_map = {t["id"]: t for t in tracks if int(t["id"]) in selected_set}
+            logger.info(
+                f"Export {video_id}: requested ids={sorted(selected_set)}, "
+                f"matched {len(tracks_map)}/{len(tracks)} stored tracks"
+            )
+            if not tracks_map:
+                logger.warning(
+                    f"Export {video_id}: no tracks matched — stored ids sample: "
+                    f"{sorted(t['id'] for t in tracks)[:20]}"
+                )
+
             cap = cv2.VideoCapture(str(input_path))
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -508,29 +521,54 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                 return json.dumps({"type": "progress", "progress": min(70, round(5 + frames_written / total_frames * 65, 1))}) + "\n"
 
             frame_size = width * height * 3
-            fi = 0
+
+            # ── Reader thread: drain the ffmpeg decode pipe independently so the
+            # decoder process is never stalled by Python's encode-side backpressure.
+            # The queue acts as a bounded buffer between decoder and processor.
+            _read_queue: queue.Queue = queue.Queue(maxsize=chunk_size * 3)
+
+            def _frame_reader():
+                fi_r = 0
+                try:
+                    if dec:
+                        while True:
+                            raw = dec.stdout.read(frame_size)
+                            if not raw or len(raw) < frame_size:
+                                break
+                            frame = np.frombuffer(raw, np.uint8).reshape((height, width, 3)).copy()
+                            _read_queue.put((fi_r, frame))
+                            fi_r += 1
+                    else:
+                        while True:
+                            ret, frame = cap.read()
+                            if not ret:
+                                break
+                            _read_queue.put((fi_r, frame))
+                            fi_r += 1
+                finally:
+                    _read_queue.put(None)  # sentinel
+
+            _reader_thread = threading.Thread(target=_frame_reader, daemon=True)
+            _reader_thread.start()
+
             while True:
-                if dec:
-                    raw = dec.stdout.read(frame_size)
-                    if not raw or len(raw) < frame_size: break
-                    frame = np.frombuffer(raw, np.uint8).reshape((height, width, 3)).copy()
-                else:
-                    ret, frame = cap.read()
-                    if not ret: break
+                item = _read_queue.get()
+                if item is None:
+                    break
+                fi, frame = item
 
                 # Fast path: no face on this frame — write directly, skip thread pool
                 if not any(fi in lu for lu in track_lookup_dicts):
                     write_frame(frame)
                     if frames_written % 30 == 0:
                         yield json.dumps({"type": "progress", "progress": min(70, round(5 + frames_written / total_frames * 65, 1))}) + "\n"
-                    fi += 1
                     continue
 
                 chunk.append((fi, frame, track_lookup_dicts, pad, target_blocks, width, height, blur_mode))
                 if len(chunk) >= chunk_size:
                     yield flush_chunk(chunk); chunk = []
-                fi += 1
 
+            _reader_thread.join(timeout=30)
             if chunk: yield flush_chunk(chunk)
             if dec: dec.wait(timeout=30)
 
