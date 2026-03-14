@@ -16,10 +16,10 @@ The backend was implemented with FastAPI to align with the original architecture
 
 ---
 
-## Leardning Outcomes
-- Familirized with FastAPI 
-- Familirized with AWS and depoyment options
-- tying together frontend and backend with API 
+## Learning Outcomes
+- Familiarized with FastAPI
+- Familiarized with AWS and deployment options
+- Tied together frontend and backend through APIs
 
 ---
 
@@ -27,6 +27,7 @@ The backend was implemented with FastAPI to align with the original architecture
 - [Quick Start](#quick-start)
 - [Environment Configuration](#environment-configuration)
 - [How to Use](#how-to-use)
+- [How the Backend Works](#how-the-backend-works)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Docker Tips](#docker-tips)
@@ -36,6 +37,7 @@ The backend was implemented with FastAPI to align with the original architecture
 ---
 
 ## Quick Start
+
 
 ### Option 1: Run on Your Browser
 
@@ -48,25 +50,33 @@ The backend was implemented with FastAPI to align with the original architecture
 
 ---
 
+### (Run localy) Clone the repository
+
+```powershell
+git clone https://github.com/StianHa02/BlurThatGuyProject.git
+cd BlurThatGuyProject
+```
 
 ### Option 2: Run with Docker
 
 **Requirements:**
 - Docker Desktop
 
+> Use `docker compose` (recommended). If your setup still uses `docker-compose`, the same commands apply with the hyphenated form.
+
 **For Regular Use:**
 ```bash
 # Start everything
-docker-compose up --build
+docker compose up --build
 
 # Stop
-docker-compose down
+docker compose down
 ```
 
 **For Development (with hot reload):**
 ```bash
 # Start with hot reload enabled
-docker-compose -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.dev.yml up --build
 
 # on another terminal
 pnpm run dev
@@ -84,18 +94,27 @@ Open [http://localhost:3000](http://localhost:3000)
 - Node.js 20+
 - Python 3.11+
 - pnpm (install with `npm install -g pnpm`)
-- Setup Environment Variable (look av setup section under)
+- Environment variables configured (see section below)
 
-**Terminal 1 - Start Backend:**
-```bash
+**Terminal 1 - Start Backend (PowerShell):**
+```powershell
 cd backend
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
 # Run the server
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+**Terminal 1 - Start Backend (macOS/Linux):**
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -109,7 +128,7 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) ✨
 
-> **Note**: Local development runs in `DEV_MODE` which disables API key requirements. The frontend `.env.local` points to `http://localhost:8000` for the backend connection.
+> **Note**: Local development runs in `DEV_MODE`, which disables API key requirements. The frontend `.env.local` points to `http://localhost:8000` for the backend connection.
 
 ---
 
@@ -188,24 +207,54 @@ MAX_UPLOAD_SIZE_MB=100
 
 ---
 
+## How the Backend Works
+
+The backend is a FastAPI service that processes videos in four main steps:
+
+1. **Upload (`/upload-video`)**
+   - Validates file type and size
+   - Stores the video in a temporary folder and returns `videoId` + metadata
+
+2. **Detect + Track (`/detect-video/{video_id}`)**
+   - Samples frames and runs SCRFD face detection (`scrfd_2.5g.onnx`)
+   - Tracks faces across frames and handles scene cuts
+   - Merges identity fragments using ArcFace ReID (`w600k_r50.onnx`, fallback `w600k_mbf.onnx`)
+   - Streams progress/results back as NDJSON
+
+3. **Export (`/export/{video_id}`)**
+   - Applies blur only to selected track IDs
+   - Renders output with ffmpeg (or OpenCV fallback)
+
+4. **Download (`/download/{video_id}`)**
+   - Returns the final blurred MP4
+
+The frontend calls these through Next.js route handlers in `app/api/*`, which proxy requests to the FastAPI backend and inject headers from `lib/server/backendProxy.ts`.
+
+---
+
 ## Tech Stack
 
 **Frontend:**
-- Next.js 
-- React 
-- Tailwind CSS 
-- TypeScript
+- Next.js 16 (App Router + Route Handlers)
+- React 19
+- TypeScript 5
+- Tailwind CSS 4
+- Framer Motion + Lucide React
 
 **Backend:**
-- Python 
-- FastAPI
-- OpenCV with YuNet face detection
+- Python 3.11
+- FastAPI + Uvicorn
+- OpenCV + NumPy
+- ONNX Runtime
+- Models:
+  - Face detection: `backend/models/scrfd_2.5g.onnx`
+  - Face re-identification: `backend/models/w600k_r50.onnx` (preferred) and `backend/models/w600k_mbf.onnx` (fallback)
 
-**Deployment:**
-- Docker
-- AWS EC2
-- Nginx
-- GitHub Actions - CI/CD
+**Deployment / Infra:**
+- Docker + Docker Compose (Containerization)
+- AWS EC2 (VPS)
+- Nginx (reverse proxy)
+- Github Actions (CI/CD)
 
 ---
 
@@ -214,38 +263,49 @@ MAX_UPLOAD_SIZE_MB=100
 
 ```
 BlurThatGuyProject/
-├── app/                    # Next.js frontend
-│   ├── (landing)/          # Next.js API routes
-│   │   ├── components/     # Components for landing page
-│   │   └── page.tsx        # Landing page
-│   ├── api/                # Next.js API routes
-│   ├── upload/             # Upload page & related
-│   │   ├── components/     # Components for upload page
-│   │   ├── hooks/          # Custom React hooks
-│   │   └── page.tsx        # Upload page
-│   ├── globals.css
-│   ├── layout.tsx
-│   └── page.tsx            # Route to the landing page
-├── backend/                # Python FastAPI backend
-│   ├── main.py             # Main backend file and API endpoints
-│   ├── models/             # YuNet face detection model
-│   └── requirements.txt    # Python dependencies
-├── lib/                    # Shared TypeScript/JS utilities
-│   ├── config.ts
-│   ├── faceClient.ts
-│   └── tracker.ts
-├── public/                 # Static files
-│   ├── Server/             # Handling API headers
-│   ├── favicon.ico
-│   └── test-videos/        # Example videos
-├── docker-compose.yml      # Docker configuration
-├── docker-compose.dev.yml  # Docker dev config
-├── Dockerfile.backend      # Backend Dockerfile
-├── Dockerfile.frontend     # Frontend Dockerfile
-├── Dockerfile.frontend.dev # Frontend dev Dockerfile
-├── README.md               # This file
-├── LICENSE                 # MIT License
-└── ...                     # Other config/scripts
+|-- app/
+|   |-- (landing)/                # Landing page and UI components
+|   |   |-- components/
+|   |   `-- page.tsx
+|   |-- api/                      # Next.js route handlers (proxy to backend)
+|   |   |-- detect-video/[videoId]/route.ts
+|   |   |-- download/[videoId]/route.ts
+|   |   |-- export/[videoId]/route.ts
+|   |   |-- health/route.ts
+|   |   `-- upload-video/route.ts
+|   |-- upload/
+|   |   |-- components/           # Upload page UI components
+|   |   |-- hooks/                # Upload, detect, export hooks
+|   |   `-- page.tsx
+|   |-- globals.css
+|   |-- layout.tsx
+|   `-- page.tsx
+|-- backend/
+|   |-- main.py                   # FastAPI app and endpoints
+|   |-- detector.py               # SCRFD detection pipeline
+|   |-- tracker.py                # Track building across frames
+|   |-- reid.py                   # ArcFace-based identity merge
+|   |-- blur.py                   # Blur/blackout rendering helpers
+|   |-- requirements.txt
+|   `-- models/
+|       |-- scrfd_2.5g.onnx
+|       |-- w600k_mbf.onnx
+|       `-- w600k_r50.onnx
+|-- lib/
+|   |-- config.ts
+|   |-- faceClient.ts
+|   |-- tracker.ts
+|   `-- server/
+|       `-- backendProxy.ts       # Shared backend URL/API-key headers
+|-- public/
+|   |-- Test video/               # Sample videos
+|   `-- favicon.ico
+|-- docker-compose.yml
+|-- docker-compose.dev.yml
+|-- Dockerfile.backend
+|-- Dockerfile.frontend
+|-- Dockerfile.frontend.dev
+|-- README.md
 ```
 
 ---
@@ -255,31 +315,31 @@ BlurThatGuyProject/
 **View logs:**
 ```bash
 # All services
-docker-compose logs -f
+docker compose logs -f
 
 # Just frontend
-docker-compose logs -f frontend
+docker compose logs -f frontend
 
 # Just backend
-docker-compose logs -f backend
+docker compose logs -f backend
 ```
 
 **Rebuild after code changes (production):**
 ```bash
-docker-compose down
-docker-compose up --build
+docker compose down
+docker compose up --build
 ```
 
 **Clean rebuild (if something breaks):**
 ```bash
-docker-compose down
+docker compose down
 docker system prune -a  # Warning: removes all unused Docker data
-docker-compose up --build
+docker compose up --build
 ```
 
 **Check what's running:**
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 ---
@@ -297,12 +357,21 @@ docker-compose ps
 
 **Containers won't start**
 ```bash
-docker-compose down
+docker compose down
 docker system prune -a
-docker-compose up --build
+docker compose up --build
 ```
 
-**Port already in use**
+**Port already in use (PowerShell)**
+```powershell
+# Frontend (port 3000)
+Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+
+# Backend (port 8000)
+Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
+**Port already in use (macOS/Linux)**
 ```bash
 # Frontend (port 3000)
 lsof -ti:3000 | xargs kill -9
