@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 import json
@@ -342,17 +343,12 @@ def _process_detection(video_id: str, video_path: Path, sample_rate: int, progre
     completed_steps = 0
     detections_per_frame = {}
     cut_frames: set[int] = set()
-    # Per-job pool sized to budget stops jobs starving each other.
-    # Falls back to shared pool for export or when no budget given.
-    _own_pool = False
-    if thread_budget:
-        from concurrent.futures import ThreadPoolExecutor as _TPE
-        pool = _TPE(max_workers=max(1, thread_budget))
-        _own_pool = True
-    else:
-        pool = get_thread_pool()
+    # Per-job pool sized to budget prevents jobs starving each other.
+    # Falls back to shared pool when no budget given (export path).
+    _own_pool = thread_budget is not None
+    pool = ThreadPoolExecutor(max_workers=max(1, thread_budget)) if _own_pool else get_thread_pool()
     pending_futures = []
-    max_pending = (max(1, thread_budget) if thread_budget else DETECTOR_POOL_SIZE) * 2
+    max_pending = (max(1, thread_budget) if _own_pool else DETECTOR_POOL_SIZE) * 2
 
     cut_thumb = (64, 36)
     cut_threshold = 45.0
@@ -469,7 +465,9 @@ def _wait_and_run(r: redis.Redis, job_id: str, video_id: str, video_path: Path, 
         set_job_status(r, job_id, "error")
         return
     try:
-        _apply_job_thread_budget(r, job_id)
+        # Don't call _apply_job_thread_budget here — it drains all ONNX semaphore
+        # slots which blocks until the other active job releases every in-flight
+        # inference. Instead read the budget and pass it as a per-job thread pool.
         budget = get_job_status(r, job_id).get("thread_budget")
         tracks = _process_detection(
             video_id, video_path, sample_rate,
@@ -511,8 +509,6 @@ def detect_video_id_endpoint(
 
     def generate():
         message_queue: queue.Queue = queue.Queue()
-        # First line: send job_id so client can cancel if user navigates away
-        yield json.dumps({"type": "job_id", "job_id": job_id}) + "\n"
 
         def run_stream_job() -> None:
             try:
@@ -543,7 +539,11 @@ def detect_video_id_endpoint(
                 break
             yield msg
 
-    return StreamingResponse(generate(), media_type="application/x-ndjson")
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+        headers={"X-Job-Id": job_id, "Access-Control-Expose-Headers": "X-Job-Id"},
+    )
 
 
 @app.post("/export/{video_id}")

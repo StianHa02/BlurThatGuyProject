@@ -62,11 +62,16 @@ export async function detectFacesInVideo(
   const reader = response.body?.getReader();
   if (!reader) throw new Error('Response body is not readable');
 
-  signal?.addEventListener('abort', () => reader.cancel(), { once: true });
-
   let tracks: Track[] = [];
   let streamJobId = '';
   const decoder = new TextDecoder();
+
+  // Read job_id from header immediately — fires before any chunk arrives,
+  // so activeJobIdRef is set even if the user reloads before the first NDJSON line.
+  const headerJobId = response.headers.get('x-job-id');
+  if (headerJobId) { streamJobId = headerJobId; onJobId?.(headerJobId); }
+
+  signal?.addEventListener('abort', () => reader.cancel(), { once: true });
   let buffer = '';
 
   const processLine = (line: string) => {

@@ -37,12 +37,16 @@ export async function POST(
       return NextResponse.json(queued, { status: 202 });
     }
 
-    // Stream the NDJSON response directly back to the client
+    // Forward X-Job-Id header so the client can cancel even before the first chunk arrives.
+    const jobId = response.headers.get('x-job-id') ?? '';
+
     return new NextResponse(response.body, {
       headers: {
         'Content-Type': 'application/x-ndjson',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
+        'X-Job-Id': jobId,
+        'Access-Control-Expose-Headers': 'X-Job-Id',
       },
     });
   } catch (error) {
