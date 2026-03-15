@@ -450,7 +450,7 @@ def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
 
 # ── Main entry point ───────────────────────────────────────────────────────
 
-def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]:
+def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=None) -> list[dict]:
     if not _reid_pool or len(tracks) < 2:
         return [{**t, "mergedFrom": [t["id"]]} for t in tracks]
 
@@ -513,6 +513,9 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
     if needed_frames:
         current_pos = -1
         for target_fi in needed_frames:
+            if cancel_token and cancel_token.cancelled:
+                cap.release()
+                raise InterruptedError("Job cancelled")
             if target_fi != current_pos:
                 gap = target_fi - current_pos
                 if gap < 0 or gap > 30:
@@ -537,6 +540,9 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path) -> list[dict]
                 track_crops[ti].append(crop)
 
     cap.release()
+
+    if cancel_token and cancel_token.cancelled:
+        raise InterruptedError("Job cancelled")
 
     # ── 4. Embed all crops in parallel → centroid per embeddable track ───────
     # Each worker leases a session from the pool, embeds its track's crops, and

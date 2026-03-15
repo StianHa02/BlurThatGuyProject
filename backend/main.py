@@ -122,6 +122,23 @@ _job_result_store: dict[str, dict] = {}
 _store_lock = threading.Lock()
 _redis_client: redis.Redis | None = None
 
+
+class CancellationToken:
+    """Cooperative cancellation flag for background detection jobs."""
+    def __init__(self):
+        self._cancelled = threading.Event()
+
+    def cancel(self):
+        self._cancelled.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
+
+
+_cancel_tokens: dict[str, CancellationToken] = {}
+_tokens_lock = threading.Lock()
+
 def store_tracks(video_id, tracks):
     with _store_lock:
         _detection_store[video_id] = tracks
@@ -331,7 +348,7 @@ def _apply_job_thread_budget(r: redis.Redis, job_id: str) -> None:
     apply_reid_thread_budget(n_threads)
 
 
-def _process_detection(video_id: str, video_path: Path, sample_rate: int, progress_cb=None, thread_budget: int | None = None) -> list[dict]:
+def _process_detection(video_id: str, video_path: Path, sample_rate: int, progress_cb=None, thread_budget: int | None = None, cancel_token: CancellationToken | None = None) -> list[dict]:
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError("Could not open video file")
@@ -415,6 +432,9 @@ def _process_detection(video_id: str, video_path: Path, sample_rate: int, progre
             item = fq.get()
             if item is None:
                 break
+            if cancel_token and cancel_token.cancelled:
+                proc.kill()
+                break
             fi, frame = item
             check_cut(fi, frame)
             pending_futures.append((fi, pool.submit(detect_faces, frame)))
@@ -427,6 +447,8 @@ def _process_detection(video_id: str, video_path: Path, sample_rate: int, progre
             raise RuntimeError("Could not open video file")
         target_idx = current_frame = 0
         while True:
+            if cancel_token and cancel_token.cancelled:
+                break
             if total_frames > 0 and target_idx >= total_frames:
                 break
             if target_idx != current_frame and not cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx):
@@ -448,10 +470,17 @@ def _process_detection(video_id: str, video_path: Path, sample_rate: int, progre
     if _own_pool:
         pool.shutdown(wait=False)
 
+    if cancel_token and cancel_token.cancelled:
+        raise InterruptedError("Job cancelled")
+
     emit_progress(80)
     tracks = track_detections(detections_per_frame, cut_frames)
+
+    if cancel_token and cancel_token.cancelled:
+        raise InterruptedError("Job cancelled")
+
     emit_progress(85)
-    tracks = merge_tracks_by_identity(tracks, video_path)
+    tracks = merge_tracks_by_identity(tracks, video_path, cancel_token=cancel_token)
     for t in tracks:
         for f in t.get("frames", []):
             f.pop("emb", None)
@@ -464,22 +493,27 @@ def _wait_and_run(r: redis.Redis, job_id: str, video_id: str, video_path: Path, 
     if not wait_until_admitted(r, job_id):
         set_job_status(r, job_id, "error")
         return
+    token = CancellationToken()
+    with _tokens_lock:
+        _cancel_tokens[job_id] = token
     try:
-        # Don't call _apply_job_thread_budget here — it drains all ONNX semaphore
-        # slots which blocks until the other active job releases every in-flight
-        # inference. Instead read the budget and pass it as a per-job thread pool.
         budget = get_job_status(r, job_id).get("thread_budget")
         tracks = _process_detection(
             video_id, video_path, sample_rate,
             progress_cb=lambda p: set_job_progress(r, job_id, p),
             thread_budget=int(budget) if budget else None,
+            cancel_token=token,
         )
         store_job_result(job_id, video_id, tracks)
         set_job_status(r, job_id, "done")
+    except InterruptedError:
+        logger.info(f"Queued job {job_id} cancelled during processing")
     except Exception as e:
         logger.error(f"Queued detection failed for {job_id}: {e}")
         set_job_status(r, job_id, "error")
     finally:
+        with _tokens_lock:
+            _cancel_tokens.pop(job_id, None)
         on_job_finish(r, job_id)
 
 
@@ -506,6 +540,9 @@ def detect_video_id_endpoint(
 
     _apply_job_thread_budget(_redis_client, job_id)
     stream_budget = get_job_status(_redis_client, job_id).get("thread_budget")
+    stream_token = CancellationToken()
+    with _tokens_lock:
+        _cancel_tokens[job_id] = stream_token
 
     def generate():
         message_queue: queue.Queue = queue.Queue()
@@ -520,14 +557,20 @@ def detect_video_id_endpoint(
                         json.dumps({"type": "progress", "progress": p}) + "\n"
                     ),
                     thread_budget=int(stream_budget) if stream_budget else None,
+                    cancel_token=stream_token,
                 )
                 message_queue.put(json.dumps({"type": "results", "results": tracks}) + "\n")
                 set_job_status(_redis_client, job_id, "done")
+            except InterruptedError:
+                logger.info(f"Streaming job {job_id} cancelled during processing")
+                message_queue.put(json.dumps({"type": "error", "error": "Job cancelled"}) + "\n")
             except Exception as e:
                 logger.error(f"Video detection stream error: {e}")
                 set_job_status(_redis_client, job_id, "error")
                 message_queue.put(json.dumps({"type": "error", "error": str(e)}) + "\n")
             finally:
+                with _tokens_lock:
+                    _cancel_tokens.pop(job_id, None)
                 on_job_finish(_redis_client, job_id)
                 message_queue.put(None)
 
@@ -827,6 +870,10 @@ async def submit_job(request: Request, file: UploadFile = File(...), _: bool = D
 async def cancel_job(job_id: str, _: bool = Depends(verify_api_key)):
     if _redis_client is None:
         raise HTTPException(status_code=503, detail="Redis is not available")
+    with _tokens_lock:
+        token = _cancel_tokens.get(job_id)
+    if token:
+        token.cancel()
     on_job_finish(_redis_client, job_id)
     logger.info(f"Job {job_id} cancelled by client")
     return {"status": "cancelled"}
