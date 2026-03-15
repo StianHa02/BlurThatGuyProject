@@ -1,10 +1,12 @@
-# BlurThatGuy (Coding challenge by FONN Group and Mimir)
+# BlurThatGuy
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
 
+> A coding challenge submission for FONN Group and Mimir.
 ---
+
 
 ## Preface
 
@@ -27,44 +29,37 @@ The backend was implemented with FastAPI to align with the original architecture
 - [Quick Start](#quick-start)
 - [Environment Configuration](#environment-configuration)
 - [How to Use](#how-to-use)
-- [How the Backend Works](#how-the-backend-works)
+- [Backend Features](#backend-features)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Docker Tips](#docker-tips)
 - [Troubleshooting](#troubleshooting)
-- [License](#license)
 
 ---
 
 ## Quick Start
 
+### Option 1: Live Demo
 
-### Option 1: Run on Your Browser
+**Requirements:** Web browser (contact me to start the EC2 instance)
 
-**Requirements:**
-- Web browser
-- (Contact me to start the EC2 instance)
-
-**Live Demo:**
 [https://blurthatguy.no/](https://blurthatguy.no/)
 
 ---
 
-### (Run localy) Clone the repository
+### Option 2: Run with Docker
 
-```powershell
+**Requirements:** Docker Desktop
+
+```bash
+# Clone the repository
 git clone https://github.com/StianHa02/BlurThatGuyProject.git
 cd BlurThatGuyProject
 ```
 
-### Option 2: Run with Docker
+> **Recommended:** For better ReID accuracy, download the full `w600k_r50.onnx` model from HuggingFace and place it in `backend/models/`:
+> [https://huggingface.co/maze/faceX/blob/main/w600k_r50.onnx](https://huggingface.co/maze/faceX/blob/main/w600k_r50.onnx)
 
-**Requirements:**
-- Docker Desktop
-
-> Use `docker compose` (recommended). If your setup still uses `docker-compose`, the same commands apply with the hyphenated form.
-
-**For Regular Use:**
 ```bash
 # Start everything
 docker compose up --build
@@ -73,15 +68,12 @@ docker compose up --build
 docker compose down
 ```
 
-**For Development (with hot reload):**
+**For Development (hot reload):**
 ```bash
-# Start with hot reload enabled
 docker compose -f docker-compose.dev.yml up --build
 
-# on another terminal
+# In a second terminal
 pnpm run dev
-
-# Code changes automatically reload!
 ```
 
 Open [http://localhost:3000](http://localhost:3000)
@@ -90,26 +82,9 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ### Option 3: Run Locally
 
-**Requirements:**
-- Node.js 20+
-- Python 3.11+
-- pnpm (install with `npm install -g pnpm`)
-- Environment variables configured (see section below)
+**Requirements:** Node.js 20+, Python 3.11+, pnpm (`npm install -g pnpm`)
 
-**Terminal 1 - Start Backend (PowerShell):**
-```powershell
-cd backend
-
-# Create virtual environment
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# Run the server
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-**Terminal 1 - Start Backend (macOS/Linux):**
+**Terminal 1 — Backend (macOS/Linux):**
 ```bash
 cd backend
 python -m venv venv
@@ -118,52 +93,51 @@ pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Terminal 2 - Start Frontend:**
+**Terminal 1 — Backend (PowerShell):**
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
 
+**Terminal 2 — Frontend:**
 ```bash
-# Install and run
 pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) ✨
+Open [http://localhost:3000](http://localhost:3000)
 
-> **Note**: Local development runs in `DEV_MODE`, which disables API key requirements. The frontend `.env.local` points to `http://localhost:8000` for the backend connection.
+> **Note:** Local development runs in `DEV_MODE`, which disables API key authentication.
 
 ---
 
 ## Environment Configuration
 
-### Local Development (No API Key Required)
-
-For local development, the app runs in **DEV_MODE** which disables API key authentication:
+### Local Development
 
 **Frontend** (`.env.local` in project root):
 ```bash
-# Backend API URL for Next.js API routes
 API_URL=http://localhost:8000
-
-# No API key needed for local dev
 API_KEY=
 ```
 
 **Backend** (`backend/.env.local`):
 ```bash
-# Enable dev mode (disables API key requirement)
 DEV_MODE=true
-
-# Allowed origins
 ALLOWED_ORIGINS=http://localhost:3000
+REDIS_URL=redis://localhost:6379
 
-# Max upload size
-MAX_UPLOAD_SIZE_MB=100
+# Optional: limit upload size in MB. Omit for no limit.
+# MAX_UPLOAD_SIZE_MB=500
+
+# Optional: override ONNX thread budget. Omit to auto-detect from cpu_count().
+# TOTAL_THREAD_BUDGET=28
 ```
 
-### Production Deployment (API Key Required)
-
-For production (EC2) or using just backend as a standalone API:
-
-*Make sure to remove environment in docker file and point to your own .env file*
+### Production Deployment
 
 **Frontend** (`.env.prod`):
 ```bash
@@ -172,173 +146,141 @@ API_KEY=your-secure-random-api-key-here
 BACKEND_URL=http://backend:8000
 ```
 
-**Backend** (`.env.prod` or environment file):
+**Backend** (`.env.prod`):
 ```bash
 API_KEY=same-api-key-as-frontend
 ALLOWED_ORIGINS=https://your-domain.com
-MAX_UPLOAD_SIZE_MB=100
+REDIS_URL=redis://redis:6379
+
+# Optional: limit upload size in MB. Omit for no limit.
+# MAX_UPLOAD_SIZE_MB=500
+
+# Optional: set explicitly on high-core-count servers for best performance.
+# TOTAL_THREAD_BUDGET=28
 ```
+
 ---
-
-
 
 ## How to Use
 
-1. **Upload Video**
-   - Click "Upload" or drag & drop your video file
-   - Supported formats: MP4, WebM, MOV
-   - Max size: 100MB
+1. **Upload Video** — drag & drop or click to upload. Supported: MP4, WebM, MOV.
 
-2. **Detect Faces**
-   - Click "Start Detection"
-   - AI will scan through your video and find all faces
-   - Processing time: ~60 seconds for a 2-minute video
+2. **Detect Faces** — click Start Detection. The AI scans through your video, detects all faces, tracks them across frames, and re-identifies the same person across scene cuts. A 15-minute video at the default sample rate takes roughly 2 minutes to process.
 
-3. **Select Faces to Blur**
-   - Play the video
-   - Click on faces with red frames to blur them
-   - Or select faces in the face gallery
-   - Selected faces appear pixelated
-   - Click blurred faces to unblur
+3. **Select Faces to Blur** — play the video and click faces with red frames, or select from the face gallery. Selected faces appear pixelated in real time.
 
-4. **Download**
-   - Click "Download Video"
-   - Your processed video will download with selected faces permanently blurred
+4. **Download** — click Download Video. The processed file is encoded with selected faces permanently blurred.
 
 ---
 
-## How the Backend Works
+## Backend Features
 
-The backend is a FastAPI service that processes videos in four main steps:
+### Face Detection
+Uses **SCRFD-2.5G** (`scrfd_2.5g.onnx`) — a lightweight ONNX model optimised for CPU. Runs inference on sampled frames at a configurable rate (default: every 3rd frame). Detects bounding boxes and 5-point facial landmarks per crop. Frames are decoded via ffmpeg for speed, with an OpenCV fallback.
 
-1. **Upload (`/upload-video`)**
-   - Validates file type and size
-   - Stores the video in a temporary folder and returns `videoId` + metadata
+### Face Tracking
+Builds continuous face tracks across frames using IoU-based assignment. Detects scene cuts via mean absolute difference on downscaled thumbnails and resets track state at hard transitions, preventing identity bleed. Handles occlusion and brief disappearances.
 
-2. **Detect + Track (`/detect-video/{video_id}`)**
-   - Samples frames and runs SCRFD face detection (`scrfd_2.5g.onnx`)
-   - Tracks faces across frames and handles scene cuts
-   - Merges identity fragments using ArcFace ReID (`w600k_r50.onnx`, fallback `w600k_mbf.onnx`)
-   - Streams progress/results back as NDJSON
+### Re-Identification (ReID)
+Uses **ArcFace** (`w600k_r50.onnx` preferred, `w600k_mbf.onnx` as fallback) to generate 512-dimensional L2-normalised identity vectors per face crop. Merges fragmented tracks across scene cuts by cosine similarity with a union-find algorithm. Includes quality gates: blur rejection (Laplacian variance), profile angle rejection (landmark geometry), and an incremental drift-aware centroid that rejects embeddings inconsistent with the track's running identity.
 
-3. **Export (`/export/{video_id}`)**
-   - Applies blur only to selected track IDs
-   - Renders output with ffmpeg (or OpenCV fallback)
+### Job Queue
+Built on **Redis** with a 2-concurrent-job limit. A third user uploading while two jobs are running is placed in a FIFO waiting queue and shown their position in the UI. When a slot frees — either naturally on completion or immediately on cancel — the next waiter is promoted and begins processing. Thread budget is split evenly across active jobs so two concurrent users each get half the available CPU rather than competing.
 
-4. **Download (`/download/{video_id}`)**
-   - Returns the final blurred MP4
+Cancellation is **cooperative**: when a user navigates away, reloads, or clicks Upload New, the frontend fires a cancel request via `POST /job/{jobId}/cancel`. The backend sets a cancellation flag that the running job checks at each frame loop iteration, before tracking, and before ReID — stopping within milliseconds at the next natural checkpoint rather than running to completion.
 
-The frontend calls these through Next.js route handlers in `app/api/*`, which proxy requests to the FastAPI backend and inject headers from `lib/server/backendProxy.ts`.
+### Export & Blur Rendering
+Pixelation (or blackout) applied exclusively to selected track IDs. Rendered via ffmpeg with hardware encoder detection (nvenc → amf → videotoolbox → qsv → libx264 fallback). Export progress streamed back to the client as NDJSON.
+
+### API & Streaming
+Built with **FastAPI + Uvicorn**. Detection results stream as NDJSON for real-time progress. All endpoints are proxied through Next.js route handlers in `app/api/*`. Relevant endpoints:
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/upload-video` | POST | Upload a video file |
+| `/detect-video/{videoId}` | POST | Start detection (streams NDJSON or returns 202 if queued) |
+| `/job/{jobId}/status` | GET | Poll job status, position, and progress |
+| `/job/{jobId}/result` | GET | Fetch completed detection results |
+| `/job/{jobId}/cancel` | POST | Cancel a queued or running job |
+| `/export/{videoId}` | POST | Render blurred video (streams NDJSON progress) |
+| `/download/{videoId}` | GET | Download the blurred output file |
 
 ---
 
 ## Tech Stack
 
-**Frontend:**
-- Next.js 16 (App Router + Route Handlers)
-- React 19
-- TypeScript 5
-- Tailwind CSS 4
-- Framer Motion + Lucide React
+**Frontend:** Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS 4, Framer Motion, Lucide React
 
-**Backend:**
-- Python 3.11
-- FastAPI + Uvicorn
-- OpenCV + NumPy
-- ONNX Runtime
-- Models:
-  - Face detection: `backend/models/scrfd_2.5g.onnx`
-  - Face re-identification: `backend/models/w600k_r50.onnx` (preferred) and `backend/models/w600k_mbf.onnx` (fallback)
+**Backend:** Python 3.11, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis (via redis-py)
 
-**Deployment / Infra:**
-- Docker + Docker Compose (Containerization)
-- AWS EC2 (VPS)
-- Nginx (reverse proxy)
-- Github Actions (CI/CD)
+**ML Models:**
+- Face detection: `scrfd_2.5g.onnx` (SCRFD-2.5G)
+- Face re-identification: `w600k_r50.onnx` (ArcFace ResNet-50, preferred) / `w600k_mbf.onnx` (MobileFaceNet, fallback)
+
+**Infra:** Docker + Docker Compose, AWS EC2 (c7i — Intel Sapphire Rapids with AVX-512), nginx (reverse proxy), GitHub Actions (CI/CD)
 
 ---
-
 
 ## Project Structure
 
 ```
 BlurThatGuyProject/
-|-- app/
-|   |-- (landing)/                # Landing page and UI components
-|   |   |-- components/
-|   |   `-- page.tsx
-|   |-- api/                      # Next.js route handlers (proxy to backend)
-|   |   |-- detect-video/[videoId]/route.ts
-|   |   |-- download/[videoId]/route.ts
-|   |   |-- export/[videoId]/route.ts
-|   |   |-- health/route.ts
-|   |   `-- upload-video/route.ts
-|   |-- upload/
-|   |   |-- components/           # Upload page UI components
-|   |   |-- hooks/                # Upload, detect, export hooks
-|   |   `-- page.tsx
-|   |-- globals.css
-|   |-- layout.tsx
-|   `-- page.tsx
-|-- backend/
-|   |-- main.py                   # FastAPI app and endpoints
-|   |-- detector.py               # SCRFD detection pipeline
-|   |-- tracker.py                # Track building across frames
-|   |-- reid.py                   # ArcFace-based identity merge
-|   |-- blur.py                   # Blur/blackout rendering helpers
-|   |-- requirements.txt
-|   `-- models/
-|       |-- scrfd_2.5g.onnx
-|       |-- w600k_mbf.onnx
-|       `-- w600k_r50.onnx
-|-- lib/
-|   |-- config.ts
-|   |-- faceClient.ts
-|   |-- tracker.ts
-|   `-- server/
-|       `-- backendProxy.ts       # Shared backend URL/API-key headers
-|-- public/
-|   |-- Test video/               # Sample videos
-|   `-- favicon.ico
-|-- docker-compose.yml
-|-- docker-compose.dev.yml
-|-- Dockerfile.backend
-|-- Dockerfile.frontend
-|-- Dockerfile.frontend.dev
-|-- README.md
+├── app/
+│   ├── (landing)/                    # Landing page
+│   ├── api/                          # Next.js route handlers (backend proxy)
+│   │   ├── detect-video/[videoId]/route.ts
+│   │   ├── export/[videoId]/route.ts
+│   │   ├── upload-video/route.ts
+│   │   ├── download/[videoId]/route.ts
+│   │   └── job/[jobId]/
+│   │       ├── status/route.ts
+│   │       ├── result/route.ts
+│   │       └── cancel/route.ts
+│   └── upload/
+│       ├── components/               # PlayerWithMask, FaceGallery, etc.
+│       ├── hooks/                    # useFaceDetection, useVideoExport, etc.
+│       └── page.tsx
+├── lib/
+│   ├── faceClient.ts                 # Backend API client
+│   ├── tracker.ts
+│   └── server/backendProxy.ts
+├── backend/
+│   ├── main.py                       # FastAPI app, endpoints, job orchestration
+│   ├── detector.py                   # SCRFD detection pipeline + session pool
+│   ├── tracker.py                    # IoU-based track building
+│   ├── reid.py                       # ArcFace ReID + identity merge
+│   ├── blur.py                       # Pixelation/blackout rendering
+│   ├── queue_manager.py              # Redis job queue
+│   ├── requirements.txt
+│   └── models/
+│       ├── scrfd_2.5g.onnx
+│       ├── w600k_r50.onnx
+│       └── w600k_mbf.onnx
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── Dockerfile.backend
+├── Dockerfile.frontend
+└── README.md
 ```
 
 ---
 
 ## Docker Tips
 
-**View logs:**
 ```bash
-# All services
+# View logs
 docker compose logs -f
-
-# Just frontend
-docker compose logs -f frontend
-
-# Just backend
 docker compose logs -f backend
-```
 
-**Rebuild after code changes (production):**
-```bash
+# Rebuild after changes
+docker compose down && docker compose up --build
+
+# Clean rebuild
 docker compose down
+docker system prune -a
 docker compose up --build
-```
 
-**Clean rebuild (if something breaks):**
-```bash
-docker compose down
-docker system prune -a  # Warning: removes all unused Docker data
-docker compose up --build
-```
-
-**Check what's running:**
-```bash
+# Check running containers
 docker compose ps
 ```
 
@@ -346,14 +288,13 @@ docker compose ps
 
 ## Troubleshooting
 
-**Video won't upload (413 error)**
-- Make sure your video is under 100MB
-- Try a shorter video or compress it first
-
 **No faces detected**
-- Ensure faces are clearly visible in the video
-- Try adjusting the sample rate slider (lower = more accurate)
-- Use a video with frontal face views
+- Ensure faces are clearly visible and reasonably frontal
+- Lower the sample rate slider (lower = more thorough)
+
+**Detection is slow**
+- Increase the sample rate (higher = faster, less thorough)
+- Check that the backend container has access to all CPU cores
 
 **Containers won't start**
 ```bash
@@ -362,32 +303,20 @@ docker system prune -a
 docker compose up --build
 ```
 
-**Port already in use (PowerShell)**
-```powershell
-# Frontend (port 3000)
-Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-
-# Backend (port 8000)
-Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-```
-
 **Port already in use (macOS/Linux)**
 ```bash
-# Frontend (port 3000)
 lsof -ti:3000 | xargs kill -9
-
-# Backend (port 8000)
 lsof -ti:8000 | xargs kill -9
 ```
 
+**Port already in use (PowerShell)**
+```powershell
+Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
 ---
-
-
 
 ## License
 
-[MIT](LICENSE)
-
----
-
-Made by [stianha.com](https://stianha.com)
+[MIT](LICENSE) — Made by [stianha.com](https://stianha.com)

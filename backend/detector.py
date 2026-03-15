@@ -42,6 +42,7 @@ _model_path: Path | None = None
 _detector_pool: list = []
 _pool_lock = threading.Lock()
 _pool_semaphore: threading.Semaphore | None = None
+_onnx_thread_budget = max(1, int(os.environ.get("ONNX_THREAD_BUDGET", "2")))
 
 
 # ---------------------------------------------------------------------------
@@ -64,32 +65,61 @@ def get_thread_pool() -> ThreadPoolExecutor:
     return _thread_pool
 
 
+def _create_session(model_path: str) -> ort.InferenceSession:
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = _onnx_thread_budget
+    opts.inter_op_num_threads = _onnx_thread_budget
+    return ort.InferenceSession(
+        model_path,
+        sess_options=opts,
+        providers=["CPUExecutionProvider"],
+    )
+
+
+def _rebuild_pool_locked() -> None:
+    global _detector_pool, _pool_semaphore
+    model_path = str(_get_model_path())
+    _detector_pool = [_create_session(model_path) for _ in range(DETECTOR_POOL_SIZE)]
+    _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
+
+
 def get_face_detector() -> None:
     """Initializes the detector session on CPU."""
-    global _detector_pool, _pool_semaphore
     with _pool_lock:
         if not _detector_pool:
-            model_path = str(_get_model_path())
-            # Create independent sessions so ONNX Runtime can truly run them
-            # in parallel – a single session serialises concurrent .run() calls.
-            for i in range(DETECTOR_POOL_SIZE):
-                opts = ort.SessionOptions()
-                opts.intra_op_num_threads = 2
-                opts.inter_op_num_threads = 1
-                session = ort.InferenceSession(
-                    model_path, sess_options=opts,
-                    providers=["CPUExecutionProvider"])
-                _detector_pool.append(session)
+            _rebuild_pool_locked()
             logger.info(
                 f"SCRFD: {DETECTOR_POOL_SIZE} independent sessions on CPU, "
-                f"input size {_SCRFD_SIZE}"
+                f"input size {_SCRFD_SIZE}, thread budget {_onnx_thread_budget}"
             )
-            _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
     get_thread_pool()
+
+
+def apply_thread_budget(n_threads: int) -> None:
+    """Safely apply a new ONNX thread budget by recreating detector sessions."""
+    global _onnx_thread_budget
+    # Divide budget across pool so total threads never exceeds n_threads.
+    # e.g. budget=16, pool=16 → 1 thread/session (16 total, not 256).
+    target_threads = max(1, int(n_threads) // DETECTOR_POOL_SIZE)
+    if _pool_semaphore is None and not _detector_pool:
+        _onnx_thread_budget = target_threads
+        return
+
+    if _pool_semaphore is not None:
+        # Drain all leases so no thread is running inference during recreation.
+        for _ in range(DETECTOR_POOL_SIZE):
+            _pool_semaphore.acquire()
+
+    with _pool_lock:
+        _onnx_thread_budget = target_threads
+        _rebuild_pool_locked()
+        logger.info(f"SCRFD thread budget updated to {_onnx_thread_budget}")
 
 
 class _DetectorLease:
     def __enter__(self):
+        if _pool_semaphore is None:
+            raise RuntimeError("Detector pool is not initialized")
         _pool_semaphore.acquire()
         with _pool_lock:
             self._det = _detector_pool.pop()

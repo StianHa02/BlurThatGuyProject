@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 import json
@@ -19,11 +20,27 @@ import shutil
 import queue
 from datetime import datetime, timedelta
 from typing import List
+import redis
 
-from detector import detect_faces, get_face_detector, get_thread_pool, DETECTOR_POOL_SIZE
+from detector import (
+    detect_faces,
+    get_face_detector,
+    get_thread_pool,
+    DETECTOR_POOL_SIZE,
+    apply_thread_budget as apply_detector_thread_budget,
+)
 from tracker import track_detections, _precompute_track_lookups
 from blur import _blur_frame
-from reid import merge_tracks_by_identity, get_reid_model
+from reid import merge_tracks_by_identity, get_reid_model, apply_thread_budget as apply_reid_thread_budget
+from queue_manager import (
+    create_redis_client,
+    try_admit,
+    on_job_finish,
+    get_job_status,
+    set_job_status,
+    set_job_progress,
+    wait_until_admitted,
+)
 
 try:
     import importlib
@@ -101,16 +118,46 @@ _ENCODER_ARGS: dict[str, list[str]] = {
 # =============================================================================
 
 _detection_store: dict[str, list[dict]] = {}
+_job_result_store: dict[str, dict] = {}
 _store_lock = threading.Lock()
+_redis_client: redis.Redis | None = None
+
+
+class CancellationToken:
+    """Cooperative cancellation flag for background detection jobs."""
+    def __init__(self):
+        self._cancelled = threading.Event()
+
+    def cancel(self):
+        self._cancelled.set()
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
+
+
+_cancel_tokens: dict[str, CancellationToken] = {}
+_tokens_lock = threading.Lock()
 
 def store_tracks(video_id, tracks):
-    with _store_lock: _detection_store[video_id] = tracks
+    with _store_lock:
+        _detection_store[video_id] = tracks
+
+def store_job_result(job_id: str, video_id: str, tracks: list[dict]) -> None:
+    with _store_lock:
+        _job_result_store[job_id] = {"video_id": video_id, "results": tracks}
+
+def get_job_result(job_id: str) -> dict | None:
+    with _store_lock:
+        return _job_result_store.get(job_id)
 
 def get_tracks(video_id):
-    with _store_lock: return _detection_store.get(video_id)
+    with _store_lock:
+        return _detection_store.get(video_id)
 
 def clear_tracks(video_id):
-    with _store_lock: _detection_store.pop(video_id, None)
+    with _store_lock:
+        _detection_store.pop(video_id, None)
 
 
 
@@ -160,18 +207,23 @@ def validate_environment() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _redis_client
     validate_environment()
     get_face_detector()
     get_reid_model()
+    _redis_client = create_redis_client()
     logger.info(f"Face detector initialized, H.264 encoder: {_get_encoder()}")
     cleanup_old_files()
     task = asyncio.create_task(periodic_cleanup())
     yield
     task.cancel()
-    try: await task
-    except asyncio.CancelledError: pass
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
     pool = get_thread_pool()
-    if pool: pool.shutdown(wait=False)
+    if pool:
+        pool.shutdown(wait=False)
 
 
 app = FastAPI(title="Face Detection API", lifespan=lifespan)
@@ -286,141 +338,255 @@ async def upload_video(request: Request, file: UploadFile = File(...), _: bool =
         raise HTTPException(status_code=500, detail="Failed to upload video")
 
 
+def _apply_job_thread_budget(r: redis.Redis, job_id: str) -> None:
+    status = get_job_status(r, job_id)
+    budget = status.get("thread_budget")
+    if budget is None:
+        return
+    n_threads = max(1, int(budget))
+    apply_detector_thread_budget(n_threads)
+    apply_reid_thread_budget(n_threads)
+
+
+def _process_detection(video_id: str, video_path: Path, sample_rate: int, progress_cb=None, thread_budget: int | None = None, cancel_token: CancellationToken | None = None) -> list[dict]:
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError("Could not open video file")
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    total_steps = max(1, (total_frames + sample_rate - 1) // sample_rate) if total_frames > 0 else 1
+    completed_steps = 0
+    detections_per_frame = {}
+    cut_frames: set[int] = set()
+    # Per-job pool sized to budget prevents jobs starving each other.
+    # Falls back to shared pool when no budget given (export path).
+    _own_pool = thread_budget is not None
+    pool = ThreadPoolExecutor(max_workers=max(1, thread_budget)) if _own_pool else get_thread_pool()
+    pending_futures = []
+    max_pending = (max(1, thread_budget) if _own_pool else DETECTOR_POOL_SIZE) * 2
+
+    cut_thumb = (64, 36)
+    cut_threshold = 45.0
+    min_cut_gap = 8
+    prev_thumb: np.ndarray | None = None
+    last_cut_fi = -999
+
+    def emit_progress(value: float) -> None:
+        if progress_cb:
+            progress_cb(value)
+
+    def check_cut(fi: int, frame: np.ndarray) -> None:
+        nonlocal prev_thumb, last_cut_fi
+        small = cv2.resize(frame, cut_thumb)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        if prev_thumb is not None:
+            mad = float(np.mean(np.abs(gray - prev_thumb)))
+            sampled_gap = (fi - last_cut_fi) // sample_rate
+            if mad > cut_threshold and sampled_gap >= min_cut_gap:
+                cut_frames.add(fi)
+                last_cut_fi = fi
+        prev_thumb = gray
+
+    def drain_one() -> None:
+        nonlocal completed_steps
+        idx, fut = pending_futures.pop(0)
+        try:
+            faces = fut.result()
+            if faces:
+                detections_per_frame[idx] = faces
+        except Exception as e:
+            logger.error(f"Detection failed frame {idx}: {e}")
+        completed_steps += 1
+        emit_progress(round(completed_steps / total_steps * 80, 1))
+
+    if shutil.which("ffmpeg") and width > 0 and height > 0 and total_frames > 0:
+        frame_size = width * height * 3
+        proc = subprocess.Popen(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "fatal", "-i", str(video_path),
+                "-vf", f"select=not(mod(n\\,{sample_rate}))", "-vsync", "vfr",
+                "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        fq: queue.Queue = queue.Queue(maxsize=max_pending * 2)
+
+        def reader() -> None:
+            emitted = 0
+            try:
+                while True:
+                    raw = proc.stdout.read(frame_size)
+                    if not raw or len(raw) < frame_size:
+                        break
+                    frame = np.frombuffer(raw, np.uint8).reshape((height, width, 3)).copy()
+                    fq.put((emitted * sample_rate, frame))
+                    emitted += 1
+            finally:
+                fq.put(None)
+
+        threading.Thread(target=reader, daemon=True).start()
+        while True:
+            item = fq.get()
+            if item is None:
+                break
+            if cancel_token and cancel_token.cancelled:
+                proc.kill()
+                break
+            fi, frame = item
+            check_cut(fi, frame)
+            pending_futures.append((fi, pool.submit(detect_faces, frame)))
+            while len(pending_futures) >= max_pending:
+                drain_one()
+        proc.wait(timeout=30)
+    else:
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            raise RuntimeError("Could not open video file")
+        target_idx = current_frame = 0
+        while True:
+            if cancel_token and cancel_token.cancelled:
+                break
+            if total_frames > 0 and target_idx >= total_frames:
+                break
+            if target_idx != current_frame and not cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx):
+                break
+            ret, frame = cap.read()
+            if not ret:
+                break
+            current_frame = target_idx + 1
+            check_cut(target_idx, frame)
+            pending_futures.append((target_idx, pool.submit(detect_faces, frame)))
+            while len(pending_futures) >= max_pending:
+                drain_one()
+            target_idx += sample_rate
+        cap.release()
+
+    while pending_futures:
+        drain_one()
+
+    if _own_pool:
+        pool.shutdown(wait=False)
+
+    if cancel_token and cancel_token.cancelled:
+        raise InterruptedError("Job cancelled")
+
+    emit_progress(80)
+    tracks = track_detections(detections_per_frame, cut_frames)
+
+    if cancel_token and cancel_token.cancelled:
+        raise InterruptedError("Job cancelled")
+
+    emit_progress(85)
+    tracks = merge_tracks_by_identity(tracks, video_path, cancel_token=cancel_token)
+    for t in tracks:
+        for f in t.get("frames", []):
+            f.pop("emb", None)
+    store_tracks(video_id, tracks)
+    emit_progress(100)
+    return tracks
+
+
+def _wait_and_run(r: redis.Redis, job_id: str, video_id: str, video_path: Path, sample_rate: int) -> None:
+    if not wait_until_admitted(r, job_id):
+        set_job_status(r, job_id, "error")
+        return
+    token = CancellationToken()
+    with _tokens_lock:
+        _cancel_tokens[job_id] = token
+    try:
+        budget = get_job_status(r, job_id).get("thread_budget")
+        tracks = _process_detection(
+            video_id, video_path, sample_rate,
+            progress_cb=lambda p: set_job_progress(r, job_id, p),
+            thread_budget=int(budget) if budget else None,
+            cancel_token=token,
+        )
+        store_job_result(job_id, video_id, tracks)
+        set_job_status(r, job_id, "done")
+    except InterruptedError:
+        logger.info(f"Queued job {job_id} cancelled during processing")
+    except Exception as e:
+        logger.error(f"Queued detection failed for {job_id}: {e}")
+        set_job_status(r, job_id, "error")
+    finally:
+        with _tokens_lock:
+            _cancel_tokens.pop(job_id, None)
+        on_job_finish(r, job_id)
+
+
 @app.post("/detect-video/{video_id}")
-def detect_video_id_endpoint(video_id: str, sample_rate: int = 3, _: bool = Depends(verify_api_key)):
+def detect_video_id_endpoint(
+    video_id: str,
+    background_tasks: BackgroundTasks,
+    sample_rate: int = 3,
+    _: bool = Depends(verify_api_key),
+):
+    if _redis_client is None:
+        raise HTTPException(status_code=503, detail="Redis is not available")
+
     video_path = get_safe_video_path(video_id, ".mp4")
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video not found")
 
+    job_id = str(uuid.uuid4())
+    admitted = try_admit(_redis_client, job_id)
+
+    if not admitted:
+        background_tasks.add_task(_wait_and_run, _redis_client, job_id, video_id, video_path, sample_rate)
+        return JSONResponse(status_code=202, content={"job_id": job_id, "status": "queued"})
+
+    _apply_job_thread_budget(_redis_client, job_id)
+    stream_budget = get_job_status(_redis_client, job_id).get("thread_budget")
+    stream_token = CancellationToken()
+    with _tokens_lock:
+        _cancel_tokens[job_id] = stream_token
+
     def generate():
-        try:
-            cap = cv2.VideoCapture(str(video_path))
-            if not cap.isOpened():
-                yield json.dumps({"error": "Could not open video file"}) + "\n"; return
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            cap.release()
+        message_queue: queue.Queue = queue.Queue()
 
-            total_steps = max(1, (total_frames + sample_rate - 1) // sample_rate) if total_frames > 0 else 1
-            completed_steps = 0
-            detections_per_frame = {}
-            cut_frames: set[int] = set()   # frame indices where a hard scene cut was detected
-            pool = get_thread_pool()
-            pending_futures = []
-            MAX_PENDING = DETECTOR_POOL_SIZE * 2
+        def run_stream_job() -> None:
+            try:
+                tracks = _process_detection(
+                    video_id,
+                    video_path,
+                    sample_rate,
+                    progress_cb=lambda p: message_queue.put(
+                        json.dumps({"type": "progress", "progress": p}) + "\n"
+                    ),
+                    thread_budget=int(stream_budget) if stream_budget else None,
+                    cancel_token=stream_token,
+                )
+                message_queue.put(json.dumps({"type": "results", "results": tracks}) + "\n")
+                set_job_status(_redis_client, job_id, "done")
+            except InterruptedError:
+                logger.info(f"Streaming job {job_id} cancelled during processing")
+                message_queue.put(json.dumps({"type": "error", "error": "Job cancelled"}) + "\n")
+            except Exception as e:
+                logger.error(f"Video detection stream error: {e}")
+                set_job_status(_redis_client, job_id, "error")
+                message_queue.put(json.dumps({"type": "error", "error": str(e)}) + "\n")
+            finally:
+                with _tokens_lock:
+                    _cancel_tokens.pop(job_id, None)
+                on_job_finish(_redis_client, job_id)
+                message_queue.put(None)
 
-            # Cut detection: compare consecutive sampled frames on a tiny
-            # downscaled grayscale image. MAD > threshold = hard cut.
-            # Threshold 45 (was 28): ignores camera pans, slow zooms, and
-            # lighting changes which read 15-35. True hard cuts read 50-120.
-            # _MIN_CUT_GAP: ignore cuts within N sampled frames of the last
-            # one — prevents a single slow pan triggering multiple cuts.
-            _CUT_THUMB = (64, 36)
-            _CUT_THRESHOLD = 45.0
-            _MIN_CUT_GAP = 8   # in sampled-frame units (= 8 * sample_rate real frames)
-            _prev_thumb: np.ndarray | None = None
-            _prev_fi: int = -1
-            _last_cut_fi: int = -999
+        threading.Thread(target=run_stream_job, daemon=True).start()
 
+        while True:
+            msg = message_queue.get()
+            if msg is None:
+                break
+            yield msg
 
-            def _check_cut(fi: int, frame: np.ndarray) -> None:
-                nonlocal _prev_thumb, _prev_fi, _last_cut_fi
-                small = cv2.resize(frame, _CUT_THUMB)
-                gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY).astype(np.float32)
-                if _prev_thumb is not None:
-                    mad = float(np.mean(np.abs(gray - _prev_thumb)))
-                    sampled_gap = (fi - _last_cut_fi) // sample_rate
-                    if mad > _CUT_THRESHOLD and sampled_gap >= _MIN_CUT_GAP:
-                        cut_frames.add(fi)
-                        _last_cut_fi = fi
-                        logger.debug(f"Scene cut at frame {fi} (MAD={mad:.1f})")
-                _prev_thumb = gray
-                _prev_fi = fi
-
-            def drain_one():
-                nonlocal completed_steps
-                idx, fut = pending_futures.pop(0)
-                try:
-                    faces = fut.result()
-                    if faces: detections_per_frame[idx] = faces
-                except Exception as e:
-                    logger.error(f"Detection failed frame {idx}: {e}")
-                completed_steps += 1
-                return json.dumps({"type": "progress", "progress": round(completed_steps / total_steps * 80, 1)}) + "\n"
-
-            # Prefer ffmpeg sampled decode path when available, else fallback to OpenCV seek.
-            if shutil.which("ffmpeg") and width > 0 and height > 0 and total_frames > 0:
-                frame_size = width * height * 3
-                proc = subprocess.Popen(
-                    ["ffmpeg", "-hide_banner", "-loglevel", "fatal", "-i", str(video_path),
-                     "-vf", f"select=not(mod(n\\,{sample_rate}))", "-vsync", "vfr",
-                     "-f", "rawvideo", "-pix_fmt", "bgr24", "pipe:1"],
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-
-                fq: queue.Queue = queue.Queue(maxsize=MAX_PENDING * 2)
-
-                def _reader():
-                    emitted = 0
-                    try:
-                        while True:
-                            raw = proc.stdout.read(frame_size)
-                            if not raw or len(raw) < frame_size: break
-                            fq.put((emitted * sample_rate, np.frombuffer(raw, np.uint8).reshape((height, width, 3)).copy()))
-                            emitted += 1
-                    finally:
-                        fq.put(None)
-
-                threading.Thread(target=_reader, daemon=True).start()
-                while True:
-                    item = fq.get()
-                    if item is None: break
-                    fi, frame = item
-                    _check_cut(fi, frame)
-                    pending_futures.append((fi, pool.submit(detect_faces, frame)))
-                    while len(pending_futures) >= MAX_PENDING:
-                        yield drain_one()
-                proc.wait(timeout=30)
-            else:
-                cap = cv2.VideoCapture(str(video_path))
-                if not cap.isOpened():
-                    yield json.dumps({"error": "Could not open video file"}) + "\n"; return
-                target_idx = current_frame = 0
-                while True:
-                    if total_frames > 0 and target_idx >= total_frames: break
-                    if target_idx != current_frame and not cap.set(cv2.CAP_PROP_POS_FRAMES, target_idx): break
-                    ret, frame = cap.read()
-                    if not ret: break
-                    current_frame = target_idx + 1
-                    _check_cut(target_idx, frame)
-                    pending_futures.append((target_idx, pool.submit(detect_faces, frame)))
-                    while len(pending_futures) >= MAX_PENDING:
-                        yield drain_one()
-                    target_idx += sample_rate
-                cap.release()
-
-            while pending_futures:
-                yield drain_one()
-
-            logger.info(f"Detection done for {video_id}: {len(detections_per_frame)} frames with faces, {len(cut_frames)} scene cuts detected")
-            yield json.dumps({"type": "progress", "progress": 80}) + "\n"
-
-            yield json.dumps({"type": "progress", "progress": 85}) + "\n"
-            tracks = track_detections(detections_per_frame, cut_frames)
-            logger.info(f"Tracking done for {video_id}: {len(tracks)} tracks")
-            tracks = merge_tracks_by_identity(tracks, video_path)
-            # Strip numpy embeddings from frame entries before JSON serialization
-            for t in tracks:
-                for f in t.get("frames", []):
-                    f.pop("emb", None)
-            store_tracks(video_id, tracks)  # store server-side — never resent from frontend
-            yield json.dumps({"type": "progress", "progress": 100}) + "\n"
-            yield json.dumps({"type": "results", "results": tracks}) + "\n"
-        except Exception as e:
-            logger.error(f"Video detection stream error: {e}")
-            yield json.dumps({"type": "error", "error": str(e)}) + "\n"
-
-    return StreamingResponse(generate(), media_type="application/x-ndjson")
-
+    return StreamingResponse(
+        generate(),
+        media_type="application/x-ndjson",
+        headers={"X-Job-Id": job_id, "Access-Control-Expose-Headers": "X-Job-Id"},
+    )
 
 
 @app.post("/export/{video_id}")
@@ -436,6 +602,8 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
 
     def generate():
         cap = out = ffmpeg_proc = dec = None
+        _stderr_chunks: list[bytes] = []
+        _stderr_thread: threading.Thread | None = None
         try:
             # Convert to set for O(1) membership — also catches any stray type
             # mismatches by normalising both sides to int.
@@ -479,7 +647,6 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
 
                 # Drain stderr in a background thread to prevent the pipe buffer
                 # filling up (~64 KB on Linux) which would deadlock the stdin write loop.
-                _stderr_chunks: list[bytes] = []
 
                 def _drain_stderr():
                     try:
@@ -581,11 +748,13 @@ def export_video(video_id: str, export_request: ExportRequest, _: bool = Depends
                 except Exception: pass
                 try:
                     ffmpeg_proc.wait(timeout=600)
-                    _stderr_thread.join(timeout=5)
+                    if _stderr_thread:
+                        _stderr_thread.join(timeout=5)
                     stderr_data = b"".join(_stderr_chunks)
                 except subprocess.TimeoutExpired:
                     ffmpeg_proc.kill(); ffmpeg_proc.wait()
-                    _stderr_thread.join(timeout=5)
+                    if _stderr_thread:
+                        _stderr_thread.join(timeout=5)
                     stderr_data = b"".join(_stderr_chunks)
                 if ffmpeg_proc.returncode != 0:
                     logger.error(f"ffmpeg failed: {stderr_data.decode(errors='ignore')}")
@@ -655,6 +824,77 @@ async def detect_batch_endpoint(batch_request: BatchDetectRequest, _: bool = Dep
     except Exception as e:
         logger.error(f"Batch detection error: {e}")
         raise HTTPException(status_code=500, detail="Failed to detect faces in batch")
+
+
+@app.post("/submit-job")
+async def submit_job(request: Request, file: UploadFile = File(...), _: bool = Depends(verify_api_key)):
+    validate_video_file(file.filename or "video.mp4", file.content_type)
+    if MAX_UPLOAD_SIZE_MB > 0:
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                    raise HTTPException(status_code=413, detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
+            except ValueError: pass
+
+    video_id = str(uuid.uuid4())
+    video_path = TEMP_DIR / f"{video_id}.mp4"
+    max_size = MAX_UPLOAD_SIZE_MB * 1024 * 1024 if MAX_UPLOAD_SIZE_MB > 0 else 0
+    size = 0
+    try:
+        with open(video_path, "wb") as f:
+            while chunk := await file.read(CHUNK_SIZE):
+                size += len(chunk)
+                if max_size and size > max_size:
+                    video_path.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
+                f.write(chunk)
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            video_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Invalid video file.")
+        fps = float(cap.get(cv2.CAP_PROP_FPS)) or 30.0
+        width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        logger.info(f"Job submitted for video {video_id}")
+        return JSONResponse({"jobId": video_id, "status": "submitted", "videoId": video_id,
+                             "metadata": {"fps": fps, "width": width, "height": height, "frameCount": frame_count}})
+    except HTTPException: raise
+    except Exception as e:
+        logger.error(f"Job submission error: {e}"); video_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Failed to submit job")
+
+
+@app.post("/job/{job_id}/cancel")
+async def cancel_job(job_id: str, _: bool = Depends(verify_api_key)):
+    if _redis_client is None:
+        raise HTTPException(status_code=503, detail="Redis is not available")
+    with _tokens_lock:
+        token = _cancel_tokens.get(job_id)
+    if token:
+        token.cancel()
+    on_job_finish(_redis_client, job_id)
+    logger.info(f"Job {job_id} cancelled by client")
+    return {"status": "cancelled"}
+
+
+@app.get("/job/{job_id}/status")
+async def job_status(job_id: str, _: bool = Depends(verify_api_key)):
+    if _redis_client is None:
+        raise HTTPException(status_code=503, detail="Redis is not available")
+    status = get_job_status(_redis_client, job_id)
+    if status["status"] is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return status
+
+
+@app.get("/job/{job_id}/result")
+async def job_result(job_id: str, _: bool = Depends(verify_api_key)):
+    result = get_job_result(job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Job result not found")
+    return result
 
 
 if __name__ == "__main__":
