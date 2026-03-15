@@ -32,6 +32,11 @@ export async function POST(
       );
     }
 
+    if (response.status === 202) {
+      const queued = await response.json().catch(() => ({ status: 'queued' }));
+      return NextResponse.json(queued, { status: 202 });
+    }
+
     // Stream the NDJSON response directly back to the client
     return new NextResponse(response.body, {
       headers: {

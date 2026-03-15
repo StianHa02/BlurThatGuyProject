@@ -166,11 +166,35 @@ export default function UploadPage() {
                     Our AI will scan through your video and identify all faces that appear.
                   </p>
                   {detection.processing ? (
-                    <ProgressBar
-                      progress={detection.progress}
-                      status={detection.status}
-                      hint="This may take a minute depending on video length"
-                    />
+                    detection.queued ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                          <span className="text-sm text-white">
+                            {typeof detection.queuePosition === 'number'
+                              ? `You're #${detection.queuePosition} in queue`
+                              : 'You are in queue'}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                          <div className="h-full w-1/3 rounded-full bg-blue-500 animate-[queue-slide_1.4s_ease-in-out_infinite]" />
+                        </div>
+                        <p className="text-xs text-slate-500">Waiting for an available processing slot...</p>
+                        <style>{`
+                          @keyframes queue-slide {
+                            0%   { transform: translateX(-100%); }
+                            50%  { transform: translateX(220%); }
+                            100% { transform: translateX(220%); }
+                          }
+                        `}</style>
+                      </div>
+                    ) : (
+                      <ProgressBar
+                        progress={detection.progress}
+                        status={detection.status}
+                        hint="This may take a minute depending on video length"
+                      />
+                    )
                   ) : (
                     <button
                       onClick={handleStartDetection}

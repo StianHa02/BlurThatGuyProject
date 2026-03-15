@@ -22,9 +22,23 @@ services:
     environment:
       DEV_MODE: "true"
       ALLOWED_ORIGINS: http://localhost:3000
+      REDIS_URL: redis://redis:6379
       # MAX_UPLOAD_SIZE_MB: ""  # Unlimited by default. Set to a number (e.g. "500") to enforce a limit.
     volumes:
       - video_uploads:/tmp/blurthatguy
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
 volumes:

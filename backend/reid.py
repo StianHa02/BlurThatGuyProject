@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 _CPU_COUNT = multiprocessing.cpu_count()
 REID_POOL_SIZE = max(1, min(4, _CPU_COUNT // 2))
 _REID_INTRA_THREADS = max(1, min(4, _CPU_COUNT // REID_POOL_SIZE))
+_reid_thread_budget = int(os.environ.get("ONNX_THREAD_BUDGET", str(_REID_INTRA_THREADS)))
 
 _reid_pool: list = []
 _pool_lock = threading.Lock()
@@ -80,9 +81,27 @@ def _model_path() -> Path:
     return mbf
 
 
+def _create_reid_session(path: Path) -> ort.InferenceSession:
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = _reid_thread_budget
+    opts.inter_op_num_threads = _reid_thread_budget
+    opts.log_severity_level = 3
+    return ort.InferenceSession(
+        str(path),
+        sess_options=opts,
+        providers=["CPUExecutionProvider"],
+    )
+
+
+def _rebuild_pool_locked(path: Path) -> None:
+    global _reid_pool, _pool_semaphore
+    _reid_pool = [_create_reid_session(path) for _ in range(REID_POOL_SIZE)]
+    _pool_semaphore = threading.Semaphore(REID_POOL_SIZE)
+
+
 def get_reid_model() -> ort.InferenceSession | None:
     """Initialise the session pool and return one session (for startup checks)."""
-    global _reid_pool, _pool_semaphore, _loaded
+    global _loaded
     with _pool_lock:
         if _loaded:
             return _reid_pool[0] if _reid_pool else None
@@ -92,20 +111,10 @@ def get_reid_model() -> ort.InferenceSession | None:
             logger.warning(f"ReID model not found at {path}")
             return None
         try:
-            for i in range(REID_POOL_SIZE):
-                opts = ort.SessionOptions()
-                opts.intra_op_num_threads = _REID_INTRA_THREADS
-                opts.inter_op_num_threads = 1
-                opts.log_severity_level = 3
-                session = ort.InferenceSession(
-                    str(path), sess_options=opts,
-                    providers=["CPUExecutionProvider"],
-                )
-                _reid_pool.append(session)
-            _pool_semaphore = threading.Semaphore(REID_POOL_SIZE)
+            _rebuild_pool_locked(path)
             logger.info(
                 f"ReID model loaded: {path.stem} — "
-                f"{REID_POOL_SIZE} sessions × {_REID_INTRA_THREADS} intra threads "
+                f"{REID_POOL_SIZE} sessions × {_reid_thread_budget} thread budget "
                 f"({_CPU_COUNT} logical CPUs) "
                 f"(v7 – drift-aware centroid, quality-filter, coherence)"
             )
@@ -115,9 +124,37 @@ def get_reid_model() -> ort.InferenceSession | None:
     return _reid_pool[0] if _reid_pool else None
 
 
+def apply_thread_budget(n_threads: int) -> None:
+    """Safely apply a new ONNX thread budget by recreating ReID sessions."""
+    global _reid_thread_budget, _loaded
+    # Divide budget across pool so total threads never exceeds n_threads.
+    # e.g. budget=16, pool=4 → 4 threads/session (16 total, not 224).
+    target_threads = max(1, int(n_threads) // REID_POOL_SIZE)
+    if _pool_semaphore is None and not _reid_pool:
+        _reid_thread_budget = target_threads
+        return
+
+    if _pool_semaphore is not None:
+        # Drain all leases so no thread is running inference during recreation.
+        for _ in range(REID_POOL_SIZE):
+            _pool_semaphore.acquire()
+
+    with _pool_lock:
+        path = _model_path()
+        if not path.exists():
+            logger.warning(f"ReID model not found at {path}")
+            return
+        _reid_thread_budget = target_threads
+        _loaded = True
+        _rebuild_pool_locked(path)
+        logger.info(f"ReID thread budget updated to {_reid_thread_budget}")
+
+
 class _ReidLease:
     """Borrow one ReID session from the pool; block if all are busy."""
     def __enter__(self) -> ort.InferenceSession:
+        if _pool_semaphore is None:
+            raise RuntimeError("ReID pool is not initialized")
         _pool_semaphore.acquire()
         with _pool_lock:
             self._session = _reid_pool.pop()

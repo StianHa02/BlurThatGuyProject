@@ -155,8 +155,15 @@ DEV_MODE=true
 # Allowed origins
 ALLOWED_ORIGINS=http://localhost:3000
 
-# Max upload size
+# Max upload size (dont add to not have a limit
 MAX_UPLOAD_SIZE_MB=100
+
+# Redis URL
+REDIS_URL=redis://redis:6379
+
+# Thread budget for detection/re-id (dont add to not have a limit)
+TOTAL_THREAD_BUDGET=24
+
 ```
 
 ### Production Deployment (API Key Required)
@@ -177,6 +184,8 @@ BACKEND_URL=http://backend:8000
 API_KEY=same-api-key-as-frontend
 ALLOWED_ORIGINS=https://your-domain.com
 MAX_UPLOAD_SIZE_MB=100
+REDIS_URL=redis://redis:6379
+TOTAL_THREAD_BUDGET=24
 ```
 ---
 
