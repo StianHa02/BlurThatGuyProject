@@ -71,7 +71,7 @@ _ARCFACE_DST = np.array([
 
 
 def _model_path() -> Path:
-    models_dir = Path(__file__).parent / "models"
+    models_dir = Path(__file__).resolve().parent.parent / "models"
     # Prefer ResNet-50 ArcFace (significantly better FP/FN) over MobileFaceNet.
     # Drop w600k_r50.onnx from insightface model-zoo next to w600k_mbf.onnx.
     r50 = models_dir / "w600k_r50.onnx"
@@ -684,3 +684,4 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
         f"(seeks: {len(needed_frames)}, samples/track: {samples_per_track})"
     )
     return result
+

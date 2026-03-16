@@ -5,7 +5,7 @@ from typing import Callable
 
 import redis
 
-from queue_manager import (
+from jobs.queue_manager import (
     get_job_status,
     on_job_finish,
     set_job_progress,

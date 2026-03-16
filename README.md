@@ -226,8 +226,12 @@ Built with **FastAPI + Uvicorn**. Detection results stream as NDJSON for real-ti
 ```
 BlurThatGuyProject/
 ├── app/
-│   ├── (landing)/                    # Landing page
-│   ├── api/                          # Next.js route handlers (backend proxy)
+│   ├── favicon.ico                  # App favicon
+│   ├── globals.css                  # Global styles
+│   ├── layout.tsx                   # Root layout
+│   ├── page.tsx                     # Root page (routed to landing/page)
+│   ├── (landing)/                    # Landing Page 
+│   ├── api/                          # Next.js API routes that proxy to FastAPI
 │   │   ├── detect-video/[videoId]/route.ts
 │   │   ├── export/[videoId]/route.ts
 │   │   ├── upload-video/route.ts
@@ -237,33 +241,34 @@ BlurThatGuyProject/
 │   │       ├── result/route.ts
 │   │       └── cancel/route.ts
 │   └── upload/
-│       ├── components/               # PlayerWithMask, FaceGallery, etc.
-│       ├── hooks/                    # useFaceDetection, useVideoExport, etc.
-│       └── page.tsx
-├── lib/
-│   ├── faceClient.ts                 # Backend API client
-│   ├── tracker.ts
-│   └── server/backendProxy.ts
+│       ├── components/               # Upload page UI 
+│       ├── hooks/                    # Upload flow hooks 
+│       └── page.tsx                  # Main upload workflow page
+├── lib/                              
+│   ├── faceClient.ts                 # Frontend client for backend API calls
+│   ├── tracker.ts                    # Shared face-track helpers/types for UI state
+│   └── server/backendProxy.ts        # Server-side proxy utilities (API key forwarding)
 ├── backend/
 │   ├── main.py                       # FastAPI app + all API endpoints
-│   ├── services/
-│   │   ├── config.py                 # Env, validation, temp file helpers
-│   │   ├── processor.py              # Detection pipeline + encoder selection
-│   │   └── storage.py                # In-memory tracks and job-result store
-│   ├── detector.py                   # SCRFD detection pipeline + session pool
-│   ├── tracker.py                    # IoU-based track building
-│   ├── reid.py                       # ArcFace ReID + identity merge
-│   ├── blur.py                       # Pixelation/blackout rendering
-│   ├── stream_generators.py          # NDJSON streaming for detect/export
-│   ├── job_runner.py                 # Queued detection execution helpers
-│   ├── queue_manager.py              # Redis queue state + admission
+│   ├── pipeline/
+│   │   ├── __init__.py
+│   │   ├── detector.py               # SCRFD detection pipeline + session pool
+│   │   ├── tracker.py                # IoU-based track building
+│   │   ├── reid.py                   # ArcFace ReID + identity merge
+│   │   ├── blur.py                   # Pixelation/blackout rendering
+│   │   └── processor.py              # Detection pipeline + encoder selection
+│   ├── jobs/
+│   │   ├── __init__.py
+│   │   ├── job_runner.py             # Queued detection execution helpers
+│   │   ├── queue_manager.py          # Redis queue state + admission
+│   │   └── stream_generators.py      # NDJSON streaming for detect/export
+│   ├── storage.py                    # In-memory tracks and job-result store
+│   ├── config.py                     # Env, validation, temp file helpers
+│   ├── auth.py
 │   ├── requirements.txt
-│   └── models/
-│       ├── scrfd_2.5g.onnx
-│       ├── w600k_r50.onnx
-│       └── w600k_mbf.onnx
-├── docker-compose.yml
-├── docker-compose.dev.yml
+│   └── models/                       # ONNX models 
+├── docker-compose.yml                # Dockwer Compose for production deployment
+├── docker-compose.dev.yml            # Docker Compose for local development with hot reload
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
 └── README.md

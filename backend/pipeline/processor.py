@@ -10,18 +10,18 @@ import cv2
 import numpy as np
 import redis
 
-from detector import (
+from pipeline.detector import (
     DETECTOR_POOL_SIZE,
     apply_thread_budget as apply_detector_thread_budget,
     detect_faces,
     get_thread_pool,
 )
-from job_runner import CancellationToken
-from queue_manager import get_job_status
-from reid import apply_thread_budget as apply_reid_thread_budget
-from reid import merge_tracks_by_identity
-from services.storage import store_tracks
-from tracker import track_detections
+from jobs.job_runner import CancellationToken
+from jobs.queue_manager import get_job_status
+from pipeline.reid import apply_thread_budget as apply_reid_thread_budget
+from pipeline.reid import merge_tracks_by_identity
+from storage import store_tracks
+from pipeline.tracker import track_detections
 
 logger = logging.getLogger(__name__)
 

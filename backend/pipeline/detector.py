@@ -52,7 +52,8 @@ _onnx_thread_budget = max(1, int(os.environ.get("ONNX_THREAD_BUDGET", "2")))
 def _get_model_path() -> Path:
     global _model_path
     if _model_path is None:
-        _model_path = Path(__file__).parent / "models" / "scrfd_2.5g.onnx"
+        backend_dir = Path(__file__).resolve().parent.parent
+        _model_path = backend_dir / "models" / "scrfd_2.5g.onnx"
     return _model_path
 
 
@@ -78,7 +79,10 @@ def _create_session(model_path: str) -> ort.InferenceSession:
 
 def _rebuild_pool_locked() -> None:
     global _detector_pool, _pool_semaphore
-    model_path = str(_get_model_path())
+    model_path_obj = _get_model_path()
+    if not model_path_obj.exists():
+        raise FileNotFoundError(f"SCRFD model not found at {model_path_obj}")
+    model_path = str(model_path_obj)
     _detector_pool = [_create_session(model_path) for _ in range(DETECTOR_POOL_SIZE)]
     _pool_semaphore = threading.Semaphore(DETECTOR_POOL_SIZE)
 

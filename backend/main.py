@@ -14,10 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from blur import _blur_frame
-from detector import DETECTOR_POOL_SIZE, get_face_detector, get_thread_pool
-from job_runner import cancel_detection_job, register_cancel_token, run_queued_detection_job, unregister_cancel_token
-from queue_manager import (
+from pipeline.blur import _blur_frame
+from pipeline.detector import DETECTOR_POOL_SIZE, get_face_detector, get_thread_pool
+from jobs.job_runner import cancel_detection_job, register_cancel_token, run_queued_detection_job, unregister_cancel_token
+from jobs.queue_manager import (
     create_redis_client,
     evict_stale_jobs,
     get_job_status,
@@ -26,8 +26,8 @@ from queue_manager import (
     touch_job_heartbeat,
     try_admit,
 )
-from reid import get_reid_model
-from services.config import (
+from pipeline.reid import get_reid_model
+from config import (
     CHUNK_SIZE,
     MAX_UPLOAD_SIZE_MB,
     VIDEO_PROCESSING_CONFIG,
@@ -38,10 +38,10 @@ from services.config import (
     validate_environment,
     validate_video_file,
 )
-from services.processor import ENCODER_ARGS, apply_job_thread_budget, get_encoder, process_detection
-from services.storage import get_job_result, get_tracks, store_job_result
-from stream_generators import detect_stream_generator, export_stream_generator
-from tracker import _precompute_track_lookups
+from pipeline.processor import ENCODER_ARGS, apply_job_thread_budget, get_encoder, process_detection
+from storage import get_job_result, get_tracks, store_job_result
+from jobs.stream_generators import detect_stream_generator, export_stream_generator
+from pipeline.tracker import _precompute_track_lookups
 
 
 # ===== Logging =====
@@ -192,7 +192,7 @@ def _process_batch_frame(frame_index: int, image_data: str) -> dict:
         image = cv2.imdecode(np.frombuffer(base64.b64decode(raw), np.uint8), cv2.IMREAD_COLOR)
         if image is None:
             return {"frameIndex": frame_index, "faces": []}
-        from detector import detect_faces
+        from pipeline.detector import detect_faces
 
         faces = detect_faces(image)
         return {"frameIndex": frame_index, "faces": [{"bbox": f["bbox"], "score": f["score"]} for f in faces]}
