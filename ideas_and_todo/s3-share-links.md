@@ -149,3 +149,11 @@ Once S3 is in place, point a CloudFront distribution at the share bucket with Or
 | Frontend | 1 new button + copy UI |
 | AWS | S3 bucket + IAM role (console only) |
 | Existing endpoints | Untouched |
+
+---
+
+## Implementation prompt
+
+To implement, upload `main.py` and the frontend component that renders after export completes, then ask Claude:
+
+"Implement the S3 share link feature for BlurThatGuy. Add two new endpoints to main.py — POST /job/{job_id}/share and GET /share/{token} — using boto3 for S3 upload/stream/delete and Redis for one-time token storage with a 10 minute TTL. Then update the export complete component to add a Generate share link button that calls the share endpoint and displays the returned URL with a copy-to-clipboard button and a 10 minute expiry countdown. Do not modify any existing endpoints."
