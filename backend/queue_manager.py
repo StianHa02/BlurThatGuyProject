@@ -10,6 +10,10 @@ ADMISSION_LOCK_KEY = "btg:admission_lock"
 ACTIVE_KEY = "btg:active"
 WAITING_KEY = "btg:waiting"
 SYSTEM_THREADS_KEY = "btg:system:total_threads"
+# Heartbeat: active jobs must touch this key at least once every N seconds.
+# Allows the queue to recover from jobs that died without calling on_job_finish
+# (e.g. server OOM, client beacon that never arrived).
+HEARTBEAT_TTL = 60  # seconds — must exceed the longest gap between progress events
 _default_budget = os.cpu_count() or 4
 TOTAL_THREAD_BUDGET = max(1, int(os.environ.get("TOTAL_THREAD_BUDGET") or _default_budget))
 
@@ -30,8 +34,71 @@ def _progress_key(job_id: str) -> str:
     return f"btg:job:{job_id}:progress"
 
 
+def _heartbeat_key(job_id: str) -> str:
+    return f"btg:job:{job_id}:hb"
+
+
 def set_job_progress(r: redis.Redis, job_id: str, progress: float) -> None:
     r.set(_progress_key(job_id), round(progress, 1), ex=TTL_SECONDS)
+
+
+def touch_job_heartbeat(r: redis.Redis, job_id: str) -> None:
+    """Called periodically by running jobs so the queue can detect ghost jobs."""
+    r.set(_heartbeat_key(job_id), 1, ex=HEARTBEAT_TTL)
+
+
+def _promote_next_locked(r: redis.Redis) -> None:
+    """Promote the next waiter if there is capacity. Must be called inside the admission lock."""
+    if r.scard(ACTIVE_KEY) < MAX_ACTIVE_JOBS:
+        next_job_id = r.lpop(WAITING_KEY)
+        if next_job_id:
+            r.sadd(ACTIVE_KEY, next_job_id)
+            _touch_key(r, ACTIVE_KEY)
+            # Keep status/progress initialization centralized in rebalance() so
+            # queued workers do not observe "running" before thread_budget exists.
+            set_job_progress(r, next_job_id, 0.0)
+            # Prime heartbeat on promotion to avoid a stale-eviction race
+            # before the worker starts sending progress heartbeats.
+            touch_job_heartbeat(r, next_job_id)
+
+
+def evict_stale_jobs(r: redis.Redis) -> list[str]:
+    """Evict active jobs whose heartbeat has expired. Returns evicted job ids.
+
+    Called from the status-polling endpoint so that a user in the queue can
+    self-heal even when the dead job's server process never called on_job_finish.
+    """
+    active_jobs = list(r.smembers(ACTIVE_KEY))
+    if not active_jobs:
+        return []
+
+    evicted: list[str] = []
+    for job_id in active_jobs:
+        if r.exists(_heartbeat_key(job_id)):
+            continue  # alive
+
+        lock = r.lock(ADMISSION_LOCK_KEY, timeout=5, blocking_timeout=1)
+        try:
+            with lock:
+                # Re-check inside the lock — another thread may have just evicted it
+                if not r.sismember(ACTIVE_KEY, job_id) or r.exists(_heartbeat_key(job_id)):
+                    continue
+                r.srem(ACTIVE_KEY, job_id)
+                r.delete(_thread_budget_key(job_id))
+                r.delete(_position_key(job_id))
+                r.delete(_progress_key(job_id))
+                current_status = r.get(_status_key(job_id))
+                if current_status not in ("done", "error", "cancelled"):
+                    r.set(_status_key(job_id), "error", ex=TTL_SECONDS)
+                _touch_key(r, ACTIVE_KEY)
+                _promote_next_locked(r)
+                rebalance(r)
+                _refresh_waiting_positions(r)
+                evicted.append(job_id)
+        except Exception:
+            pass  # lock timeout — another worker is handling it
+
+    return evicted
 
 
 def _set_with_ttl(r: redis.Redis, key: str, value: Any) -> None:
@@ -71,6 +138,7 @@ def rebalance(r: redis.Redis) -> None:
     for active_job_id in active_jobs:
         pipe.set(_thread_budget_key(active_job_id), per_job_budget, ex=TTL_SECONDS)
         pipe.set(_status_key(active_job_id), "running", ex=TTL_SECONDS)
+        pipe.set(_progress_key(active_job_id), 0.0, ex=TTL_SECONDS, nx=True)
         pipe.delete(_position_key(active_job_id))
     pipe.execute()
 
@@ -89,6 +157,8 @@ def try_admit(r: redis.Redis, job_id: str) -> bool:
             r.sadd(ACTIVE_KEY, job_id)
             _touch_key(r, ACTIVE_KEY)
             set_job_status(r, job_id, "running")
+            set_job_progress(r, job_id, 0.0)
+            touch_job_heartbeat(r, job_id)
             rebalance(r)
             return True
 
@@ -96,6 +166,7 @@ def try_admit(r: redis.Redis, job_id: str) -> bool:
         _touch_key(r, WAITING_KEY)
         set_job_status(r, job_id, "queued")
         _set_with_ttl(r, _position_key(job_id), r.llen(WAITING_KEY))
+        _set_with_ttl(r, _progress_key(job_id), 0.0)
         return False
 
 
@@ -107,21 +178,18 @@ def on_job_finish(r: redis.Redis, job_id: str) -> None:
         r.delete(_thread_budget_key(job_id))
         r.delete(_position_key(job_id))
         r.delete(_progress_key(job_id))
+        r.delete(_heartbeat_key(job_id))
         # Only mark cancelled if not already set to a terminal state by the job itself
         current_status = r.get(_status_key(job_id))
         if current_status not in ("done", "error"):
             r.set(_status_key(job_id), "cancelled", ex=TTL_SECONDS)
         _touch_key(r, ACTIVE_KEY)
+
+        # Promote before rebalancing so rebalance sees the final active set.
+        if was_active:
+            _promote_next_locked(r)
+
         rebalance(r)
-
-        if was_active and r.scard(ACTIVE_KEY) < MAX_ACTIVE_JOBS:
-            next_job_id = r.lpop(WAITING_KEY)
-            if next_job_id:
-                r.sadd(ACTIVE_KEY, next_job_id)
-                _touch_key(r, ACTIVE_KEY)
-                set_job_status(r, next_job_id, "running")
-                rebalance(r)
-
         _refresh_waiting_positions(r)
 
 
@@ -129,12 +197,13 @@ def get_job_status(r: redis.Redis, job_id: str) -> dict[str, Any]:
     status = r.get(_status_key(job_id))
     position_raw = r.get(_position_key(job_id)) if status == "queued" else None
     budget_raw = r.get(_thread_budget_key(job_id)) if status == "running" else None
-    progress_raw = r.get(_progress_key(job_id)) if status == "running" else None
+    progress_raw = r.get(_progress_key(job_id)) if status in {"running", "queued"} else None
+    progress = float(progress_raw) if progress_raw is not None else (0.0 if status in {"running", "queued"} else None)
     return {
         "status": status,
         "position": int(position_raw) if position_raw is not None else None,
         "thread_budget": int(budget_raw) if budget_raw is not None else None,
-        "progress": float(progress_raw) if progress_raw is not None else None,
+        "progress": progress,
     }
 
 
@@ -146,7 +215,7 @@ def wait_until_admitted(r: redis.Redis, job_id: str, timeout: int = 300) -> bool
             return True
         if status in {"done", "error", "cancelled", None}:
             return False
-        time.sleep(2)
+        time.sleep(0.5)
     return False
 
 

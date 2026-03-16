@@ -55,8 +55,8 @@ export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDe
     try {
       await loadModels();
       setStatus('Detecting faces...');
-      setProgress(10);
-      lastProgressRef.current = 10;
+      setProgress(0);
+      lastProgressRef.current = 0;
     } catch {
       onError('Failed to connect to face detector. Make sure the Python backend is running.');
       setProcessing(false);
@@ -99,14 +99,18 @@ export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDe
             setQueuePosition(job.position ?? null);
             setStatus('Queued for processing...');
           } else if (job.status === 'running') {
-            runningSeen = true;
+            if (!runningSeen) {
+              // Reset progress floor so promoted jobs start cleanly from backend progress.
+              setProgress(0);
+              lastProgressRef.current = 0;
+              runningSeen = true;
+            }
             setQueued(false);
             setQueuePosition(null);
             if (job.progress != null) {
               setProgress((prev) => Math.max(prev, Math.round(job.progress!)));
               setStatus(job.progress < 85 ? 'Detecting faces...' : 'Building face tracks...');
             } else {
-              setProgress((prev) => Math.max(prev, 15));
               setStatus('Detecting faces...');
             }
           } else if (job.status === 'done') {
@@ -119,7 +123,8 @@ export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDe
             throw new Error('Detection job failed while processing in queue.');
           }
 
-          await sleep(3000);
+          const pollMs = job.status === 'running' ? 1000 : 2000;
+          await sleep(pollMs);
         }
       } else {
         activeJobIdRef.current = result.jobId;

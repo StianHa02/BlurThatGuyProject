@@ -245,12 +245,18 @@ BlurThatGuyProject/
 │   ├── tracker.ts
 │   └── server/backendProxy.ts
 ├── backend/
-│   ├── main.py                       # FastAPI app, endpoints, job orchestration
+│   ├── main.py                       # FastAPI app + all API endpoints
+│   ├── services/
+│   │   ├── config.py                 # Env, validation, temp file helpers
+│   │   ├── processor.py              # Detection pipeline + encoder selection
+│   │   └── storage.py                # In-memory tracks and job-result store
 │   ├── detector.py                   # SCRFD detection pipeline + session pool
 │   ├── tracker.py                    # IoU-based track building
 │   ├── reid.py                       # ArcFace ReID + identity merge
 │   ├── blur.py                       # Pixelation/blackout rendering
-│   ├── queue_manager.py              # Redis job queue
+│   ├── stream_generators.py          # NDJSON streaming for detect/export
+│   ├── job_runner.py                 # Queued detection execution helpers
+│   ├── queue_manager.py              # Redis queue state + admission
 │   ├── requirements.txt
 │   └── models/
 │       ├── scrfd_2.5g.onnx

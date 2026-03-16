@@ -96,24 +96,47 @@ def get_face_detector() -> None:
 
 
 def apply_thread_budget(n_threads: int) -> None:
-    """Safely apply a new ONNX thread budget by recreating detector sessions."""
+    """Safely apply a new ONNX thread budget.
+
+    If the pool is idle all sessions are rebuilt immediately.
+    If inference is in progress the budget is updated for the *next* rebuild
+    (which happens on the next idle apply_thread_budget call) rather than
+    blocking active jobs for several seconds while sessions are recreated.
+    """
     global _onnx_thread_budget
     # Divide budget across pool so total threads never exceeds n_threads.
-    # e.g. budget=16, pool=16 → 1 thread/session (16 total, not 256).
     target_threads = max(1, int(n_threads) // DETECTOR_POOL_SIZE)
+    if target_threads == _onnx_thread_budget:
+        return
+
     if _pool_semaphore is None and not _detector_pool:
         _onnx_thread_budget = target_threads
         return
 
     if _pool_semaphore is not None:
-        # Drain all leases so no thread is running inference during recreation.
+        # Try to acquire all slots non-blocking.  If any are held by active
+        # inference we skip the session rebuild this time — the budget variable
+        # is updated so the next idle call will pick it up.
+        acquired = 0
         for _ in range(DETECTOR_POOL_SIZE):
-            _pool_semaphore.acquire()
+            if _pool_semaphore.acquire(blocking=False):
+                acquired += 1
+            else:
+                break
 
-    with _pool_lock:
-        _onnx_thread_budget = target_threads
-        _rebuild_pool_locked()
-        logger.info(f"SCRFD thread budget updated to {_onnx_thread_budget}")
+        if acquired < DETECTOR_POOL_SIZE:
+            # Pool busy — release what we grabbed and defer the rebuild.
+            for _ in range(acquired):
+                _pool_semaphore.release()
+            _onnx_thread_budget = target_threads
+            logger.info(f"SCRFD pool busy — thread budget deferred to {_onnx_thread_budget}")
+            return
+
+        # All slots acquired (pool idle) — safe to rebuild without blocking callers.
+        with _pool_lock:
+            _onnx_thread_budget = target_threads
+            _rebuild_pool_locked()
+            logger.info(f"SCRFD thread budget updated to {_onnx_thread_budget}")
 
 
 class _DetectorLease:
