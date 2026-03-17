@@ -32,6 +32,7 @@ The backend was implemented with FastAPI to align with the original architecture
 - [Backend Features](#backend-features)
 - [Tech Stack](#tech-stack)
 - [Deployment](#deployment)
+- [Architecture Diagram](#architecture-diagram)
 - [Project Structure](#project-structure)
 - [Docker Tips](#docker-tips)
 - [Troubleshooting](#troubleshooting)
@@ -243,7 +244,13 @@ The production deployment runs on two AWS EC2 instances behind an **Application 
  
 ---
 
+## Architecture Diagram
+![img.png](public/Architecture_diagram.png)
+
 ## Project Structure
+
+
+---
 
 ```
 BlurThatGuyProject/
