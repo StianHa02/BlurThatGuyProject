@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
 import { Navbar, FeatureCard, Footer, BackgroundBlobs } from './components';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const FEATURES = [
 	{
@@ -49,12 +49,79 @@ const BENEFITS = [
 
 export default function Home() {
 	const [scrolled, setScrolled] = useState(false);
+	const heroRef = useRef<HTMLDivElement>(null);
+	const howItWorksRef = useRef<HTMLElement>(null);
+
+	useEffect(() => {
+		// Reset hash on direct/reload hash entry so the page always starts on landing hero.
+		if (window.location.hash === '#how-it-works') {
+			const cleanUrl = `${window.location.pathname}${window.location.search}`;
+			window.history.replaceState(null, '', cleanUrl);
+			window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+		}
+	}, []);
 
 	useEffect(() => {
 		const handleScroll = () => setScrolled(window.scrollY > 50);
 		window.addEventListener('scroll', handleScroll, { passive: true });
 		return () => window.removeEventListener('scroll', handleScroll);
 	}, []);
+
+	useEffect(() => {
+		const hero = heroRef.current;
+		const howItWorks = howItWorksRef.current;
+		if (!hero || !howItWorks) return;
+
+		let heroVisible = false;
+		let howItWorksVisible = false;
+
+		const syncHash = () => {
+			const cleanUrl = `${window.location.pathname}${window.location.search}`;
+			if (howItWorksVisible) {
+				if (window.location.hash !== '#how-it-works') {
+					window.history.replaceState(null, '', `${cleanUrl}#how-it-works`);
+				}
+				return;
+			}
+
+			if (heroVisible && window.location.hash === '#how-it-works') {
+				window.history.replaceState(null, '', cleanUrl);
+			}
+		};
+
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.target === hero) {
+						heroVisible = entry.isIntersecting && entry.intersectionRatio >= 0.55;
+					}
+					if (entry.target === howItWorks) {
+						howItWorksVisible = entry.isIntersecting && entry.intersectionRatio >= 0.45;
+					}
+				}
+				syncHash();
+			},
+			{ threshold: [0, 0.45, 0.55, 1] }
+		);
+
+		observer.observe(hero);
+		observer.observe(howItWorks);
+
+		return () => observer.disconnect();
+	}, []);
+
+	const scrollToHowItWorks = (event: React.MouseEvent<HTMLAnchorElement>) => {
+		event.preventDefault();
+
+		const target = howItWorksRef.current;
+		if (!target) return;
+
+		const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+		target.scrollIntoView({ behavior, block: 'start' });
+
+		const cleanUrl = `${window.location.pathname}${window.location.search}`;
+		window.history.replaceState(null, '', `${cleanUrl}#how-it-works`);
+	};
 
 	return (
 		<div className="bg-[#070f1c] text-white">
@@ -63,7 +130,7 @@ export default function Home() {
 			<BackgroundBlobs />
 
 			{/* ================= HERO ================= */}
-			<div className="relative min-h-svh flex items-center justify-center overflow-hidden">
+			<div ref={heroRef} className="relative min-h-svh flex items-center justify-center overflow-hidden">
 
 				{/* Navbar */}
 				<div className="absolute top-0 left-0 w-full z-20">
@@ -106,6 +173,7 @@ export default function Home() {
 
 							<Link
 								href="/#how-it-works"
+								onClick={scrollToHowItWorks}
 								className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all font-medium backdrop-blur-sm"
 							>
 								Learn More
@@ -138,6 +206,7 @@ export default function Home() {
 				>
 					<Link
 						href="/#how-it-works"
+						onClick={scrollToHowItWorks}
 						className="flex flex-col items-center gap-2 text-slate-600 hover:text-slate-300 transition-colors"
 					>
 						<span className="text-xs font-medium tracking-widest uppercase">Scroll</span>
@@ -152,6 +221,7 @@ export default function Home() {
 			<div className="relative flex flex-col min-h-svh">
 				<section
 					id="how-it-works"
+					ref={howItWorksRef}
 					className="flex-1 flex flex-col items-center justify-center px-6 py-16 relative z-10"
 				>
 					<div className="max-w-7xl mx-auto w-full flex flex-col items-center">
