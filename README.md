@@ -19,9 +19,14 @@ The backend was implemented with FastAPI to align with the original architecture
 ---
 
 ## Learning Outcomes
-- Familiarized with FastAPI
-- Familiarized with AWS and deployment options
-- Tied together frontend and backend through APIs
+- ***Cloud Architecture:*** Implemented a "shared-nothing" design where each node runs its own local Redis and storage. (To comply with the requirements)
+
+- ***Full-Stack Integration:*** Connected a containerized Next.js frontend to a FastAPI backend.
+
+- ***AWS Scaling:*** Scaled the app across multiple EC2 nodes to handle more users simultaneously.
+
+- ***Traffic Management:*** Used an AWS Load Balancer with Sticky Sessions to keep user data synced to specific nodes.
+
 
 ---
 
@@ -141,7 +146,11 @@ REDIS_URL=redis://localhost:6379
 
 ### Production Deployment
 
+> **Note:** Remove the environment section in docker-compose.yml for production and point environment variables to the .env files.
+
+
 **Frontend** (`.env.prod`):
+
 ```bash
 API_URL=http://backend:8000
 API_KEY=your-secure-random-api-key-here
@@ -165,20 +174,20 @@ REDIS_URL=redis://redis:6379
 
 ## How to Use
 
-1. **Upload Video** — drag & drop or click to upload. Supported: MP4, WebM, MOV.
+1. **Upload Video:**  drag & drop or click to upload. Supported: MP4, WebM, MOV.
 
-2. **Detect Faces** — click Start Detection. The AI scans through your video, detects all faces, tracks them across frames, and re-identifies the same person across scene cuts. A 15-minute video at the default sample rate takes roughly 2 minutes to process.
+2. **Detect Faces:**  click Start Detection. The AI scans through your video, detects all faces, tracks them across frames, and re-identifies the same person across scene cuts. A 15-minute video at the default sample rate takes roughly 2 minutes to process.
 
-3. **Select Faces to Blur** — play the video and click faces with red frames, or select from the face gallery. Selected faces appear pixelated in real time.
+3. **Select Faces to Blur:**  play the video and click faces with red frames, or select from the face gallery. Selected faces appear pixelated in real time.
 
-4. **Download** — click Download Video. The processed file is encoded with selected faces permanently blurred.
+4. **Download:**  click Download Video. The processed file is encoded with selected faces permanently blurred.
 
 ---
 
 ## Backend Features
 
 ### Face Detection
-Uses **SCRFD-2.5G** (`scrfd_2.5g.onnx`) — a lightweight ONNX model optimised for CPU. Runs inference on sampled frames at a configurable rate (default: every 3rd frame). Detects bounding boxes and 5-point facial landmarks per crop. Frames are decoded via ffmpeg for speed, with an OpenCV fallback.
+Uses **SCRFD-2.5G** (`scrfd_2.5g.onnx`), A lightweight ONNX model optimised for CPU. Runs inference on sampled frames at a configurable rate (default: every 3rd frame). Detects 5 facial keypoits per crop. Frames are decoded via ffmpeg for speed, with an OpenCV fallback.
 
 ### Face Tracking
 Builds continuous face tracks across frames using IoU-based assignment. Detects scene cuts via mean absolute difference on downscaled thumbnails and resets track state at hard transitions, preventing identity bleed. Handles occlusion and brief disappearances.
@@ -187,9 +196,7 @@ Builds continuous face tracks across frames using IoU-based assignment. Detects 
 Uses **ArcFace** (`w600k_r50.onnx` preferred, `w600k_mbf.onnx` as fallback) to generate 512-dimensional L2-normalised identity vectors per face crop. Merges fragmented tracks across scene cuts by cosine similarity with a union-find algorithm. Includes quality gates: blur rejection (Laplacian variance), profile angle rejection (landmark geometry), and an incremental drift-aware centroid that rejects embeddings inconsistent with the track's running identity.
 
 ### Job Queue
-Built on **Redis** with a 2-concurrent-job limit. A third user uploading while two jobs are running is placed in a FIFO waiting queue and shown their position in the UI. When a slot frees — either naturally on completion or immediately on cancel — the next waiter is promoted and begins processing. Thread budget is split evenly across active jobs so two concurrent users each get half the available CPU rather than competing.
-
-Cancellation is **cooperative**: when a user navigates away, reloads, or clicks Upload New, the frontend fires a cancel request via `POST /job/{jobId}/cancel`. The backend sets a cancellation flag that the running job checks at each frame loop iteration, before tracking, and before ReID — stopping within milliseconds at the next natural checkpoint rather than running to completion.
+Built on **Redis** with a 2-concurrent-job limit. A third user uploading while two jobs are running is placed in a FIFO waiting queue and shown their position in the UI. When a slot frees, either naturally on completion or immediately on cancel, the next waiter is promoted and begins processing. Thread budget is split evenly across active jobs so two concurrent users each get half the available CPU rather than competing.
 
 ### Export & Blur Rendering
 Pixelation (or blackout) applied exclusively to selected track IDs. Rendered via ffmpeg with hardware encoder detection (nvenc → amf → videotoolbox → qsv → libx264 fallback). Export progress streamed back to the client as NDJSON.
@@ -215,38 +222,38 @@ Built with **FastAPI + Uvicorn**. Detection results stream as NDJSON for real-ti
 
 **Backend:** Python 3.11, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis (via redis-py)
 
-**ML Models:**
-- Face detection: `scrfd_2.5g.onnx` (SCRFD-2.5G)
-- Face re-identification: `w600k_r50.onnx` (ArcFace ResNet-50, preferred) / `w600k_mbf.onnx` (MobileFaceNet, fallback)
-
-**Infra:** Docker + Docker Compose, AWS EC2 (c7i — Intel Sapphire Rapids with AVX-512), nginx (reverse proxy), GitHub Actions (CI/CD)
+**Infra:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD)
 
 ---
 
  
 ## Deployment
- 
-The production deployment runs on two AWS EC2 instances behind an **Application Load Balancer (ALB)**:
- 
-| Node | Instance | Role |
-|------|----------|------|
-| Primary | `c7i.8xlarge` — 32 vCPU, Intel Sapphire Rapids | Handles all traffic by default |
-| Secondary | `c7i-flex.large` — 2 vCPU | Overflow when primary is busy |
- 
-**Traffic routing** uses ALB's Least Outstanding Requests algorithm — new requests go to whichever node has fewer active jobs. With a 32-core primary and a 2-core secondary, the primary naturally absorbs the vast majority of traffic due to faster job completion.
- 
-**TLS** is terminated at the ALB using an AWS Certificate Manager cert that auto-renews. Each EC2 runs nginx as a reverse proxy to the Docker containers on port 80.
- 
-**Infrastructure:**
-- ALB → nginx (port 80) → Next.js frontend (port 3000) + FastAPI backend (port 8000)
-- Redis runs as a sidecar container on each node for job queue state
-- EC2 security groups restrict port 80 to ALB only — direct IP access is blocked
- 
+
+The production environment is architected for high-performance video processing and both vertical and horizontal scalability, utilizing a multi-node AWS EC2 footprint.
+
+### Infrastructure Overview
+The application runs on two independent EC2 instances situated behind an **Application Load Balancer (ALB)**:
+
+| Node | Instance Type | Role | Key Specifications |
+| :--- | :--- | :--- | :--- |
+| **Primary** | `c7i.8xlarge` | Primary Compute | 32 vCPU, Intel Sapphire Rapids |
+| **Secondary** | `c7i-flex.large` | Burst Overflow | 2 vCPU, Cost-optimized |
+
+### Traffic Orchestration
+* **Routing Algorithm:** The ALB utilizes the **Least Outstanding Requests** algorithm. This ensures that new jobs are automatically sent to the node with the lowest active workload. Due to the high core count of the Primary node, it naturally absorbs the majority of traffic by completing jobs faster.
+* **Session Persistence (Sticky Sessions):** To maintain the integrity of local state, **Sticky Sessions** are enabled at the ALB level. This ensures that once a user starts an upload, all subsequent requests for detection and blurring are pinned to the specific node holding their local video files and Redis task state.
+
+### Scalability & Architecture
+* **Shared-Nothing Design:** Each node operates as a self-contained "island" with its own local Redis instance and dedicated storage. This architectural choice ensures that there is no centralized database bottleneck or network storage latency.
+* **Linear Scaling:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
+* **CI/CD Pipeline:** Automated deployments are managed via **GitHub Actions**. The pipeline performs health checks on the frontend and backend containers before using SSH to remotly deploy the application.
+
 ---
 
-## Architecture Diagram
-![img.png](public/Architecture_diagram.png)
 
+## Architecture Diagram
+
+![img.png](public/system_architecture.png)
 ---
 
 ## Project Structure
