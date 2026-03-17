@@ -142,27 +142,26 @@ export default function Home() {
 					<div className="text-center max-w-4xl mx-auto">
 
 						{/* Badge */}
-						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/25 text-blue-300 text-xs sm:text-sm font-medium mb-4 sm:mb-6 backdrop-blur-sm">
+						<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/25 text-blue-300 text-xs sm:text-sm font-medium mb-8 sm:mb-10 backdrop-blur-sm">
 							<Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
 							Privacy-First Video Processing
 						</div>
 
 						{/* Headline */}
-						<h1 className="font-bold tracking-tight mb-4 leading-tight">
+						<h1 className="font-bold tracking-tight mb-6 sm:mb-8 leading-tight">
 							<span className="text-6xl sm:text-7xl md:text-8xl block font-nippo bg-linear-to-b from-white via-white to-blue-200 bg-clip-text text-transparent">
 								BLUR THAT GUY
 							</span>
 						</h1>
 
 						{/* Subheadline */}
-						<p className="text-sm sm:text-lg text-slate-400 mb-8 max-w-2xl mx-auto leading-relaxed">
-							AI-powered face detection and selective blurring built with OpenCV.
-							<br />
-							Processed securely with end-to-end encryption.
+						<p className="text-sm sm:text-lg text-slate-400 mb-10 sm:mb-12 max-w-2xl mx-auto leading-relaxed">
+							Automatic face detection. Selective blurring. Your sources stay anonymous.
+
 						</p>
 
 						{/* CTA Buttons */}
-						<div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+						<div className="flex flex-col sm:flex-row gap-4 justify-center mb-12 sm:mb-14">
 							<Link
 								href="/upload"
 								className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 transition-all font-semibold text-white shadow-lg shadow-blue-600/30 hover:shadow-blue-500/40"
