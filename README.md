@@ -3,6 +3,8 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
+![CI Pipeline](https://github.com/StianHa02/BlurThatGuyProject/actions/workflows/ci.yml/badge.svg)
+![CD Pipeline](https://github.com/StianHa02/BlurThatGuyProject/actions/workflows/cd.yml/badge.svg)
 
 > A coding challenge submission for FONN Group and Mimir.
 ---
