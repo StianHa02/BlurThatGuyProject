@@ -247,10 +247,9 @@ The production deployment runs on two AWS EC2 instances behind an **Application 
 ## Architecture Diagram
 ![img.png](public/Architecture_diagram.png)
 
-## Project Structure
-
-
 ---
+
+## Project Structure
 
 ```
 BlurThatGuyProject/
