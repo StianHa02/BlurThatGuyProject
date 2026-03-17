@@ -25,6 +25,13 @@ server {
     proxy_read_timeout 900;
     proxy_connect_timeout 900;
     proxy_send_timeout 900;
+    
+    # Route health checks directly to the FastAPI backend
+    location = /health {
+        proxy_pass http://localhost:8000/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
 
     location / {
         proxy_pass http://localhost:3000;

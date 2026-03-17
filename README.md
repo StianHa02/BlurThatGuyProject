@@ -31,6 +31,7 @@ The backend was implemented with FastAPI to align with the original architecture
 - [How to Use](#how-to-use)
 - [Backend Features](#backend-features)
 - [Tech Stack](#tech-stack)
+- [Deployment](#deployment)
 - [Project Structure](#project-structure)
 - [Docker Tips](#docker-tips)
 - [Troubleshooting](#troubleshooting)
@@ -219,6 +220,27 @@ Built with **FastAPI + Uvicorn**. Detection results stream as NDJSON for real-ti
 
 **Infra:** Docker + Docker Compose, AWS EC2 (c7i — Intel Sapphire Rapids with AVX-512), nginx (reverse proxy), GitHub Actions (CI/CD)
 
+---
+
+ 
+## Deployment
+ 
+The production deployment runs on two AWS EC2 instances behind an **Application Load Balancer (ALB)**:
+ 
+| Node | Instance | Role |
+|------|----------|------|
+| Primary | `c7i.8xlarge` — 32 vCPU, Intel Sapphire Rapids | Handles all traffic by default |
+| Secondary | `c7i-flex.large` — 2 vCPU | Overflow when primary is busy |
+ 
+**Traffic routing** uses ALB's Least Outstanding Requests algorithm — new requests go to whichever node has fewer active jobs. With a 32-core primary and a 2-core secondary, the primary naturally absorbs the vast majority of traffic due to faster job completion.
+ 
+**TLS** is terminated at the ALB using an AWS Certificate Manager cert that auto-renews. Each EC2 runs nginx as a reverse proxy to the Docker containers on port 80.
+ 
+**Infrastructure:**
+- ALB → nginx (port 80) → Next.js frontend (port 3000) + FastAPI backend (port 8000)
+- Redis runs as a sidecar container on each node for job queue state
+- EC2 security groups restrict port 80 to ALB only — direct IP access is blocked
+ 
 ---
 
 ## Project Structure
