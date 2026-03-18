@@ -225,18 +225,18 @@ The system was initially designed with a split deployment model:
 - Frontend hosted separately (Vercel)
 - Backend hosted on AWS EC2
 
-During development, large video payloads exposed limitations with this approach, which required upgrading to upgrade the Vercel plan.
+During development, large video payloads exposed limitations with this approach, which required upgrade the Vercel plan.
 
 To avoid these constraints and simplify deployment, I chose co-locating both frontend and backend on the same EC2 nodes.
 
-Since the backend is designed as a standalone API, it can still be deployed independently from the frontend, with API key authentication enabling secure communication between services.
+Since the backend is designed as a standalone API, it can still be deployed independently of the frontend, with API key authentication enabling secure communication between services.
 
 ---
 
 ## Backend Features
 
 ### Face Detection
-Uses **SCRFD-2.5G** (`scrfd_2.5g.onnx`), A lightweight ONNX model optimised for CPU. Runs inference on sampled frames at a configurable rate (default: every 3rd frame). Detects 5 facial keypoits per crop. Frames are decoded via ffmpeg for speed, with an OpenCV fallback.
+Uses **SCRFD-2.5G** (`scrfd_2.5g.onnx`), A lightweight ONNX model optimised for CPU. Runs inference on sampled frames at a configurable rate (default: every 3rd frame). Detects 5 facial keypoints per crop. Frames are decoded via ffmpeg for speed, with an OpenCV fallback.
 
 ### Face Tracking
 Builds continuous face tracks across frames using IoU-based assignment. Detects scene cuts via mean absolute difference on downscaled thumbnails and resets track state at hard transitions, preventing identity bleed. Handles occlusion and brief disappearances.
@@ -284,7 +284,7 @@ The application runs on two independent EC2 instances situated behind an **Appli
 ### Scalability & Architecture
 * **Shared-Nothing Design:** Each node operates as a self-contained "island" with its own local Redis instance and dedicated storage. This architectural choice ensures that there is no centralized database bottleneck or network storage latency.
 * **Linear Scaling:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
-* **CI/CD Pipeline:** Automated deployments are managed via **GitHub Actions**. The pipeline performs health checks on the frontend and backend containers before using SSH to remotly deploy the application.
+* **CI/CD Pipeline:** Automated deployments are managed via **GitHub Actions**. The pipeline performs health checks on the frontend and backend containers before using SSH to remotely deploy the application.
 
 ---
 
@@ -341,7 +341,7 @@ BlurThatGuyProject/
 │   ├── auth.py
 │   ├── requirements.txt
 │   └── models/                       # ONNX models 
-├── docker-compose.yml                # Dockwer Compose for production deployment
+├── docker-compose.yml                # Docker Compose for production deployment
 ├── docker-compose.dev.yml            # Docker Compose for local development with hot reload
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
