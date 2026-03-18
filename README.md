@@ -14,10 +14,6 @@
 
 As part of this coding challenge, I wanted to specialize in **frontend** and **infrastructure** using React/Next.js and deploying AWS EC2.
 
-The application was initially developed with a backend hosted on EC2 and a frontend deployed on Vercel. However, due to payload size limitations, I chose to deploy both the frontend and backend on AWS EC2.
-
-The backend was implemented with FastAPI to align with the original architecture and ensure efficient, scalable API development.
-
 ---
 
 ## Learning Outcomes
@@ -36,8 +32,9 @@ The backend was implemented with FastAPI to align with the original architecture
 - [Quick Start](#quick-start)
 - [Environment Configuration](#environment-configuration)
 - [How to Use](#how-to-use)
-- [Backend Features](#backend-features)
 - [Tech Stack](#tech-stack)
+- [Design rationale](#design-rationale)
+- [Backend Features](#backend-features)
 - [Deployment](#deployment)
 - [Architecture Diagram](#architecture-diagram)
 - [Project Structure](#project-structure)
@@ -130,7 +127,7 @@ Open [http://localhost:3000](http://localhost:3000)
 **Frontend** (`.env.local` in project root):
 ```bash
 API_URL=http://localhost:8000
-API_KEY=
+API_KEY=""
 ```
 
 **Backend** (`backend/.env.local`):
@@ -138,6 +135,9 @@ API_KEY=
 DEV_MODE=true
 ALLOWED_ORIGINS=http://localhost:3000
 REDIS_URL=redis://localhost:6379
+
+#Optional: API key for production testing. Can be left blank in development.
+#API_KEY=""
 
 # Optional: limit upload size in MB. Omit for no limit.
 # MAX_UPLOAD_SIZE_MB=500
@@ -174,6 +174,7 @@ REDIS_URL=redis://redis:6379
 
 ---
 
+
 ## How to Use
 
 1. **Upload Video:**  drag & drop or click to upload. Supported: MP4, WebM, MOV.
@@ -183,6 +184,52 @@ REDIS_URL=redis://redis:6379
 3. **Select Faces to Blur:**  play the video and click faces with red frames, or select from the face gallery. Selected faces appear pixelated in real time.
 
 4. **Download:**  click Download Video. The processed file is encoded with selected faces permanently blurred.
+
+---
+
+## Tech Stack
+
+**Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS, Framer Motion, Lucide React <br/>
+**Backend:** Python, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis (via redis-py)<br/>
+**Infrastructure:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD)
+
+---
+
+## Design rationale
+
+This system uses a shared-nothing architecture with sticky sessions.
+
+This choice was intentional due to the challenge constraints:
+- The system must run locally without external services
+- It must be portable across environments
+- It should scale across multiple machines if needed
+
+By keeping each node self-contained (local Redis + storage), the system:
+- Remains fully offline-compatible
+- Avoids external dependencies
+- Supports horizontal scaling by simply adding more nodes
+
+Tradeoff:
+- Node-local state means jobs are not fault-tolerant across node failures
+- The load balancer cannot see per-node queue lengths, so it cannot route users to the node with the shortest queue
+
+In a production cloud system, this would likely be replaced with:
+- Shared object storage (e.g., AWS S3 bucket)
+- Stateless workers
+- Centralized queue in a shared cache (e.g., AWS ElastiCache)
+---
+
+### Deployment Considerations
+
+The system was initially designed with a split deployment model:
+- Frontend hosted separately (Vercel)
+- Backend hosted on AWS EC2
+
+During development, large video payloads exposed limitations with this approach, which required upgrading to upgrade the Vercel plan.
+
+To avoid these constraints and simplify deployment, I chose co-locating both frontend and backend on the same EC2 nodes.
+
+Since the backend is designed as a standalone API, it can still be deployed independently from the frontend, with API key authentication enabling secure communication between services.
 
 ---
 
@@ -218,17 +265,6 @@ Built with **FastAPI + Uvicorn**. Detection results stream as NDJSON for real-ti
 
 ---
 
-## Tech Stack
-
-**Frontend:** Next.js 16 (App Router), React 19, TypeScript 5, Tailwind CSS 4, Framer Motion, Lucide React
-
-**Backend:** Python 3.11, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis (via redis-py)
-
-**Infra:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD)
-
----
-
- 
 ## Deployment
 
 The production environment is architected for high-performance video processing and both vertical and horizontal scalability, utilizing a multi-node AWS EC2 footprint.
@@ -256,6 +292,7 @@ The application runs on two independent EC2 instances situated behind an **Appli
 ## Architecture Diagram
 
 ![img.png](public/system_architecture.png)
+
 ---
 
 ## Project Structure
