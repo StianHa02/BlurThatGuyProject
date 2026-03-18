@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
 import { Navbar, FeatureCard, Footer, BackgroundBlobs } from './components';
 import { useEffect, useRef, useState } from 'react';
+import { useLandingHashSync } from './hooks/useLandingHashSync';
 
 const FEATURES = [
 	{
@@ -51,6 +52,7 @@ export default function Home() {
 	const [scrolled, setScrolled] = useState(false);
 	const heroRef = useRef<HTMLDivElement>(null);
 	const howItWorksRef = useRef<HTMLElement>(null);
+	useLandingHashSync(heroRef, howItWorksRef);
 
 	useEffect(() => {
 		// Reset hash on direct/reload hash entry so the page always starts on landing hero.
@@ -65,49 +67,6 @@ export default function Home() {
 		const handleScroll = () => setScrolled(window.scrollY > 50);
 		window.addEventListener('scroll', handleScroll, { passive: true });
 		return () => window.removeEventListener('scroll', handleScroll);
-	}, []);
-
-	useEffect(() => {
-		const hero = heroRef.current;
-		const howItWorks = howItWorksRef.current;
-		if (!hero || !howItWorks) return;
-
-		let heroVisible = false;
-		let howItWorksVisible = false;
-
-		const syncHash = () => {
-			const cleanUrl = `${window.location.pathname}${window.location.search}`;
-			if (howItWorksVisible) {
-				if (window.location.hash !== '#how-it-works') {
-					window.history.replaceState(null, '', `${cleanUrl}#how-it-works`);
-				}
-				return;
-			}
-
-			if (heroVisible && window.location.hash === '#how-it-works') {
-				window.history.replaceState(null, '', cleanUrl);
-			}
-		};
-
-		const observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					if (entry.target === hero) {
-						heroVisible = entry.isIntersecting && entry.intersectionRatio >= 0.55;
-					}
-					if (entry.target === howItWorks) {
-						howItWorksVisible = entry.isIntersecting && entry.intersectionRatio >= 0.45;
-					}
-				}
-				syncHash();
-			},
-			{ threshold: [0, 0.45, 0.55, 1] }
-		);
-
-		observer.observe(hero);
-		observer.observe(howItWorks);
-
-		return () => observer.disconnect();
 	}, []);
 
 	const scrollToHowItWorks = (event: React.MouseEvent<HTMLAnchorElement>) => {
