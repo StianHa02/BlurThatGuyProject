@@ -131,25 +131,28 @@ export function FaceGallery({
   return (
     <div>
       {/* Header row */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+      <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:gap-3">
         <h3 className="text-lg font-semibold text-white shrink-0">
           All Detected Faces ({tracks.length})
           {loading && <span className="text-sm text-slate-500 ml-2 font-normal">(Loading thumbnails...)</span>}
         </h3>
 
-        <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
-          <button
-            onClick={onSelectAll}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            <UserX className="w-3.5 h-3.5" /> Blur All
-          </button>
-          <button
-            onClick={onDeselectAll}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
-          >
-            <Eye className="w-3.5 h-3.5" /> Clear
-          </button>
+        {/* Controls: on mobile two rows — [Blur All + Clear] on top, [BlurModeToggle] below */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:ml-auto sm:gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onSelectAll}
+              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <UserX className="w-3.5 h-3.5 shrink-0" /> Blur All
+            </button>
+            <button
+              onClick={onDeselectAll}
+              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <Eye className="w-3.5 h-3.5 shrink-0" /> Clear
+            </button>
+          </div>
           <BlurModeToggle value={blurMode} onChange={onBlurModeChange} />
         </div>
       </div>

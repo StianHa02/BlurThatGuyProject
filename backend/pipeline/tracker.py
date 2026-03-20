@@ -278,13 +278,41 @@ def _precompute_track_lookups(
 ) -> list[dict]:
     """Build a list of {frameIndex: frame_entry} dicts, one per track.
 
-    This allows O(1) lookup during the export loop to check whether a given
-    frame index has a detection for each selected track.
+    Frames between sampled detections are filled with linearly interpolated
+    bounding boxes so that blur is continuous rather than flickering on/off
+    at the detection sample rate.
     """
     lookups: list[dict] = []
     for frames in tracks_frames:
         lu: dict[int, dict] = {}
-        for f in frames:
+        if not frames:
+            lookups.append(lu)
+            continue
+
+        sorted_frames = sorted(frames, key=lambda f: f["frameIndex"])
+
+        # Exact entries
+        for f in sorted_frames:
             lu[f["frameIndex"]] = f
+
+        # Interpolate bboxes between consecutive detections
+        for i in range(len(sorted_frames) - 1):
+            f0 = sorted_frames[i]
+            f1 = sorted_frames[i + 1]
+            fi0 = f0["frameIndex"]
+            fi1 = f1["frameIndex"]
+            if fi1 - fi0 <= 1:
+                continue
+            b0 = f0["bbox"]
+            b1 = f1["bbox"]
+            span = fi1 - fi0
+            for fi in range(fi0 + 1, fi1):
+                t = (fi - fi0) / span
+                lu[fi] = {
+                    "frameIndex": fi,
+                    "bbox": [b0[j] + t * (b1[j] - b0[j]) for j in range(4)],
+                    "score": f0["score"],
+                }
+
         lookups.append(lu)
     return lookups

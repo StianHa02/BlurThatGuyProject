@@ -109,7 +109,7 @@ export default function MyVideosPage() {
                         </div>
                         <h2 className="text-xl font-bold text-white mb-2">No videos yet</h2>
                         <p className="text-slate-400 text-sm max-w-xs mb-6">
-                            Process a video and click "Save Video" to store it here.
+                            Process a video and click &quot;Save Video&quot; to store it here.
                         </p>
                         <Link
                             href="/upload"

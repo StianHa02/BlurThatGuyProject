@@ -274,40 +274,42 @@ export default function UploadPage() {
         {/* ===== SELECT STEP ===== */}
         {currentStep === 'select' && upload.fileUrl && (
           <div className="max-w-6xl mx-auto w-full">
-            {/* ── Toolbar: stats + Upload New File + Save Video ── */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
-              {/* Stats pill */}
-              <div className="flex items-stretch rounded-xl border border-white/10 bg-white/5 overflow-hidden text-xs sm:text-sm divide-x divide-white/10 shrink-0">
-                <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 text-slate-300">
-                  <Users className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-slate-400 shrink-0" />
-                  <span><strong className="text-white font-semibold">{detection.tracks.length}</strong> detected</span>
+            {/* ── Toolbar: stats + actions ── */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+              {/* Stats pill — single rounded container, each segment colored */}
+              <div className="flex w-full sm:w-fit items-stretch rounded-2xl overflow-hidden border border-white/10 shrink-0 text-xs font-semibold">
+                <div className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 bg-slate-700 text-slate-100">
+                  <Users className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  <span><strong>{detection.tracks.length}</strong> detected</span>
                 </div>
-                <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 text-slate-300">
-                  <EyeOff className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-blue-400 shrink-0" />
-                  <span><strong className="text-blue-300 font-semibold">{detection.selectedTrackIds.length}</strong> blurred</span>
+                <div className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 bg-red-600 text-white">
+                  <EyeOff className="w-3.5 h-3.5 shrink-0" />
+                  <span><strong>{detection.selectedTrackIds.length}</strong> blurred</span>
                 </div>
-                <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 text-slate-300">
-                  <Eye className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-emerald-400 shrink-0" />
-                  <span><strong className="text-emerald-300 font-semibold">{detection.tracks.length - detection.selectedTrackIds.length}</strong> visible</span>
+                <div className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 text-white">
+                  <Eye className="w-3.5 h-3.5 shrink-0" />
+                  <span><strong>{detection.tracks.length - detection.selectedTrackIds.length}</strong> visible</span>
                 </div>
               </div>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+
+              {/* Actions — full width on mobile so it aligns with the pill above */}
+              <div className="flex w-full sm:w-auto items-center gap-2 justify-between sm:justify-end">
+                {/* Upload new file — neutral */}
                 <button
                   onClick={handleReset}
-                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium text-sm transition-all cursor-pointer"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 border border-slate-500/40 text-white font-semibold text-sm transition-colors cursor-pointer"
                 >
                   <UploadIcon className="w-4 h-4" />
                   <span className="hidden sm:inline">Upload new file</span>
                   <span className="sm:hidden">New file</span>
                 </button>
 
-                {/* Download */}
+                {/* Download — ghost with emerald text */}
                 <button
                   onClick={() => exportHook.exportVideo()}
                   disabled={exportHook.exporting || exportHook.saving || detection.selectedTrackIds.length === 0}
-                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium text-sm transition-all cursor-pointer relative overflow-hidden"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden"
                 >
                   {exportHook.exporting && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.exportProgress}%` }} />}
                   <span className="relative flex items-center gap-2">
@@ -318,7 +320,7 @@ export default function UploadPage() {
                   </span>
                 </button>
 
-                {/* Save Video */}
+                {/* Save Video — blue */}
                 <button
                   onClick={async () => {
                     setSaved(false);
@@ -326,7 +328,7 @@ export default function UploadPage() {
                     if (ok) setSaved(true);
                   }}
                   disabled={exportHook.saving || exportHook.exporting || detection.selectedTrackIds.length === 0}
-                  className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden"
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden"
                 >
                   {exportHook.saving && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.saveProgress}%` }} />}
                   <span className="relative flex items-center gap-2">

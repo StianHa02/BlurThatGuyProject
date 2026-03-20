@@ -20,7 +20,7 @@ export function BlurModeToggle({ value, onChange }: BlurModeToggleProps) {
 
   return (
     <LayoutGroup>
-      <div className="flex items-center rounded-xl border border-white/10 overflow-hidden text-xs sm:text-sm shrink-0">
+      <div className="flex w-full sm:w-auto items-center rounded-xl border border-white/10 overflow-hidden text-xs sm:text-sm shrink-0">
         {OPTIONS.map(({ mode, label, Icon }) => {
           const isActive = value === mode;
 
@@ -28,7 +28,7 @@ export function BlurModeToggle({ value, onChange }: BlurModeToggleProps) {
             <button
               key={mode}
               onClick={() => onChange(mode)}
-              className={`relative isolate flex items-center gap-1.5 px-3 py-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+              className={`relative isolate flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                 isActive
                   ? 'text-white'
                   : 'bg-white/5 hover:bg-white/10 text-slate-400'
