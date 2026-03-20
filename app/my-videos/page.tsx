@@ -10,10 +10,10 @@ import { BackgroundBlobs } from '@/app/(landing)/components';
 interface VideoRecord {
     id: string;
     filename: string;
-    s3_url: string;
     s3_key: string;
     file_size: number | null;
     created_at: string;
+    signedUrl: string;
 }
 
 function formatFileSize(bytes: number): string {
@@ -40,15 +40,13 @@ export default function MyVideosPage() {
                 router.push('/login');
                 return;
             }
-            const { data: rows, error: fetchError } = await supabase
-                .from('videos')
-                .select('*')
-                .order('created_at', { ascending: false });
 
-            if (fetchError) {
-                setError(fetchError.message);
+            const res = await fetch('/api/videos');
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                setError(body.error ?? 'Failed to load videos.');
             } else {
-                setVideos(rows ?? []);
+                setVideos(await res.json());
             }
             setLoading(false);
         });
@@ -130,7 +128,7 @@ export default function MyVideosPage() {
                                 {/* Video preview */}
                                 <div className="aspect-video bg-black relative">
                                     <video
-                                        src={video.s3_url}
+                                        src={video.signedUrl}
                                         className="w-full h-full object-contain"
                                         preload="metadata"
                                     />
@@ -149,7 +147,7 @@ export default function MyVideosPage() {
 
                                     <div className="flex gap-2">
                                         <a
-                                            href={video.s3_url}
+                                            href={video.signedUrl}
                                             download={video.filename}
                                             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium transition-all"
                                         >
