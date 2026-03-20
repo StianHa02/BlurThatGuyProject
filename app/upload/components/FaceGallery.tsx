@@ -1,8 +1,10 @@
 'use client';
 
 import Image from 'next/image';
-import { Check, Users } from 'lucide-react';
+import { Check, Users, UserX, Eye } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { BlurModeToggle } from './BlurModeToggle';
+import type { BlurMode } from './BlurModeToggle';
 
 export interface Track {
   id: number;
@@ -18,6 +20,10 @@ interface FaceGalleryProps {
   tracks: Track[];
   selectedTrackIds: number[];
   onToggleTrack: (trackId: number) => void;
+  onSelectAll: () => void;
+  onDeselectAll: () => void;
+  blurMode: BlurMode;
+  onBlurModeChange: (mode: BlurMode) => void;
   videoUrl: string;
   fps: number;
 }
@@ -26,6 +32,10 @@ export function FaceGallery({
   tracks,
   selectedTrackIds,
   onToggleTrack,
+  onSelectAll,
+  onDeselectAll,
+  blurMode,
+  onBlurModeChange,
   videoUrl,
   fps,
 }: FaceGalleryProps) {
@@ -120,12 +130,31 @@ export function FaceGallery({
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-4">
-        <h3 className="text-lg font-semibold text-white">
+      {/* Header row */}
+      <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:gap-3">
+        <h3 className="text-lg font-semibold text-white shrink-0">
           All Detected Faces ({tracks.length})
           {loading && <span className="text-sm text-slate-500 ml-2 font-normal">(Loading thumbnails...)</span>}
         </h3>
-        <p className="text-sm text-slate-500 shrink-0">Click to select / deselect</p>
+
+        {/* Controls: on mobile two rows — [Blur All + Clear] on top, [BlurModeToggle] below */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:ml-auto sm:gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onSelectAll}
+              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <UserX className="w-3.5 h-3.5 shrink-0" /> Blur All
+            </button>
+            <button
+              onClick={onDeselectAll}
+              className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-sm text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <Eye className="w-3.5 h-3.5 shrink-0" /> Clear
+            </button>
+          </div>
+          <BlurModeToggle value={blurMode} onChange={onBlurModeChange} />
+        </div>
       </div>
 
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-3">
@@ -181,7 +210,6 @@ export function FaceGallery({
                   {index + 1}
                 </div>
 
-                {/* Badge: number of scenes this identity spans */}
                 {(track.mergedFrom?.length ?? 1) > 1 && (
                   <div className="absolute bottom-1 right-1 px-1 rounded text-[9px] font-bold bg-teal-500/80 text-white backdrop-blur-sm leading-4">
                     {track.mergedFrom!.length}×

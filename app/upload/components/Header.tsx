@@ -1,26 +1,65 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, EyeOff, CheckCircle, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, EyeOff, CheckCircle, ChevronDown, Video, Settings, LogOut, LogIn } from 'lucide-react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import type { User } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client';
 
 type Step = 'upload' | 'detect' | 'select';
 
 interface HeaderProps {
-  currentStep: Step;
+  currentStep?: Step;
   onUploadNew?: () => void;
 }
 
 const STEPS: Step[] = ['upload', 'detect', 'select'];
+const userIntegration = process.env.NEXT_PUBLIC_USER_INTEGRATION === '1';
 
-export function Header({ currentStep, onUploadNew }: HeaderProps) {
-  const currentIndex = STEPS.indexOf(currentStep);
-  const showUploadNew = currentStep !== 'upload' && onUploadNew;
+export function Header({ currentStep }: HeaderProps) {
+  const router = useRouter();
+  const currentIndex = currentStep ? STEPS.indexOf(currentStep) : -1;
   const shouldReduceMotion = useReducedMotion();
+
+  const [user, setUser] = useState<User | null>(null);
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!userIntegration) return;
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setOpen(false);
+    router.push('/');
+  }
+
+  const initials = user?.email?.[0].toUpperCase() ?? '?';
+  const username = user?.user_metadata?.username as string | undefined;
 
   return (
     <header className="border-b border-white/8 bg-[#070f1c]/80 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+      <div className="px-6 py-4 flex items-center justify-between gap-4">
 
         {/* Home link */}
         <Link
@@ -40,7 +79,7 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
 
         {/* Step indicators */}
         <LayoutGroup>
-          <div className="hidden sm:flex items-center gap-1 flex-1 justify-center min-w-0">
+          <div className={`${currentStep ? 'hidden sm:flex' : 'hidden'} items-center gap-1 flex-1 justify-center min-w-0`}>
             {STEPS.map((step, i) => {
               const isCurrent = currentStep === step;
               const isComplete = i < currentIndex;
@@ -54,9 +93,7 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
                     animate={
                       shouldReduceMotion
                         ? { opacity: 1 }
-                        : {
-                            opacity: isPending ? 0.9 : 1,
-                          }
+                        : { opacity: isPending ? 0.9 : 1 }
                     }
                     transition={
                       shouldReduceMotion
@@ -135,19 +172,69 @@ export function Header({ currentStep, onUploadNew }: HeaderProps) {
           </div>
         </LayoutGroup>
 
-        {/* Upload new */}
-        <div className="w-40 shrink-0 flex justify-end">
-          {showUploadNew ? (
-            <button
-              type="button"
-              onClick={onUploadNew}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all shadow-lg shadow-blue-600/20 cursor-pointer"
-            >
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Upload new file</span>
-              <span className="sm:hidden">New file</span>
-            </button>
-          ) : null}
+        {/* Right side: user button or login */}
+        <div className={`${currentStep ? 'w-40 ' : ''}shrink-0 flex justify-end`}>
+          {userIntegration && (
+            user ? (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setOpen((o) => !o)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 transition-all"
+                >
+                  <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                    {initials}
+                  </div>
+                  {username && (
+                    <span className="max-w-[80px] truncate text-sm text-white">{username}</span>
+                  )}
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 shrink-0 ${open ? 'rotate-180' : ''}`} />
+                </button>
+
+                {open && (
+                  <div className="absolute right-0 mt-2 w-48 rounded-xl border border-white/10 bg-[#0e1a2b]/95 backdrop-blur-md shadow-xl overflow-hidden">
+                    <div className="px-3 py-2.5 border-b border-white/8">
+                      <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                    </div>
+                    <div className="p-1">
+                      <Link
+                        href="/my-videos"
+                        onClick={() => setOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/8 transition-all"
+                      >
+                        <Video className="w-4 h-4" />
+                        My Videos
+                      </Link>
+                      <Link
+                        href="/settings"
+                        onClick={() => setOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/8 transition-all"
+                      >
+                        <Settings className="w-4 h-4" />
+                        Settings
+                      </Link>
+                    </div>
+                    <div className="p-1 border-t border-white/8">
+                      <button
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-blue-300 hover:text-white border border-blue-500/30 hover:border-blue-400/60 bg-blue-500/10 hover:bg-blue-500/20 transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                Login
+              </Link>
+            )
+          )}
         </div>
       </div>
     </header>
