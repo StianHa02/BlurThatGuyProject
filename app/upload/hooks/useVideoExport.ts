@@ -139,7 +139,16 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
         body: blob,
         headers: { 'Content-Type': 'video/mp4' },
       });
-      if (!uploadRes.ok) throw new Error('Failed to upload to S3');
+      if (!uploadRes.ok) {
+        // S3 returns XML with the real error — surface it for easier debugging
+        const xml = await uploadRes.text().catch(() => '');
+        const match = xml.match(/<Message>(.*?)<\/Message>/);
+        const code  = xml.match(/<Code>(.*?)<\/Code>/);
+        const s3Msg = match?.[1] ?? `HTTP ${uploadRes.status}`;
+        const s3Code = code?.[1] ? ` (${code[1]})` : '';
+        console.error('S3 upload failed:', uploadRes.status, xml);
+        throw new Error(`S3 upload failed${s3Code}: ${s3Msg}`);
+      }
 
       // 5. Save metadata to Supabase (90–100)
       setSaveProgress(90);
@@ -148,7 +157,10 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, filename: saveFileName, fileSize: blob.size }),
       });
-      if (!saveRes.ok) throw new Error('Failed to save video metadata');
+      if (!saveRes.ok) {
+        const err = await saveRes.json().catch(() => ({}));
+        throw new Error(`Failed to save video metadata: ${err.error ?? saveRes.status}`);
+      }
 
       setSaveProgress(100);
       return true;

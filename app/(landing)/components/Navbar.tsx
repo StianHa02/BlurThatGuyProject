@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { EyeOff, ExternalLink, LogIn, User, Video, Settings, LogOut, ChevronDown } from 'lucide-react';
+import { EyeOff, ExternalLink, LogIn, Video, Settings, LogOut, ChevronDown } from 'lucide-react';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 

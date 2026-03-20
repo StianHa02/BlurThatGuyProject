@@ -286,12 +286,34 @@ The application runs on two independent EC2 instances situated behind an **Appli
 * **Linear Scaling:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
 * **CI/CD Pipeline:** Automated deployments are managed via **GitHub Actions**. The pipeline performs health checks on the frontend and backend containers before using SSH to remotely deploy the application.
 
+### User Integration
+
+User integration is an optional feature flag (`NEXT_PUBLIC_USER_INTEGRATION`) that adds authentication and personal video storage on top of the core blurring tool. When disabled, the app runs as a fully public, anonymous tool — no accounts required.
+
+**Authentication — Supabase Auth**
+
+User accounts are handled by [Supabase](https://supabase.com). Signup captures a username (stored in Supabase user metadata) alongside email and password. Sessions are managed via `@supabase/ssr` with cookie-based tokens, compatible with Next.js server components and route handlers.
+
+**Video Storage — AWS S3**
+
+Processed videos can be saved to a private S3 bucket. The upload flow avoids routing large files through the Next.js server: the backend generates a short-lived pre-signed PUT URL, and the browser uploads the blob directly to S3. Playback uses pre-signed GET URLs (1-hour TTL) generated server-side — the bucket has no public access.
+
+Videos are stored under a per-user path (`videos/{userId}/{uuid}-filename.mp4`), so users are isolated at the storage level. Row Level Security in Supabase ensures users can only query their own video metadata.
+
+**Limits enforced at the API layer:**
+- 2 GB per file
+- 5 GB per-user storage quota
+- 30 GB total bucket cap
+- 10 uploads per user per hour
+
+A full setup guide is available in [`docs/user-integration.md`](docs/user-integration.md).
+
 ---
 
 
 ## Architecture Diagram
 
-![img.png](public/system_architecture.png)
+![New_system_architecture.png](public/New_system_architecture.png)
 
 ---
 

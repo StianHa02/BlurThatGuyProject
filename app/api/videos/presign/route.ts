@@ -84,11 +84,12 @@ export async function POST(req: NextRequest) {
     // ── 5. Generate pre-signed PUT URL ────────────────────────────────────────
     const key = `videos/${user.id}/${randomUUID()}-${filename}`;
 
+    // Do NOT include ContentLength — it becomes a signed header and browsers
+    // cannot set Content-Length manually in fetch(), causing SignatureDoesNotMatch.
     const command = new PutObjectCommand({
         Bucket: BUCKET,
         Key: key,
         ContentType: contentType,
-        ...(typeof fileSize === 'number' ? { ContentLength: fileSize } : {}),
     });
 
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
