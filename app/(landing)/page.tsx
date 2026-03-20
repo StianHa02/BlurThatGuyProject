@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye, ArrowRight } from 'lucide-react';
+import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
 import { Navbar, FeatureCard, Footer, BackgroundBlobs, MockUI } from './components';
 import { useEffect, useRef, useState } from 'react';
 import { useLandingHashSync } from './hooks/useLandingHashSync';
