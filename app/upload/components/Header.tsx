@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client';
 type Step = 'upload' | 'detect' | 'select';
 
 interface HeaderProps {
-  currentStep: Step;
+  currentStep?: Step;
   onUploadNew?: () => void;
 }
 
@@ -20,7 +20,7 @@ const userIntegration = process.env.NEXT_PUBLIC_USER_INTEGRATION === '1';
 
 export function Header({ currentStep }: HeaderProps) {
   const router = useRouter();
-  const currentIndex = STEPS.indexOf(currentStep);
+  const currentIndex = currentStep ? STEPS.indexOf(currentStep) : -1;
   const shouldReduceMotion = useReducedMotion();
 
   const [user, setUser] = useState<User | null>(null);
@@ -59,7 +59,7 @@ export function Header({ currentStep }: HeaderProps) {
 
   return (
     <header className="border-b border-white/8 bg-[#070f1c]/80 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+      <div className="px-6 py-4 flex items-center justify-between gap-4">
 
         {/* Home link */}
         <Link
@@ -79,7 +79,7 @@ export function Header({ currentStep }: HeaderProps) {
 
         {/* Step indicators */}
         <LayoutGroup>
-          <div className="hidden sm:flex items-center gap-1 flex-1 justify-center min-w-0">
+          <div className={`${currentStep ? 'hidden sm:flex' : 'hidden'} items-center gap-1 flex-1 justify-center min-w-0`}>
             {STEPS.map((step, i) => {
               const isCurrent = currentStep === step;
               const isComplete = i < currentIndex;
@@ -173,7 +173,7 @@ export function Header({ currentStep }: HeaderProps) {
         </LayoutGroup>
 
         {/* Right side: user button or login */}
-        <div className="w-40 shrink-0 flex justify-end">
+        <div className={`${currentStep ? 'w-40 ' : ''}shrink-0 flex justify-end`}>
           {userIntegration && (
             user ? (
               <div className="relative" ref={dropdownRef}>

@@ -70,14 +70,14 @@ export default function UploadPage() {
     detection.reset();
     setCurrentStep('upload');
   }
+  const shortName = upload.fileName.length > 28
+    ? upload.fileName.slice(0, 25) + '...'
+    : upload.fileName;
 
   const fileSize = upload.fileRef?.current?.size ?? null;
   const durationSecs = upload.videoMetadata
     ? upload.videoMetadata.frameCount / upload.videoMetadata.fps
     : null;
-  const shortName = upload.fileName.length > 28
-    ? upload.fileName.slice(0, 25) + '...'
-    : upload.fileName;
 
   return (
     <div className="min-h-screen bg-[#070f1c] text-white flex flex-col">

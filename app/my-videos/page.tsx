@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { EyeOff, Video, ArrowLeft, Trash2, Download, Loader2, AlertCircle } from 'lucide-react';
+import { Video, Trash2, Download, Loader2, AlertCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { BackgroundBlobs } from '@/app/(landing)/components';
+import { Header } from '@/app/upload/components';
 
 interface VideoRecord {
     id: string;
@@ -69,22 +70,11 @@ export default function MyVideosPage() {
     }
 
     return (
-        <div className="bg-[#070f1c] text-white min-h-svh px-6 py-12 relative overflow-hidden">
+        <div className="bg-[#070f1c] text-white min-h-svh relative overflow-hidden">
             <BackgroundBlobs />
+            <Header />
 
-            <div className="relative z-10 max-w-4xl mx-auto">
-                {/* Header */}
-                <div className="flex items-center gap-3 mb-10">
-                    <Link href="/" className="p-2 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-all">
-                        <ArrowLeft className="w-4 h-4" />
-                    </Link>
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                            <EyeOff className="w-4 h-4 text-white" />
-                        </div>
-                        <span className="font-bold text-lg text-white tracking-tight">My Videos</span>
-                    </div>
-                </div>
+            <div className="relative z-10 max-w-4xl mx-auto px-6 pt-28 pb-12">
 
                 {/* Error */}
                 {error && (
