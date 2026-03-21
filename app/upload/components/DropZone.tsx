@@ -20,17 +20,9 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
     if (f) onFileSelect(f);
   }, [onFileSelect]);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-  }, []);
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDragOver  = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(true); }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); }, []);
+  const handleChange    = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (f) onFileSelect(f);
   }, [onFileSelect]);
@@ -60,19 +52,15 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
       </div>
 
       {/* Supported formats panel */}
-      <div className="rounded-2xl p-5 bg-[#0d1b2e]/80 border border-white/8 text-center">
+      <div className="card p-5 text-center">
         <p className="text-sm text-slate-400 mb-3">Supported formats</p>
-        <div className="flex items-center justify-center gap-2 mb-4">
+        <div className="flex items-center justify-center gap-2">
           {FORMATS.map((fmt) => (
-            <span
-              key={fmt}
-              className="px-4 py-1.5 rounded-full bg-[#0a1628] border border-white/10 text-sm font-semibold text-white"
-            >
+            <span key={fmt} className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-sm font-semibold text-white">
               {fmt}
             </span>
           ))}
         </div>
-
       </div>
     </div>
   );

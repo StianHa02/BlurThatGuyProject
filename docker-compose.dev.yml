@@ -11,8 +11,8 @@ services:
       DEV_MODE: "true"
       ALLOWED_ORIGINS: http://localhost:3000
       REDIS_URL: redis://redis:6379
-      # TOTAL_THREAD_BUDGET: auto-detected from cpu_count() - 2
-      # MAX_UPLOAD_SIZE_MB: ""  # Unlimited by default. Set to a number (e.g. "500") to enforce a limit.
+      # TOTAL_THREAD_BUDGET:
+      # MAX_UPLOAD_SIZE_MB:
     volumes:
       - ./backend:/app
       - video_uploads:/tmp/blurthatguy

@@ -57,3 +57,5 @@ __pycache__/
 # Test model
 w600k_r50.onnx
 
+.claude
+

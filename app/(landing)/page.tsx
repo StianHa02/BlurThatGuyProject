@@ -81,7 +81,7 @@ export default function Home() {
 	};
 
 	return (
-		<div className="bg-[#070f1c] text-white">
+		<div className="page-bg">
 
 			<BackgroundBlobs />
 
@@ -160,8 +160,8 @@ export default function Home() {
 					</div>
 				</main>
 
-				{/* Scroll indicator */}
-				<div className={`absolute bottom-8 left-1/2 -translate-x-1/2 pb-[env(safe-area-inset-bottom)] z-10 transition-opacity duration-500 ${scrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+				{/* Scroll indicator — hidden on mobile */}
+				<div className={`hidden sm:block absolute bottom-8 left-1/2 -translate-x-1/2 pb-[env(safe-area-inset-bottom)] z-10 transition-opacity duration-500 ${scrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
 					<Link
 						href="/#how-it-works"
 						onClick={scrollToHowItWorks}

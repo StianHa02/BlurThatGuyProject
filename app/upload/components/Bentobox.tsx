@@ -1,15 +1,13 @@
 'use client';
 
-interface SpotlightCardProps {
+interface BentoboxProps {
   children: React.ReactNode;
   className?: string;
 }
 
-export function Bentobox({ children, className = '' }: SpotlightCardProps) {
+export function Bentobox({ children, className = '' }: BentoboxProps) {
   return (
-    <div
-      className={`relative rounded-2xl bg-[#0d1b2e] border border-white/8 shadow-lg ${className}`}
-    >
+    <div className={`card shadow-lg ${className}`}>
       {children}
     </div>
   );

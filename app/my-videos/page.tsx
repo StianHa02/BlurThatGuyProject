@@ -3,27 +3,23 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Video, Trash2, Download, Loader2, AlertCircle } from 'lucide-react';
+import { Video, Trash2, Download, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { BackgroundBlobs, Header } from '@/components';
+import { BackgroundBlobs, Header, Alert } from '@/components';
 import type { VideoRecord } from '@/types';
 import { formatFileSize, formatDate } from '@/lib/utils';
 
 export default function MyVideosPage() {
     const router = useRouter();
-    const [videos, setVideos] = useState<VideoRecord[]>([]);
+    const [videos, setVideos]   = useState<VideoRecord[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const [error, setError]     = useState<string | null>(null);
     const [deleting, setDeleting] = useState<string | null>(null);
 
     useEffect(() => {
         const supabase = createClient();
         supabase.auth.getUser().then(async ({ data }) => {
-            if (!data.user) {
-                router.push('/login');
-                return;
-            }
-
+            if (!data.user) { router.push('/login'); return; }
             const res = await fetch('/api/videos');
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
@@ -52,19 +48,15 @@ export default function MyVideosPage() {
     }
 
     return (
-        <div className="bg-[#070f1c] text-white min-h-svh relative overflow-hidden">
+        <div className="page-bg overflow-hidden">
             <BackgroundBlobs />
             <Header />
 
-            <div className="relative z-10 max-w-4xl mx-auto px-6 pt-28 pb-12">
+            <div className="relative z-10 max-w-4xl mx-auto px-6 pt-10 pb-12">
 
-                {/* Error */}
-                {error && (
-                    <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm mb-6">
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                        {error}
-                    </div>
-                )}
+                <h1 className="text-2xl font-bold text-white mb-6">My Videos</h1>
+
+                {error && <Alert variant="error" message={error} onDismiss={() => setError(null)} className="mb-6" />}
 
                 {/* Loading */}
                 {loading && (
@@ -75,7 +67,7 @@ export default function MyVideosPage() {
 
                 {/* Empty state */}
                 {!loading && videos.length === 0 && !error && (
-                    <div className="glass rounded-2xl border border-white/8 flex flex-col items-center justify-center py-24 text-center">
+                    <div className="card-glass flex flex-col items-center justify-center py-24 text-center">
                         <div className="w-14 h-14 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-5">
                             <Video className="w-7 h-7 text-blue-400" />
                         </div>
@@ -83,10 +75,7 @@ export default function MyVideosPage() {
                         <p className="text-slate-400 text-sm max-w-xs mb-6">
                             Process a video and click &quot;Save Video&quot; to store it here.
                         </p>
-                        <Link
-                            href="/upload"
-                            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-sm text-white transition-all"
-                        >
+                        <Link href="/upload" className="btn btn-primary btn-sm">
                             Start uploading
                         </Link>
                     </div>
@@ -96,7 +85,7 @@ export default function MyVideosPage() {
                 {!loading && videos.length > 0 && (
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {videos.map((video) => (
-                            <div key={video.id} className="glass rounded-2xl border border-white/8 overflow-hidden group">
+                            <div key={video.id} className="card overflow-hidden group">
                                 {/* Video preview */}
                                 <div className="aspect-video bg-black relative">
                                     <video
@@ -117,19 +106,19 @@ export default function MyVideosPage() {
                                         {video.file_size && <span>{formatFileSize(video.file_size)}</span>}
                                     </div>
 
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 items-center">
                                         <a
                                             href={video.signedUrl}
                                             download={video.filename}
-                                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium transition-all"
+                                            className="flex flex-1 items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium transition-all whitespace-nowrap"
                                         >
-                                            <Download className="w-3.5 h-3.5" />
+                                            <Download className="w-3.5 h-3.5 shrink-0" />
                                             Download
                                         </a>
                                         <button
                                             onClick={() => handleDelete(video)}
                                             disabled={deleting === video.id}
-                                            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 hover:text-red-300 text-xs font-medium transition-all disabled:opacity-50"
+                                            className="flex items-center justify-center px-3 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 hover:text-red-300 text-xs font-medium transition-all disabled:opacity-50 cursor-pointer shrink-0"
                                         >
                                             {deleting === video.id
                                                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
