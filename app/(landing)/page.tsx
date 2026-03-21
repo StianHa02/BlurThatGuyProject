@@ -115,7 +115,7 @@ export default function Home() {
 								</h1>
 
 								<p className="text-base sm:text-lg text-slate-400 mb-10 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-									AI-powered face detection and selective blurring. Protect identities in your videos — no editing skills required.
+									AI-powered face detection and selective blurring. <br/>Protect identities in your videos.
 								</p>
 
 								<div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start mb-10">
