@@ -322,52 +322,79 @@ A full setup guide is available in [`docs/user-integration.md`](docs/user-integr
 ```
 BlurThatGuyProject/
 ├── app/
-│   ├── favicon.ico                  # App favicon
-│   ├── globals.css                  # Global styles
-│   ├── layout.tsx                   # Root layout
-│   ├── page.tsx                     # Root page (routed to landing/page)
-│   ├── (landing)/                    # Landing Page 
-│   ├── api/                          # Next.js API routes that proxy to FastAPI
-│   │   ├── detect-video/[videoId]/route.ts
-│   │   ├── export/[videoId]/route.ts
-│   │   ├── upload-video/route.ts
-│   │   ├── download/[videoId]/route.ts
-│   │   └── job/[jobId]/
-│   │       ├── status/route.ts
-│   │       ├── result/route.ts
-│   │       └── cancel/route.ts
-│   └── upload/
-│       ├── components/               # Upload page UI 
-│       ├── hooks/                    # Upload flow hooks 
-│       └── page.tsx                  # Main upload workflow page
-├── lib/                              
-│   ├── faceClient.ts                 # Frontend client for backend API calls
-│   ├── tracker.ts                    # Shared face-track helpers/types for UI state
-│   └── server/backendProxy.ts        # Server-side proxy utilities (API key forwarding)
-├── backend/
-│   ├── main.py                       # FastAPI app + all API endpoints
+│   ├── layout.tsx                     # Root layout with font loading and metadata
+│   ├── page.tsx                       # Redirects to the landing page
+│   ├── globals.css                    # Tailwind base styles and custom utilities
+│   │
+│   ├── (landing)/                     # Landing page (route group, serves /)
+│   │   ├── page.tsx                   # Hero, features, and demo sections
+│   │   ├── components/
+│   │   └── hooks/                     # Hook for syncsing URL hash with scroll position
+│   ├── upload/                        # Core blurring workflow (3-step single page)
+│   │   ├── page.tsx                   # Upload → Detect → Select/Export wizard
+│   │   ├── components/                # Upload spesific UI components
+│   │   └── hooks/
+│   │       ├── useVideoUpload.ts      # File validation, upload to backend, metadata extraction
+│   │       ├── useFaceDetection.ts    # Detection polling, queue status, track state
+│   │       └── useVideoExport.ts      # Export progress streaming and download trigger
+│   ├── login/page.tsx                 # Supabase email/password login
+│   ├── signup/page.tsx                # Account creation with username
+│   ├── settings/page.tsx              # Account management and deletion
+│   ├── my-videos/page.tsx             # Saved videos grid with S3 playback
+│   └── api/                           # Next.js Route Handlers (proxy to FastAPI)
+│       ├── upload-video/route.ts      # POST — proxy video upload
+│       ├── detect-video/[videoId]/    # POST — start detection (NDJSON stream)
+│       ├── export/[videoId]/          # POST — render blurred video (NDJSON stream)
+│       ├── download/[videoId]/        # GET  — download processed video
+│       ├── health/                    # GET  — backend health check
+│       ├── job/[jobId]/
+│       │   ├── status/                # GET  — poll job status and queue position
+│       │   ├── result/                # GET  — fetch completed detection tracks
+│       │   └── cancel/                # POST — cancel a queued or running job
+│       ├── videos/                    # GET  — list user's saved videos
+│       │   ├── save/                  # POST — save processed video to S3
+│       │   ├── delete/                # POST — delete a saved video
+│       │   └── presign/               # POST — generate S3 pre-signed upload URL
+│       └── user/
+│           └── delete/                # POST — delete user account and data
+├── components/                        # Shared UI components (used across routes)
+├── types/                             # Shared TypeScript types
+├── lib/
+│   ├── config.ts                      # NEXT_PUBLIC_* env vars and feature flags
+│   ├── services/                      # Client-side API wrapper (upload, detect, export, jobs)
+│   ├── tracking/                      # Track interpolation and merging logic for the UI              
+│   ├── utils/                         # formatFileSize, formatDuration, formatDate           
+│   ├── supabase/
+│   │   ├── client.ts                  # Browser Supabase client
+│   │   ├── server.ts                  # Server-side Supabase client (cookies)
+│   │   └── admin.ts                   # Service-role client for admin operations
+│   └── server/
+│       ├── backendProxy.ts            # Builds proxied fetch requests with API key
+│       └── env.ts                     # Server-only env var access
+├── backend/                           # Python FastAPI backend
+│   ├── main.py                        # App entry point + all API endpoints
+│   ├── config.py                      # Env vars, validation, temp file paths
+│   ├── auth.py                        # API key verification dependency
+│   ├── storage.py                     # In-memory tracks and job-result store
 │   ├── pipeline/
-│   │   ├── __init__.py
-│   │   ├── detector.py               # SCRFD detection pipeline + session pool
-│   │   ├── tracker.py                # IoU-based track building
-│   │   ├── reid.py                   # ArcFace ReID + identity merge
-│   │   ├── blur.py                   # Pixelation/blackout rendering
-│   │   └── processor.py              # Detection pipeline + encoder selection
+│   │   ├── detector.py                # SCRFD face detection + ONNX session pool
+│   │   ├── tracker.py                 # IoU-based frame-to-frame track building
+│   │   ├── reid.py                    # ArcFace ReID + cross-scene identity merge
+│   │   ├── blur.py                    # Pixelation and blackout rendering
+│   │   └── processor.py              # Full detection pipeline orchestrator
 │   ├── jobs/
-│   │   ├── __init__.py
-│   │   ├── job_runner.py             # Queued detection execution helpers
-│   │   ├── queue_manager.py          # Redis queue state + admission
-│   │   └── stream_generators.py      # NDJSON streaming for detect/export
-│   ├── storage.py                    # In-memory tracks and job-result store
-│   ├── config.py                     # Env, validation, temp file helpers
-│   ├── auth.py
-│   ├── requirements.txt
-│   └── models/                       # ONNX models 
-├── docker-compose.yml                # Docker Compose for production deployment
-├── docker-compose.dev.yml            # Docker Compose for local development with hot reload
+│   │   ├── job_runner.py              # Async job execution with thread budget splitting
+│   │   ├── queue_manager.py           # Redis-backed FIFO queue + admission control
+│   │   └── stream_generators.py       # NDJSON generators for detect/export progress
+│   ├── models/                        # ONNX model weights (not committed)
+│   └── requirements.txt
+├── docker-compose.yml                 # Main local production setup 
+├── docker-compose.dev.yml             # Development setup with hot reload
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
-└── README.md
+└── .github/workflows/
+    ├── ci.yml                         # Lint, type-check, build on PR
+    └── cd.yml                         # Deploy to EC2 on push to main
 ```
 
 ---
