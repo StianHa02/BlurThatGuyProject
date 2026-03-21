@@ -2,8 +2,7 @@
 
 import { Grid2x2, Square } from 'lucide-react';
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
-
-export type BlurMode = 'pixelate' | 'blackout';
+import type { BlurMode } from '@/types';
 
 interface BlurModeToggleProps {
   value: BlurMode;

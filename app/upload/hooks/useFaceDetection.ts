@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { loadModels, detectFacesInVideo, getJobStatus, getJobResult, cancelJob } from '@/lib/faceClient';
-import { Track } from '@/lib/tracker';
+import { loadModels, detectFacesInVideo, getJobStatus, getJobResult, cancelJob } from '@/lib/services/faceClient';
+import type { Track } from '@/types';
 
 interface UseDetectionOptions {
   sampleRate: number;

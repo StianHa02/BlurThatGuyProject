@@ -16,10 +16,10 @@ export function useVideoUpload() {
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<File | null>(null);
 
-  const handleFile = useCallback(async (f: File) => {
+  const handleFile = useCallback(async (f: File): Promise<{ videoId: string; metadata: typeof videoMetadata } | null> => {
     if (!f.type.startsWith('video/')) {
       setError('Please upload a video file (MP4, WebM, etc.)');
-      return false;
+      return null;
     }
 
     setError(null);
@@ -40,20 +40,20 @@ export function useVideoUpload() {
       if (response.ok) {
         const data = await response.json();
         setVideoId(data.videoId);
-        setVideoMetadata(data.metadata || null);
+        const meta = data.metadata || null;
+        setVideoMetadata(meta);
+        return { videoId: data.videoId, metadata: meta };
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('Upload failed:', errorData.error || response.statusText);
         setError(errorData.error || 'Upload failed');
-        return false;
+        return null;
       }
     } catch (err) {
       console.error('Failed to upload video to backend:', err);
       setError('Failed to upload video to backend');
-      return false;
+      return null;
     }
-
-    return true;
   }, []);
 
   const reset = useCallback(() => {

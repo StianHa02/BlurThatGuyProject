@@ -2,8 +2,8 @@
 // Face detection via Python backend (YuNet), proxied through Next.js API routes.
 // Tracking now happens server-side. Detection stream returns Track objects directly.
 
-import { API_URL } from './config';
-import { Track } from './tracker';
+import { API_URL } from '@/lib/config';
+import type { Track, BlurMode } from '@/types';
 
 export type DetectResult =
   | { kind: 'immediate'; tracks: Track[]; jobId: string }
@@ -143,7 +143,8 @@ export async function getJobResult(jobId: string, signal?: AbortSignal): Promise
   return (body.results || []) as Track[];
 }
 
-export type BlurMode = 'pixelate' | 'blackout';
+// BlurMode re-exported from @/types for backwards compatibility
+export type { BlurMode } from '@/types';
 
 /**
  * Stream export progress from backend, returns the download URL when done.
@@ -218,3 +219,22 @@ export async function detectFacesInBatch(
 
 /** @deprecated No-op. */
 export function resetTrackers(): void {}
+
+/** Get the stream URL for an uploaded video by its ID. */
+export function getVideoStreamUrl(videoId: string): string {
+  return `${API_URL}/stream-video/${videoId}`;
+}
+
+/** Fetch stored detection tracks for a video from the backend. */
+export async function getVideoTracks(videoId: string, signal?: AbortSignal): Promise<Track[]> {
+  const response = await fetch(`${API_URL}/tracks/${videoId}`, {
+    method: 'GET',
+    signal,
+    cache: 'no-store',
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body.detail || body.error || 'Failed to fetch tracks');
+  }
+  return (body.results || []) as Track[];
+}

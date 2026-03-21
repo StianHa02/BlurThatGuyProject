@@ -4,17 +4,7 @@ import Image from 'next/image';
 import { Check, Users, UserX, Eye } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { BlurModeToggle } from './BlurModeToggle';
-import type { BlurMode } from './BlurModeToggle';
-
-export interface Track {
-  id: number;
-  frames: Array<{
-    frameIndex: number;
-    bbox: [number, number, number, number];
-    score: number;
-  }>;
-  mergedFrom?: number[];
-}
+import type { BlurMode, Track } from '@/types';
 
 interface FaceGalleryProps {
   tracks: Track[];

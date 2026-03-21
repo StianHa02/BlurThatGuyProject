@@ -361,6 +361,58 @@ async def download_video(video_id: str, _: bool = Depends(verify_api_key)):
     return FileResponse(str(output_path), media_type="video/mp4", filename="blurred-video.mp4")
 
 
+@app.get("/stream/{video_id}")
+async def stream_video(video_id: str, request: Request, _: bool = Depends(verify_api_key)):
+    path = get_safe_video_path(video_id, ".mp4")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Video not found.")
+
+    file_size = path.stat().st_size
+    range_header = request.headers.get("range")
+
+    if range_header:
+        # Parse "bytes=start-end"
+        range_match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if not range_match:
+            raise HTTPException(status_code=416, detail="Invalid range header")
+        start = int(range_match.group(1))
+        end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+        end = min(end, file_size - 1)
+        length = end - start + 1
+
+        def iter_file():
+            with open(path, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        return StreamingResponse(
+            iter_file(),
+            status_code=206,
+            media_type="video/mp4",
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Content-Length": str(length),
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    return FileResponse(str(path), media_type="video/mp4", headers={"Accept-Ranges": "bytes"})
+
+
+@app.get("/tracks/{video_id}")
+async def get_video_tracks(video_id: str, _: bool = Depends(verify_api_key)):
+    tracks = get_tracks(video_id)
+    if tracks is None:
+        raise HTTPException(status_code=404, detail="No detection results found.")
+    return {"results": tracks}
+
+
 @app.post("/detect-batch", response_model=BatchDetectResponse)
 async def detect_batch_endpoint(batch_request: BatchDetectRequest, _: bool = Depends(verify_api_key)):
     try:
