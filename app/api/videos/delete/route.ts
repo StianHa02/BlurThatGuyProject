@@ -4,10 +4,10 @@ import { createClient } from '@/lib/supabase/server';
 
 function getS3Client() {
     return new S3Client({
-        region: process.env.AWS_REGION!,
+        region: process.env['AWS_REGION'],
         credentials: {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+            accessKeyId: process.env['AWS_ACCESS_KEY_ID']!,
+            secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY']!,
         },
     });
 }
@@ -35,7 +35,7 @@ export async function DELETE(req: NextRequest) {
 
     // Delete from S3
     const s3 = getS3Client();
-    const BUCKET = process.env.AWS_S3_BUCKET_NAME!;
+    const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: s3Key }));
 
     // Delete from Supabase

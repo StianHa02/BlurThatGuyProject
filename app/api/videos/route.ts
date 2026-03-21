@@ -5,10 +5,10 @@ import { createClient } from '@/lib/supabase/server';
 
 function getS3Client() {
     return new S3Client({
-        region: process.env.AWS_REGION!,
+        region: process.env['AWS_REGION'],
         credentials: {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+            accessKeyId: process.env['AWS_ACCESS_KEY_ID']!,
+            secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY']!,
         },
     });
 }
@@ -34,7 +34,7 @@ export async function GET() {
 
     // Generate a short-lived signed GET URL for each video
     const s3 = getS3Client();
-    const BUCKET = process.env.AWS_S3_BUCKET_NAME!;
+    const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
     const videosWithUrls = await Promise.all(
         (videos ?? []).map(async (video) => {
             const command = new GetObjectCommand({ Bucket: BUCKET, Key: video.s3_key });

@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker
   output: 'standalone',
 
+
   // Raise body size limit for large export payloads (many tracks from long videos)
   experimental: {
     serverActions: {
