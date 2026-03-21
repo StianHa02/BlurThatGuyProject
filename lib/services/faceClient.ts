@@ -219,22 +219,3 @@ export async function detectFacesInBatch(
 
 /** @deprecated No-op. */
 export function resetTrackers(): void {}
-
-/** Get the stream URL for an uploaded video by its ID. */
-export function getVideoStreamUrl(videoId: string): string {
-  return `${API_URL}/stream-video/${videoId}`;
-}
-
-/** Fetch stored detection tracks for a video from the backend. */
-export async function getVideoTracks(videoId: string, signal?: AbortSignal): Promise<Track[]> {
-  const response = await fetch(`${API_URL}/tracks/${videoId}`, {
-    method: 'GET',
-    signal,
-    cache: 'no-store',
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(body.detail || body.error || 'Failed to fetch tracks');
-  }
-  return (body.results || []) as Track[];
-}

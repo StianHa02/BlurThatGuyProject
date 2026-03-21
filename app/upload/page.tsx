@@ -1,39 +1,87 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Header } from '@/components';
-import { DropZone, ErrorAlert } from './components';
-import { useVideoUpload } from './hooks';
+import dynamic from 'next/dynamic';
+import { Eye, EyeOff, Users, Info, Download, Loader2, Upload as UploadIcon, Save, CheckCircle } from 'lucide-react';
+import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
+import { DropZone, ProgressBar, ErrorAlert, FaceGallery, Bentobox } from './components';
+import type { BlurMode } from '@/types';
+import { BackgroundBlobs, Header } from '@/components';
+import { formatFileSize, formatDuration } from '@/lib/utils';
+
+const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
+
+type Step = 'upload' | 'detect' | 'select';
 
 export default function UploadPage() {
-  const router = useRouter();
+  const [currentStep, setCurrentStep] = useState<Step>('upload');
   const [uploading, setUploading] = useState(false);
   const [uploadingFileName, setUploadingFileName] = useState('');
+  const [sampleRate, setSampleRate] = useState(3);
+  const [blurMode, setBlurMode] = useState<BlurMode>('pixelate');
+  const [abortController, setAbortController] = useState(() => new AbortController());
+  const [saved, setSaved] = useState(false);
+
   const upload = useVideoUpload();
+  const detection = useFaceDetection({
+    sampleRate,
+    videoId: upload.videoId,
+    onError: upload.setError,
+    signal: abortController.signal,
+  });
+  const exportHook = useVideoExport({
+    videoId: upload.videoId,
+    fileName: upload.fileName,
+    selectedTrackIds: detection.selectedTrackIds,
+    sampleRate,
+    blurMode,
+    onError: upload.setError,
+    signal: abortController.signal,
+  });
 
   async function handleFileSelect(file: File) {
     setUploadingFileName(file.name);
     setUploading(true);
     const result = await upload.handleFile(file);
     setUploading(false);
-    if (result) {
-      sessionStorage.setItem(`upload:${result.videoId}:metadata`, JSON.stringify(result.metadata));
-      sessionStorage.setItem(`upload:${result.videoId}:fileName`, file.name);
-      router.push(`/upload/detect?v=${result.videoId}`);
-    }
+    if (result) { detection.reset(); setCurrentStep('detect'); }
   }
 
+  async function handleStartDetection() {
+    const success = await detection.runDetection();
+    if (success) setCurrentStep('select');
+  }
+
+  function handleReset() {
+    abortController.abort();
+    setAbortController(new AbortController());
+    upload.reset();
+    detection.reset();
+    setCurrentStep('upload');
+  }
+  const shortName = upload.fileName.length > 28
+    ? upload.fileName.slice(0, 25) + '...'
+    : upload.fileName;
+
+  const fileSize = upload.fileRef?.current?.size ?? null;
+  const durationSecs = upload.videoMetadata
+    ? upload.videoMetadata.frameCount / upload.videoMetadata.fps
+    : null;
+
   return (
-    <>
-      <Header currentStep="upload" />
+    <div className="min-h-screen bg-[#070f1c] text-white flex flex-col">
+
+      <BackgroundBlobs />
+
+      <Header currentStep={currentStep} />
 
       <main className="relative z-10 flex-1 flex flex-col max-w-6xl w-full mx-auto px-6 py-8">
         {upload.error && (
           <ErrorAlert message={upload.error} onDismiss={() => upload.setError(null)} />
         )}
 
-        {uploading ? (
+        {/* ===== UPLOADING STATE ===== */}
+        {currentStep === 'upload' && uploading && (
           <div className="flex-1 flex flex-col items-center justify-center max-w-sm mx-auto w-full gap-6">
             <div className="relative flex items-center justify-center w-16 h-16">
               <div className="absolute inset-0 rounded-full border-2 border-blue-500/20" />
@@ -53,7 +101,7 @@ export default function UploadPage() {
               </p>
             </div>
             <div className="w-full h-1 rounded-full bg-white/6 overflow-hidden">
-              <div className="h-full w-1/3 rounded-full bg-blue-500"
+              <div className="h-full w-1/3 rounded-full bg-blue-500 animate-[slide_1.4s_ease-in-out_infinite]"
                 style={{ animation: 'upload-slide 1.4s ease-in-out infinite' }} />
             </div>
             <style>{`
@@ -64,7 +112,10 @@ export default function UploadPage() {
               }
             `}</style>
           </div>
-        ) : (
+        )}
+
+        {/* ===== UPLOAD STEP ===== */}
+        {currentStep === 'upload' && !uploading && (
           <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
             <div className="text-center mb-8">
               <h1 className="text-3xl font-bold mb-2 bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">
@@ -75,7 +126,253 @@ export default function UploadPage() {
             <DropZone onFileSelect={handleFileSelect} />
           </div>
         )}
+
+        {/* ===== DETECT STEP ===== */}
+        {currentStep === 'detect' && upload.fileUrl && (
+          <div className="flex-1 flex flex-col gap-4">
+
+            {/* Top row — constrained height on large screens; allow natural flow on mobile */}
+            <div className="grid lg:grid-cols-2 gap-4 min-h-0 lg:max-h-[70vh]">
+
+              {/* Left: video player */}
+              <Bentobox className="flex flex-col min-h-0">
+                <div className="relative flex-1 flex items-center p-3 min-h-0">
+                  <video
+                    src={upload.fileUrl}
+                    controls
+                    playsInline
+                    disablePictureInPicture
+                    controlsList="nodownload"
+                    className="w-full h-full max-h-[55vh] rounded-xl object-contain bg-black"
+                  />
+                </div>
+              </Bentobox>
+
+              {/* Right: detect controls */}
+              <Bentobox className="flex flex-col min-h-0">
+                <div className="relative p-7 flex flex-col flex-1 overflow-auto">
+                  <h2 className="text-2xl font-semibold mb-2 text-white">Detect Faces</h2>
+                  <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+                    Our AI will scan through your video and identify all faces that appear.
+                  </p>
+                  {detection.processing ? (
+                    detection.queued ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3">
+                          <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+                          <span className="text-sm text-white">
+                            {typeof detection.queuePosition === 'number'
+                              ? `You're #${detection.queuePosition} in queue`
+                              : 'You are in queue'}
+                          </span>
+                        </div>
+                        <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                          <div className="h-full w-1/3 rounded-full bg-blue-500 animate-[queue-slide_1.4s_ease-in-out_infinite]" />
+                        </div>
+                        <p className="text-xs text-slate-500">Waiting for an available processing slot...</p>
+                        <style>{`
+                          @keyframes queue-slide {
+                            0%   { transform: translateX(-100%); }
+                            50%  { transform: translateX(220%); }
+                            100% { transform: translateX(220%); }
+                          }
+                        `}</style>
+                      </div>
+                    ) : (
+                      <ProgressBar
+                        progress={detection.progress}
+                        status={detection.status}
+                        hint="This may take a minute depending on video length"
+                      />
+                    )
+                  ) : (
+                    <button
+                      onClick={handleStartDetection}
+                      className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 font-semibold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-600/20 text-base"
+                    >
+                      <Eye className="w-5 h-5" />
+                      Start Detection
+                    </button>
+                  )}
+
+                  <div className="flex-1" />
+
+                  <div className="h-px bg-white/6 my-6" />
+
+                  <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
+                    <span className="relative group/tip">
+                      <span className="inline-flex cursor-help text-slate-500 hover:text-blue-400 transition-colors">
+                        <Info className="w-4 h-4" />
+                      </span>
+                      <span className="absolute left-0 bottom-full mb-2 hidden group-hover/tip:block z-10 w-64 p-3 text-sm text-left text-slate-300 bg-[#0d1b2e] border border-white/10 rounded-lg shadow-xl pointer-events-none">
+                        <span className="font-medium text-white">Frame sampling</span>
+                        <br />
+                        <span className="text-slate-400 text-xs">1 check per {sampleRate} frames</span>
+                        <br /><br />
+                        Faces are only searched at these intervals, not every frame.
+                        <br /><br />
+                        <div className="flex justify-between text-xs mt-1">
+                          <span className="text-blue-400">Low = thorough</span>
+                          <span className="text-amber-400">High = fast</span>
+                        </div>
+                      </span>
+                    </span>
+                    <span>Sample every <strong className="text-white">{sampleRate}</strong> frames</span>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white/5 rounded-lg px-4 py-3">
+                    <label className="text-xs text-slate-400 shrink-0">Sample rate:</label>
+                    <input
+                      type="range" min={1} max={10} value={sampleRate}
+                      onChange={e => setSampleRate(Number(e.target.value))}
+                      className="flex-1 accent-blue-500"
+                    />
+                    <span className="text-sm font-mono w-5 text-white text-right">{sampleRate}</span>
+                  </div>
+                </div>
+              </Bentobox>
+            </div>
+
+            {/* Bottom: Video Details full width */}
+            <Bentobox>
+              <div className="relative px-6 py-4 border-b border-white/6">
+                <h3 className="font-bold text-white text-base">Video Details</h3>
+              </div>
+              <div className="relative grid grid-cols-3 divide-x divide-white/6">
+                <div className="flex flex-col px-6 py-4">
+                  <span className="text-xs text-slate-500 mb-1.5">Filename</span>
+                  <span className="text-sm text-white font-semibold truncate">{shortName}</span>
+                </div>
+                <div className="flex flex-col px-6 py-4">
+                  <span className="text-xs text-slate-500 mb-1.5">Size</span>
+                  <span className="text-sm text-white font-semibold">
+                    {fileSize !== null ? formatFileSize(fileSize) : '—'}
+                  </span>
+                </div>
+                <div className="flex flex-col px-6 py-4">
+                  <span className="text-xs text-slate-500 mb-1.5">Duration</span>
+                  <span className="text-sm text-white font-semibold">
+                    {durationSecs !== null ? formatDuration(durationSecs) : '—'}
+                  </span>
+                </div>
+              </div>
+            </Bentobox>
+
+          </div>
+        )}
+
+        {/* ===== SELECT STEP ===== */}
+        {currentStep === 'select' && upload.fileUrl && (
+          <div className="max-w-6xl mx-auto w-full">
+            {/* ── Toolbar: stats + actions ── */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+              {/* Stats pill — single rounded container, each segment colored */}
+              <div className="flex w-full sm:w-fit items-stretch rounded-2xl overflow-hidden border border-white/10 shrink-0 text-xs font-semibold">
+                <div className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 bg-slate-700 text-slate-100">
+                  <Users className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  <span><strong>{detection.tracks.length}</strong> detected</span>
+                </div>
+                <div className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 bg-red-600 text-white">
+                  <EyeOff className="w-3.5 h-3.5 shrink-0" />
+                  <span><strong>{detection.selectedTrackIds.length}</strong> blurred</span>
+                </div>
+                <div className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 text-white">
+                  <Eye className="w-3.5 h-3.5 shrink-0" />
+                  <span><strong>{detection.tracks.length - detection.selectedTrackIds.length}</strong> visible</span>
+                </div>
+              </div>
+
+
+              {/* Actions — full width on mobile so it aligns with the pill above */}
+              <div className="flex w-full sm:w-auto items-center gap-2 justify-between sm:justify-end">
+                {/* Upload new file — neutral */}
+                <button
+                  onClick={handleReset}
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 border border-slate-500/40 text-white font-semibold text-sm transition-colors cursor-pointer"
+                >
+                  <UploadIcon className="w-4 h-4" />
+                  <span className="hidden sm:inline">Upload new file</span>
+                  <span className="sm:hidden">New file</span>
+                </button>
+
+                {/* Download — ghost with emerald text */}
+                <button
+                  onClick={() => exportHook.exportVideo()}
+                  disabled={exportHook.exporting || exportHook.saving || detection.selectedTrackIds.length === 0}
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden"
+                >
+                  {exportHook.exporting && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.exportProgress}%` }} />}
+                  <span className="relative flex items-center gap-2">
+                    {exportHook.exporting
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> {exportHook.exportProgress}%</>
+                      : <><Download className="w-4 h-4" /> Download</>
+                    }
+                  </span>
+                </button>
+
+                {/* Save Video — blue */}
+                <button
+                  onClick={async () => {
+                    setSaved(false);
+                    const ok = await exportHook.saveVideo();
+                    if (ok) setSaved(true);
+                  }}
+                  disabled={exportHook.saving || exportHook.exporting || detection.selectedTrackIds.length === 0}
+                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden"
+                >
+                  {exportHook.saving && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.saveProgress}%` }} />}
+                  <span className="relative flex items-center gap-2">
+                    {exportHook.saving
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving... {exportHook.saveProgress}%</>
+                      : saved
+                        ? <><CheckCircle className="w-4 h-4 text-emerald-300" /> Saved!</>
+                        : <><Save className="w-4 h-4" /> Save Video</>
+                    }
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-6 p-4 rounded-xl bg-blue-500/5 border border-blue-500/10">
+              <p className="text-sm text-slate-400">
+                <strong className="text-blue-400">Tip:</strong> Click faces in the gallery or play the video and click faces with{' '}
+                <span className="text-red-400">red frames</span> to blur them.
+              </p>
+            </div>
+
+            <div className="rounded-2xl p-2 mb-6 bg-white/5 border border-white/8">
+              <PlayerWithMask
+                videoUrl={upload.fileUrl}
+                tracks={detection.tracks}
+                selectedTrackIds={detection.selectedTrackIds}
+                onToggleTrack={detection.toggleTrack}
+                blurMode={blurMode}
+                sampleRate={sampleRate}
+                fps={upload.videoMetadata?.fps || 30}
+                padding={0.4}
+                targetBlocks={12}
+              />
+            </div>
+
+            <div className="rounded-2xl p-6 bg-white/5 border border-white/8">
+              <FaceGallery
+                tracks={detection.tracks}
+                selectedTrackIds={detection.selectedTrackIds}
+                onToggleTrack={detection.toggleTrack}
+                onSelectAll={detection.selectAll}
+                onDeselectAll={detection.deselectAll}
+                blurMode={blurMode}
+                onBlurModeChange={setBlurMode}
+                videoUrl={upload.fileUrl}
+                fps={upload.videoMetadata?.fps || 30}
+              />
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <div className="text-sm text-slate-600">{upload.fileName}</div>
+            </div>
+          </div>
+        )}
       </main>
-    </>
+    </div>
   );
 }
