@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertCircle, X } from 'lucide-react';
+// Re-exports the shared Alert with a compatible interface for backward-compat
+import { Alert } from '@/components/Alert';
 
 interface ErrorAlertProps {
   message: string;
@@ -8,15 +9,5 @@ interface ErrorAlertProps {
 }
 
 export function ErrorAlert({ message, onDismiss }: ErrorAlertProps) {
-  return (
-    <div className="mb-6 p-4 rounded-xl bg-red-500/8 border border-red-500/20 flex items-start gap-3">
-      <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-      <div className="flex-1">
-        <p className="text-red-400 text-sm">{message}</p>
-      </div>
-      <button onClick={onDismiss} className="text-red-400 hover:text-red-300 transition-colors">
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-  );
+  return <Alert variant="error" message={message} onDismiss={onDismiss} className="mb-6" />;
 }

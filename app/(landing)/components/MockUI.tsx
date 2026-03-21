@@ -1,15 +1,9 @@
 'use client';
 
-import { EyeOff, Eye, Upload, Download } from 'lucide-react';
+import { EyeOff, Eye, Upload, Download, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-// All 4 faces are blurred — positions used only for gallery thumbnail cropping
-const FACES = [
-	{ cx: 12, bgPos: '5% top'  },
-	{ cx: 30, bgPos: '30% top' },
-	{ cx: 50, bgPos: '58% top' },
-	{ cx: 71, bgPos: '85% top' },
-];
+const FACES = [1, 2, 3, 4];
 
 export function MockUI() {
 	return (
@@ -22,7 +16,7 @@ export function MockUI() {
 			{/* Ambient glow */}
 			<div className="absolute -inset-6 bg-blue-500/10 rounded-[3rem] blur-3xl pointer-events-none" />
 
-			<div className="relative rounded-2xl border border-white/8 bg-[#070f1c] overflow-hidden shadow-2xl shadow-black/70">
+			<div className="relative rounded-2xl border border-white/8 bg-[var(--bg)] overflow-hidden shadow-2xl shadow-black/70">
 
 				{/* ── Header — logo left · steps center · spacer right ── */}
 				<div className="flex items-center justify-between gap-4 px-4 py-2.5 border-b border-white/8">
@@ -85,12 +79,12 @@ export function MockUI() {
 							<Download className="w-2.5 h-2.5" /> Download
 						</div>
 						<div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600 text-[9px] text-white font-semibold">
-							Save
+							<Save className="w-2.5 h-2.5" /> Save
 						</div>
 					</div>
 				</div>
 
-				{/* ── Video player — photo already has blurred faces ── */}
+				{/* ── Video player ── */}
 				<div className="px-3 pt-3 pb-2">
 					<div
 						className="relative rounded-xl overflow-hidden border border-white/8"
@@ -102,12 +96,6 @@ export function MockUI() {
 						}}
 					>
 						<div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/40" />
-						{/* Tip strip */}
-						<div className="absolute bottom-0 inset-x-0 px-3 py-1.5 bg-blue-500/10 border-t border-blue-500/15 backdrop-blur-sm">
-							<p className="text-[9px] text-blue-300/80">
-								<span className="font-semibold text-blue-300">Tip:</span> Click faces with red frames to blur them.
-							</p>
-						</div>
 					</div>
 				</div>
 
@@ -127,17 +115,18 @@ export function MockUI() {
 						</div>
 
 						<div className="flex gap-2">
-							{FACES.map((f, i) => (
+							{FACES.map((i) => (
 								<div
 									key={i}
-									className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 border-2 border-blue-500 ring-1 ring-blue-500/30"
-									style={{
-										backgroundImage: "url('/avatar.jpg')",
-										backgroundSize: '400%',
-										backgroundPosition: f.bgPos,
-									}}
+									className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 border-2 border-blue-500 ring-1 ring-blue-500/30 bg-slate-800 flex items-center justify-center"
 								>
-									{/* Checkmark badge */}
+									{/* Person silhouette */}
+									<svg className="w-7 h-7 text-slate-500" viewBox="0 0 24 24" fill="currentColor">
+										<circle cx="12" cy="8" r="3.5" />
+										<path d="M5 20c0-3.866 3.134-7 7-7s7 3.134 7 7" strokeLinecap="round" />
+									</svg>
+
+									{/* Blue overlay + checkmark */}
 									<div className="absolute inset-0 bg-blue-500/15 flex items-center justify-center">
 										<div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center shadow">
 											<svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
@@ -145,8 +134,10 @@ export function MockUI() {
 											</svg>
 										</div>
 									</div>
+
+									{/* Index badge */}
 									<div className="absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-black/50 flex items-center justify-center text-[8px] font-bold text-white/80">
-										{i + 1}
+										{i}
 									</div>
 								</div>
 							))}

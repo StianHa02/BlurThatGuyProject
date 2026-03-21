@@ -81,7 +81,7 @@ export default function Home() {
 	};
 
 	return (
-		<div className="bg-[#070f1c] text-white">
+		<div className="page-bg">
 
 			<BackgroundBlobs />
 
@@ -115,7 +115,7 @@ export default function Home() {
 								</h1>
 
 								<p className="text-base sm:text-lg text-slate-400 mb-10 max-w-xl mx-auto lg:mx-0 leading-relaxed">
-									AI-powered face detection and selective blurring. Protect identities in your videos — no editing skills required.
+									AI-powered face detection and selective blurring. <br/>Protect identities in your videos.
 								</p>
 
 								<div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start mb-10">
@@ -160,8 +160,8 @@ export default function Home() {
 					</div>
 				</main>
 
-				{/* Scroll indicator */}
-				<div className={`absolute bottom-8 left-1/2 -translate-x-1/2 pb-[env(safe-area-inset-bottom)] z-10 transition-opacity duration-500 ${scrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+				{/* Scroll indicator — hidden on mobile */}
+				<div className={`hidden sm:block absolute bottom-8 left-1/2 -translate-x-1/2 pb-[env(safe-area-inset-bottom)] z-10 transition-opacity duration-500 ${scrolled ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
 					<Link
 						href="/#how-it-works"
 						onClick={scrollToHowItWorks}

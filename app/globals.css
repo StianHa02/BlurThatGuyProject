@@ -1,32 +1,39 @@
 @import url('https://api.fontshare.com/v2/css?f[]=nippo@1&display=swap');
 @import "tailwindcss";
 
-
+/* ─── Design Tokens ───────────────────────────────────────── */
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --card-foreground: #fafafa;
-  --primary: #6366f1;
+  --bg:               #070f1c;
+  --bg-card:          #0d1b2e;
+  --bg-overlay:       #0e1a2b;
+  --background:       #070f1c;
+  --foreground:       #fafafa;
+  --card:             #0d1b2e;
+  --card-foreground:  #fafafa;
+  --primary:          #2563eb;
+  --primary-hover:    #3b82f6;
   --primary-foreground: #fafafa;
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #6366f1;
-  --border: #27272a;
-  --ring: #6366f1;
+  --secondary:        #1e293b;
+  --muted:            #1e293b;
+  --muted-foreground: #94a3b8;
+  --border:           rgba(255,255,255,0.08);
+  --border-hover:     rgba(255,255,255,0.16);
+  --ring:             rgba(37,99,235,0.5);
+  --radius:           0.75rem;
+  --radius-lg:        1rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-
 }
+
+/* ─── Font ────────────────────────────────────────────────── */
 .font-nippo {
   font-family: 'Nippo', sans-serif;
 }
 
+/* ─── Base ────────────────────────────────────────────────── */
 html {
   scroll-behavior: smooth;
 }
@@ -38,30 +45,247 @@ html {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ─── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 8px; height: 8px; }
+::-webkit-scrollbar-track  { background: var(--secondary); border-radius: 4px; }
+::-webkit-scrollbar-thumb  { background: #475569; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* ═══════════════════════════════════════════════════════════
+   DESIGN SYSTEM COMPONENTS
+   These classes are shared across all pages. Use them instead
+   of repeating the same Tailwind utility strings.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── Page wrapper ────────────────────────────────────────── */
+.page-bg {
+  background-color: var(--bg);
+  color: white;
+  min-height: 100svh;
+  position: relative;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--secondary);
-  border-radius: 4px;
+/* ─── Cards ───────────────────────────────────────────────── */
+/* Solid dark card — used for panels, bentobox, drop zones */
+.card {
+  border-radius: var(--radius-lg);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--muted-foreground);
-  border-radius: 4px;
+/* Glass card — used for floating panels & auth forms */
+.card-glass {
+  border-radius: var(--radius-lg);
+  background: rgba(13, 27, 46, 0.80);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #71717a;
+/* ─── Buttons ─────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
-/* Gradient text */
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+  box-shadow: 0 4px 18px rgba(59, 130, 246, 0.4);
+}
+
+.btn-ghost {
+  background: rgba(255,255,255,0.05);
+  color: white;
+  border: 1px solid var(--border);
+  backdrop-filter: blur(4px);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255,255,255,0.10);
+  border-color: var(--border-hover);
+}
+
+.btn-danger {
+  background-color: #dc2626;
+  color: white;
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: #ef4444;
+}
+
+/* Size modifier — use alongside btn-* */
+.btn-sm {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+}
+
+/* Icon-only circle button */
+.btn-icon {
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+}
+
+/* ─── Inputs ──────────────────────────────────────────────── */
+/* Inside @layer components so Tailwind utilities (pl-10 etc.) can override */
+@layer components {
+  .input-field {
+    width: 100%;
+    padding-top: 0.625rem;
+    padding-right: 1rem;
+    padding-bottom: 0.625rem;
+    padding-left: 1rem;
+    border-radius: var(--radius);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.10);
+    color: white;
+    font-size: 0.875rem;
+    transition: all 0.15s ease;
+    outline: none;
+  }
+  .input-field::placeholder {
+    color: #64748b;
+  }
+  .input-field:focus {
+    border-color: rgba(37, 99, 235, 0.5);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  }
+}
+
+/* ─── Alerts ──────────────────────────────────────────────── */
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+}
+.alert-error {
+  background: rgba(239, 68, 68, 0.10);
+  border: 1px solid rgba(239, 68, 68, 0.20);
+  color: #f87171;
+}
+.alert-success {
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.20);
+  color: #4ade80;
+}
+.alert-info {
+  background: rgba(37, 99, 235, 0.10);
+  border: 1px solid rgba(37, 99, 235, 0.20);
+  color: #93c5fd;
+}
+
+/* ─── Spinner ─────────────────────────────────────────────── */
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Logo icon ───────────────────────────────────────────── */
+.logo-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  background-color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  flex-shrink: 0;
+}
+.logo-icon-sm {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.375rem;
+  background-color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  flex-shrink: 0;
+}
+
+/* ─── Section label ───────────────────────────────────────── */
+.section-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+/* ─── Dropdown menu ───────────────────────────────────────── */
+.dropdown-menu {
+  position: absolute;
+  right: 0;
+  margin-top: 0.5rem;
+  width: 12rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: rgba(14, 26, 43, 0.97);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  overflow: hidden;
+  z-index: 50;
+}
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #cbd5e1;
+  transition: all 0.12s ease;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.dropdown-item:hover {
+  color: white;
+  background: rgba(255,255,255,0.07);
+}
+.dropdown-item-danger {
+  color: #f87171;
+}
+.dropdown-item-danger:hover {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* ─── Gradient text ───────────────────────────────────────── */
 .gradient-text {
   background: linear-gradient(135deg, #818cf8 0%, #c084fc 50%, #f472b6 100%);
   -webkit-background-clip: text;
@@ -69,61 +293,47 @@ body {
   background-clip: text;
 }
 
-/* Glow effects */
-.glow-indigo {
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.3), 0 0 40px rgba(99, 102, 241, 0.1);
+/* ─── Glow effects ────────────────────────────────────────── */
+.glow-blue {
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.3), 0 0 40px rgba(37, 99, 235, 0.1);
 }
-
 .glow-purple {
   box-shadow: 0 0 20px rgba(192, 132, 252, 0.3), 0 0 40px rgba(192, 132, 252, 0.1);
 }
 
-/* Glass effect */
+/* ─── Glass effect (legacy alias) ────────────────────────── */
 .glass {
-  background: rgba(24, 24, 27, 0.8);
+  background: rgba(13, 27, 46, 0.80);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(63, 63, 70, 0.5);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
 }
 
-/* Pulse animation */
+/* ─── Animations ──────────────────────────────────────────── */
 @keyframes pulse-slow {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
 }
-
 .animate-pulse-slow {
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Progress bar animation */
 @keyframes progress-shine {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
-
 .progress-shine::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
   animation: progress-shine 1.5s infinite;
 }
 
-/* Grid background pattern */
+/* ─── Grid background ─────────────────────────────────────── */
 .bg-grid {
   background-image:
-    linear-gradient(rgba(63, 63, 70, 0.3) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(63, 63, 70, 0.3) 1px, transparent 1px);
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
   background-size: 50px 50px;
 }
