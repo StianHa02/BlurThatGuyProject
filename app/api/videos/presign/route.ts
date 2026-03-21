@@ -4,15 +4,15 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createClient } from '@/lib/supabase/server';
 import { randomUUID } from 'crypto';
 
-const s3 = new S3Client({
-    region: process.env.AWS_REGION!,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    },
-});
-
-const BUCKET = process.env.AWS_S3_BUCKET_NAME!;
+function getS3Client() {
+    return new S3Client({
+        region: process.env.AWS_REGION!,
+        credentials: {
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+        },
+    });
+}
 
 const MAX_FILE_SIZE_BYTES  = 2  * 1024 * 1024 * 1024; // 2 GB per file
 const USER_QUOTA_BYTES     = 5  * 1024 * 1024 * 1024; // 5 GB per user
@@ -82,6 +82,8 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 5. Generate pre-signed PUT URL ────────────────────────────────────────
+    const s3 = getS3Client();
+    const BUCKET = process.env.AWS_S3_BUCKET_NAME!;
     const key = `videos/${user.id}/${randomUUID()}-${filename}`;
 
     // Do NOT include ContentLength — it becomes a signed header and browsers
