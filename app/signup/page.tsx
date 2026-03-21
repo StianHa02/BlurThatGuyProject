@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { EyeOff, UserPlus, Mail, Lock, User, AlertCircle, CheckCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { BackgroundBlobs } from '@/app/(landing)/components';
+import { BackgroundBlobs } from '@/components';
 
 export default function SignupPage() {
     const [username, setUsername] = useState('');

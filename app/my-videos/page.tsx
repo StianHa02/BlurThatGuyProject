@@ -5,27 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Video, Trash2, Download, Loader2, AlertCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { BackgroundBlobs } from '@/app/(landing)/components';
-import { Header } from '@/app/upload/components';
-
-interface VideoRecord {
-    id: string;
-    filename: string;
-    s3_key: string;
-    file_size: number | null;
-    created_at: string;
-    signedUrl: string;
-}
-
-function formatFileSize(bytes: number): string {
-    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / 1024).toFixed(0)} KB`;
-}
-
-function formatDate(iso: string): string {
-    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-}
+import { BackgroundBlobs, Header } from '@/components';
+import type { VideoRecord } from '@/types';
+import { formatFileSize, formatDate } from '@/lib/utils';
 
 export default function MyVideosPage() {
     const router = useRouter();

@@ -4,25 +4,14 @@ import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Eye, EyeOff, Users, Info, Download, Loader2, Upload as UploadIcon, Save, CheckCircle } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
-import { Header, DropZone, ProgressBar, ErrorAlert, FaceGallery, Bentobox } from './components';
-import type { BlurMode } from './components';
-import { BackgroundBlobs} from '../(landing)/components';
+import { DropZone, ProgressBar, ErrorAlert, FaceGallery, Bentobox } from './components';
+import type { BlurMode } from '@/types';
+import { BackgroundBlobs, Header } from '@/components';
+import { formatFileSize, formatDuration } from '@/lib/utils';
 
 const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
 
 type Step = 'upload' | 'detect' | 'select';
-
-function formatFileSize(bytes: number): string {
-  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / 1024).toFixed(0)} KB`;
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
 
 export default function UploadPage() {
   const [currentStep, setCurrentStep] = useState<Step>('upload');
@@ -53,9 +42,9 @@ export default function UploadPage() {
   async function handleFileSelect(file: File) {
     setUploadingFileName(file.name);
     setUploading(true);
-    const success = await upload.handleFile(file);
+    const result = await upload.handleFile(file);
     setUploading(false);
-    if (success) { detection.reset(); setCurrentStep('detect'); }
+    if (result) { detection.reset(); setCurrentStep('detect'); }
   }
 
   async function handleStartDetection() {

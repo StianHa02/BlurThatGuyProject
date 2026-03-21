@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { Shield, Upload, Download, MousePointerClick, Lock, Gauge, Eye } from 'lucide-react';
-import { Navbar, FeatureCard, Footer, BackgroundBlobs, MockUI } from './components';
+import { Navbar, FeatureCard, Footer, MockUI } from './components';
+import { BackgroundBlobs } from '@/components';
 import { useEffect, useRef, useState } from 'react';
 import { useLandingHashSync } from './hooks/useLandingHashSync';
 import { motion } from 'framer-motion';

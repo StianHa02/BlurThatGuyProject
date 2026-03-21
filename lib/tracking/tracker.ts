@@ -3,22 +3,9 @@
 // v2 – Anti-drift: max_misses=12, max_center_distance=1.5,
 //   tighter size ratio, distance decay on frame gap.
 
-export type BBox = [number, number, number, number]; // x,y,w,h
+import type { BBox, Detection, Track } from '@/types';
 
-export interface Detection {
-  frameIndex: number;
-  bbox: BBox;
-  score: number;
-}
-
-export interface Track {
-  id: number;
-  frames: Detection[];
-  startFrame: number;
-  endFrame: number;
-  thumbnailFrameIndex: number;
-  mergedFrom?: number[];  // original track IDs that were merged into this one
-}
+export type { BBox, Detection, Track };
 
 // Calculate IOU (Intersection over Union)
 function iou(a: BBox, b: BBox) {

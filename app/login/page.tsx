@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { EyeOff, LogIn, Mail, Lock, AlertCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { BackgroundBlobs } from '@/app/(landing)/components';
+import { BackgroundBlobs } from '@/components';
 
 export default function LoginPage() {
     const router = useRouter();
