@@ -88,7 +88,7 @@ export function MockUI() {
 				{/* ── Video player ── */}
 				<div className="px-3 pt-3 pb-2">
 					<div
-						className="relative rounded-xl overflow-hidden border border-white/8"
+						className="relative rounded-xl overflow-hidden"
 						style={{
 							aspectRatio: '16/9',
 							backgroundImage: "url('/avatar.jpg')",
@@ -96,8 +96,7 @@ export function MockUI() {
 							backgroundPosition: 'top center',
 						}}
 					>
-						<div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/40" />
-					</div>
+						</div>
 				</div>
 
 				{/* ── Face gallery ── */}
