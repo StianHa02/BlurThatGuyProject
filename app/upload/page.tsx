@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { Eye, EyeOff, Users, Info, Download, Loader2, Upload as UploadIcon, Save, CheckCircle } from 'lucide-react';
+import { Eye, EyeOff, Users, Info, Download, Loader2, Upload as UploadIcon, Save, CheckCircle, Lock } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
 import { DropZone, ProgressBar, ErrorAlert, FaceGallery, Bentobox } from './components';
 import type { BlurMode } from '@/types';
 import { BackgroundBlobs, Header } from '@/components';
 import { formatFileSize, formatDuration } from '@/lib/utils';
+import type { User } from '@supabase/supabase-js';
 
 const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
 
@@ -21,6 +22,22 @@ export default function UploadPage() {
   const [blurMode, setBlurMode] = useState<BlurMode>('pixelate');
   const [abortController, setAbortController] = useState(() => new AbortController());
   const [saved, setSaved] = useState(false);
+
+  const userIntegration = process.env.NEXT_PUBLIC_USER_INTEGRATION === '1';
+  const [user, setUser] = useState<User | null>(null);
+  const canSave = userIntegration && !!user;
+
+  useEffect(() => {
+    if (!userIntegration) return;
+    import('@/lib/supabase/client').then(({ createClient }) => {
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data }) => setUser(data.user));
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+        setUser(session?.user ?? null);
+      });
+      return () => subscription.unsubscribe();
+    });
+  }, [userIntegration]);
 
   const upload = useVideoUpload();
   const detection = useFaceDetection({
@@ -311,12 +328,20 @@ export default function UploadPage() {
                 {/* Save Video */}
                 <button
                   onClick={async () => {
+                    if (!canSave) {
+                      upload.setError(!userIntegration ? 'Save is not available.' : 'Please log in to save videos.');
+                      return;
+                    }
                     setSaved(false);
                     const ok = await exportHook.saveVideo();
                     if (ok) setSaved(true);
                   }}
                   disabled={exportHook.saving || exportHook.exporting || detection.selectedTrackIds.length === 0}
-                  className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden whitespace-nowrap"
+                  className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden whitespace-nowrap ${
+                    canSave
+                      ? 'bg-blue-600 hover:bg-blue-500'
+                      : 'bg-blue-600/40 hover:bg-blue-600/50'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
                   {exportHook.saving && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.saveProgress}%` }} />}
                   <span className="relative flex items-center gap-2">
@@ -324,7 +349,9 @@ export default function UploadPage() {
                       ? <><Loader2 className="w-4 h-4 animate-spin" /><span className="hidden sm:inline">Saving... {exportHook.saveProgress}%</span></>
                       : saved
                         ? <><CheckCircle className="w-4 h-4 text-emerald-300" /><span className="hidden sm:inline">Saved!</span></>
-                        : <><Save className="w-4 h-4" /><span className="hidden sm:inline">Save Video</span></>
+                        : !canSave
+                          ? <><Lock className="w-4 h-4 opacity-60" /><span className="hidden sm:inline">Save Video</span></>
+                          : <><Save className="w-4 h-4" /><span className="hidden sm:inline">Save Video</span></>
                     }
                   </span>
                 </button>

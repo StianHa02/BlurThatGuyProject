@@ -115,8 +115,7 @@ def get_reid_model() -> ort.InferenceSession | None:
             logger.info(
                 f"ReID model loaded: {path.stem} — "
                 f"{REID_POOL_SIZE} sessions × {_reid_thread_budget} thread budget "
-                f"({_CPU_COUNT} logical CPUs) "
-                f"(v7 – drift-aware centroid, quality-filter, coherence)"
+                f"({_CPU_COUNT} logical CPUs)"
             )
         except Exception as e:
             logger.error(f"ReID load failed: {e}")
@@ -472,11 +471,14 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
     non_embeddable_indices = [
         i for i in range(len(tracks)) if i not in set(embeddable_indices)
     ]
-    logger.info(
-        f"ReID: {len(tracks)} tracks total — "
-        f"{len(embeddable_indices)} embeddable, "
-        f"{len(non_embeddable_indices)} too short (pass-through)"
-    )
+    if non_embeddable_indices:
+        logger.info(
+            f"ReID: {len(tracks)} tracks total — "
+            f"{len(embeddable_indices)} embeddable, "
+            f"{len(non_embeddable_indices)} too short (pass-through)"
+        )
+    else:
+        logger.info(f"ReID: {len(tracks)} tracks — all embeddable")
 
     if len(embeddable_indices) < 2:
         cap.release()

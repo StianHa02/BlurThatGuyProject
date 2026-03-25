@@ -1,6 +1,7 @@
 # tracker.py
 # IOU + distance-based face tracker with appearance gating
 
+import bisect
 import numpy as np
 
 # ---------------------------------------------------------------------------
@@ -270,49 +271,63 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
 
 
 # ---------------------------------------------------------------------------
-# Precompute per-track frame lookups for fast export
+# Lazy per-track frame lookups for export (gap-aware interpolation)
 # ---------------------------------------------------------------------------
 
-def _precompute_track_lookups(
-    tracks_frames: list[list[dict]], total_frames: int
-) -> list[dict]:
-    """Build a list of {frameIndex: frame_entry} dicts, one per track.
+class TrackLookup:
+    """Lazy per-frame bbox lookup with linear interpolation between detections.
 
-    Frames between sampled detections are filled with linearly interpolated
-    bounding boxes so that blur is continuous rather than flickering on/off
-    at the detection sample rate.
+    Stores only the original detection keyframes in sorted order.
+    On __contains__/get, uses bisect to find surrounding keyframes and
+    interpolates the bbox in O(log n) time.
+
+    Gap-aware: refuses to interpolate when the distance between two
+    consecutive detections exceeds max_gap. This prevents blur from
+    bleeding across scene cuts where ReID merged track fragments.
     """
-    lookups: list[dict] = []
-    for frames in tracks_frames:
-        lu: dict[int, dict] = {}
-        if not frames:
-            lookups.append(lu)
-            continue
+    __slots__ = ('_indices', '_by_idx', '_max_gap')
 
+    def __init__(self, frames: list[dict], max_gap: int = 36):
         sorted_frames = sorted(frames, key=lambda f: f["frameIndex"])
+        self._indices = [f["frameIndex"] for f in sorted_frames]
+        self._by_idx = {f["frameIndex"]: f for f in sorted_frames}
+        self._max_gap = max_gap
 
-        # Exact entries
-        for f in sorted_frames:
-            lu[f["frameIndex"]] = f
+    def __contains__(self, fi: int) -> bool:
+        return self.get(fi) is not None
 
-        # Interpolate bboxes between consecutive detections
-        for i in range(len(sorted_frames) - 1):
-            f0 = sorted_frames[i]
-            f1 = sorted_frames[i + 1]
-            fi0 = f0["frameIndex"]
-            fi1 = f1["frameIndex"]
-            if fi1 - fi0 <= 1:
-                continue
-            b0 = f0["bbox"]
-            b1 = f1["bbox"]
-            span = fi1 - fi0
-            for fi in range(fi0 + 1, fi1):
-                t = (fi - fi0) / span
-                lu[fi] = {
-                    "frameIndex": fi,
-                    "bbox": [b0[j] + t * (b1[j] - b0[j]) for j in range(4)],
-                    "score": f0["score"],
-                }
+    def get(self, fi: int) -> dict | None:
+        if not self._indices:
+            return None
+        exact = self._by_idx.get(fi)
+        if exact is not None:
+            return exact
+        if fi < self._indices[0] or fi > self._indices[-1]:
+            return None
+        idx = bisect.bisect_right(self._indices, fi)
+        fi0 = self._indices[idx - 1]
+        fi1 = self._indices[idx]
+        # Don't interpolate across large gaps (scene cuts / long absences)
+        if fi1 - fi0 > self._max_gap:
+            return None
+        f0 = self._by_idx[fi0]
+        f1 = self._by_idx[fi1]
+        t = (fi - fi0) / (fi1 - fi0)
+        b0, b1 = f0["bbox"], f1["bbox"]
+        return {
+            "frameIndex": fi,
+            "bbox": [b0[j] + t * (b1[j] - b0[j]) for j in range(4)],
+            "score": f0["score"],
+        }
 
-        lookups.append(lu)
-    return lookups
+
+def _precompute_track_lookups(
+    tracks_frames: list[list[dict]], total_frames: int, max_gap: int = 36
+) -> list[TrackLookup]:
+    """Build lazy lookup objects, one per track.
+
+    max_gap: maximum frame distance to interpolate across. Gaps larger than
+    this (e.g. scene cuts) are left unblurred. Default 36 = max_misses(12)
+    * sample_rate(3).
+    """
+    return [TrackLookup(frames, max_gap) for frames in tracks_frames]

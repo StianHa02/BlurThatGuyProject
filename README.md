@@ -36,6 +36,7 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 - [Design rationale](#design-rationale)
 - [Backend Features](#backend-features)
 - [Deployment](#deployment)
+- [User Integration](#user-integration)
 - [Architecture Diagram](#architecture-diagram)
 - [Project Structure](#project-structure)
 - [Docker Tips](#docker-tips)
@@ -286,30 +287,61 @@ The application runs on two independent EC2 instances situated behind an **Appli
 * **Linear Scaling:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
 * **CI/CD Pipeline:** Automated deployments are managed via **GitHub Actions**. The pipeline performs health checks on the frontend and backend containers before using SSH to remotely deploy the application.
 
-### User Integration
-
-User integration is an optional feature flag (`NEXT_PUBLIC_USER_INTEGRATION`) that adds authentication and personal video storage on top of the core blurring tool. When disabled, the app runs as a fully public, anonymous tool — no accounts required.
-
-**Authentication — Supabase Auth**
-
-User accounts are handled by [Supabase](https://supabase.com). Signup captures a username (stored in Supabase user metadata) alongside email and password. Sessions are managed via `@supabase/ssr` with cookie-based tokens, compatible with Next.js server components and route handlers.
-
-**Video Storage — AWS S3**
-
-Processed videos can be saved to a private S3 bucket. The upload flow avoids routing large files through the Next.js server: the backend generates a short-lived pre-signed PUT URL, and the browser uploads the blob directly to S3. Playback uses pre-signed GET URLs (1-hour TTL) generated server-side — the bucket has no public access.
-
-Videos are stored under a per-user path (`videos/{userId}/{uuid}-filename.mp4`), so users are isolated at the storage level. Row Level Security in Supabase ensures users can only query their own video metadata.
-
-**Limits enforced at the API layer:**
-- 2 GB per file
-- 5 GB per-user storage quota
-- 30 GB total bucket cap
-- 10 uploads per user per hour
-
-A full setup guide is available in [`docs/user-integration.md`](docs/user-integration.md).
-
 ---
 
+## User Integration
+
+User integration is an optional feature controlled by the `NEXT_PUBLIC_USER_INTEGRATION` flag. When enabled (`=1`), it adds authentication and personal video storage. When disabled (`=0` or omitted), the app runs as a fully public tool with no accounts required.
+
+### Authentication
+
+User accounts are handled by [Supabase](https://supabase.com) Auth. Signup collects a username, email, and password. The username is stored in Supabase user metadata and displayed in the navbar. Sessions use cookie-based tokens via `@supabase/ssr`, compatible with Next.js server components and route handlers.
+
+| Route | Purpose |
+|---|---|
+| `/login` | Sign in with email and password |
+| `/signup` | Create account with username |
+| `/settings` | Change password, delete account |
+| `/my-videos` | Personal library of saved videos |
+
+### Video Storage
+
+Processed videos are stored in a private AWS S3 bucket. Video metadata (filename, S3 key, file size, owner) is stored in a Supabase `videos` table protected by Row Level Security, so users can only see their own entries.
+
+The save flow works like this:
+
+1. The browser requests a pre-signed PUT URL from the server (`/api/videos/presign`). The server checks authentication, rate limits, and storage quotas before issuing the URL.
+2. The browser uploads the video blob directly to S3 using the pre-signed URL. This bypasses the Next.js server entirely, so large files never pass through the application layer.
+3. After a successful upload, the browser calls `/api/videos/save` to store the S3 key and metadata in Supabase.
+
+For playback, the server generates short-lived pre-signed GET URLs (1-hour TTL) scoped to the authenticated user. The browser plays the video directly from S3. The bucket itself has no public access.
+
+Videos are stored at `videos/{userId}/{uuid}-filename.mp4`, isolating users at the storage level.
+
+### Storage Limits
+
+All limits are constants in `app/api/videos/presign/route.ts`.
+
+| Limit | Default |
+|---|---|
+| Max file size | 2 GB |
+| Per-user quota | 5 GB |
+| Total bucket cap | 30 GB |
+| Rate limit | 10 uploads per user per hour |
+
+### Security
+
+| Threat | Mitigation |
+|---|---|
+| Cross-user video access | Private bucket, owner-scoped signed URLs |
+| Upload path spoofing | Pre-signed PUT URLs generated server-side using the authenticated user's ID |
+| Spam / abuse | 10 uploads per user per hour (enforced via DB row count) |
+| Storage abuse | Per-user quota + total bucket cap |
+| Oversized files | File size checked before issuing the upload URL |
+
+A full setup guide with Supabase, AWS S3, and environment variable instructions is available in [`docs/user-integration.md`](docs/user-integration.md).
+
+---
 
 ## Architecture Diagram
 

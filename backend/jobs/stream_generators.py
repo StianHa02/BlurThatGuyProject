@@ -112,12 +112,13 @@ def export_stream_generator(
         cap.release()
         cap = None
 
-        track_lookup_dicts = precompute_track_lookups([t["frames"] for t in tracks_map.values()], total_frames)
+        max_gap = 12 * max(export_request.sampleRate, 1)  # max_misses * sample_rate
+        track_lookup_dicts = precompute_track_lookups([t["frames"] for t in tracks_map.values()], total_frames, max_gap=max_gap)
         pad, target_blocks, blur_mode = export_request.padding, export_request.targetBlocks, export_request.blurMode
         pool = get_thread_pool()
         chunk: list[tuple] = []
         frames_written = 0
-        chunk_size = detector_pool_size * 4
+        chunk_size = min(detector_pool_size, 16)
         use_ffmpeg = shutil.which("ffmpeg") and width > 0 and height > 0
 
         yield json.dumps({"type": "progress", "progress": 5}) + "\n"
@@ -175,14 +176,15 @@ def export_stream_generator(
             frames_written += 1
 
         def flush_chunk(chunk_items: list[tuple]) -> str:
-            results = sorted([f.result() for f in [pool.submit(blur_frame, item) for item in chunk_items]], key=lambda x: x[0])
-            for _, frame in results:
+            futs = [pool.submit(blur_frame, item) for item in chunk_items]
+            for fut in futs:
+                _, frame = fut.result()
                 write_frame(frame)
             progress = min(70, round(5 + frames_written / total_frames * 65, 1))
             return json.dumps({"type": "progress", "progress": progress}) + "\n"
 
         frame_size = width * height * 3
-        read_queue: queue.Queue = queue.Queue(maxsize=chunk_size * 3)
+        read_queue: queue.Queue = queue.Queue(maxsize=min(chunk_size * 3, 48))
 
         def _frame_reader() -> None:
             fi_r = 0

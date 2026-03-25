@@ -136,7 +136,6 @@ def process_detection(
             if mad > cut_threshold and sampled_gap >= min_cut_gap:
                 cut_frames.add(fi)
                 last_cut_fi = fi
-                logger.info(f"[Scene cut] frame {fi} (MAD={mad:.1f})")
         prev_thumb = gray
 
     def drain_one() -> None:
@@ -243,6 +242,14 @@ def process_detection(
         raise InterruptedError("Job cancelled")
 
     emit_progress(80)
+    logger.info(f"Detection complete: {len(detections_per_frame)} frames with faces, {len(cut_frames)} scene cuts")
+
+    if not detections_per_frame:
+        logger.info(f"No faces detected in {video_id}")
+        store_tracks(video_id, [])
+        emit_progress(100)
+        return []
+
     tracks = track_detections(detections_per_frame, cut_frames)
 
     if cancel_token and cancel_token.cancelled:
