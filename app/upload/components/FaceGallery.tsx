@@ -35,8 +35,30 @@ export function FaceGallery({
   useEffect(() => {
     if (tracks.length === 0) return;
 
+    const waitForVisible = (): Promise<void> => {
+      if (!document.hidden) return Promise.resolve();
+      return new Promise((resolve) => {
+        const handler = () => {
+          if (!document.hidden) {
+            document.removeEventListener('visibilitychange', handler);
+            resolve();
+          }
+        };
+        document.addEventListener('visibilitychange', handler);
+      });
+    };
+
+    const isBlackFrame = (ctx: CanvasRenderingContext2D, size: number): boolean => {
+      const data = ctx.getImageData(0, 0, size, size).data;
+      for (let i = 0; i < data.length; i += 400) {
+        if (data[i] > 10 || data[i + 1] > 10 || data[i + 2] > 10) return false;
+      }
+      return true;
+    };
+
     const extractThumbnails = async () => {
       setLoading(true);
+      await waitForVisible();
       const video = document.createElement('video');
       video.src = videoUrl;
       video.crossOrigin = 'anonymous';
@@ -104,6 +126,13 @@ export function FaceGallery({
         canvas.height = thumbSize;
 
         ctx.drawImage(video, paddedX, paddedY, paddedW, paddedH, 0, 0, thumbSize, thumbSize);
+
+        if (isBlackFrame(ctx, thumbSize)) {
+          await waitForVisible();
+          await seekTo(frameTime);
+          ctx.drawImage(video, paddedX, paddedY, paddedW, paddedH, 0, 0, thumbSize, thumbSize);
+        }
+
         const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
         newThumbnails.set(track.id, dataUrl);
         setThumbnails(new Map(newThumbnails));

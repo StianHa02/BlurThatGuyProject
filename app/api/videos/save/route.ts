@@ -11,6 +11,12 @@ export async function POST(req: NextRequest) {
 
     const { key, filename, fileSize } = await req.json();
 
+    // Validate the S3 key belongs to this user
+    const expectedPrefix = `videos/${user.id}/`;
+    if (typeof key !== 'string' || !key.startsWith(expectedPrefix)) {
+        return NextResponse.json({ error: 'Invalid storage key' }, { status: 403 });
+    }
+
     const { error } = await supabase.from('videos').insert({
         user_id: user.id,
         filename,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { randomUUID } from 'crypto';
 
 function getS3Client() {
@@ -68,7 +69,9 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Total bucket cap: 30 GB ────────────────────────────────────────────
-    const { data: allVideos } = await supabase
+    // Use admin client to bypass RLS and sum all users' storage
+    const admin = createAdminClient();
+    const { data: allVideos } = await admin
         .from('videos')
         .select('file_size');
 

@@ -20,12 +20,12 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id, s3Key } = await req.json();
+    const { id } = await req.json();
 
-    // Verify ownership before deleting
+    // Verify ownership and get s3_key from the DB (never trust client-supplied keys)
     const { data: video } = await supabase
         .from('videos')
-        .select('user_id')
+        .select('user_id, s3_key')
         .eq('id', id)
         .single();
 
@@ -33,10 +33,10 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Delete from S3
+    // Delete from S3 using the DB record's key
     const s3 = getS3Client();
     const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
-    await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: s3Key }));
+    await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: video.s3_key }));
 
     // Delete from Supabase
     await supabase.from('videos').delete().eq('id', id);
