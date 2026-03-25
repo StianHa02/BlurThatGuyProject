@@ -4,6 +4,7 @@ import { EyeOff, Eye, Upload, Download, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const FACES = [1, 2, 3, 4];
+const GALLERY_FACES = FACES.slice(0, 2);
 
 export function MockUI() {
 	return (
@@ -87,7 +88,7 @@ export function MockUI() {
 				{/* ── Video player ── */}
 				<div className="px-3 pt-3 pb-2">
 					<div
-						className="relative rounded-xl overflow-hidden border border-white/8"
+						className="relative rounded-xl overflow-hidden"
 						style={{
 							aspectRatio: '16/9',
 							backgroundImage: "url('/avatar.jpg')",
@@ -95,15 +96,14 @@ export function MockUI() {
 							backgroundPosition: 'top center',
 						}}
 					>
-						<div className="absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/40" />
-					</div>
+						</div>
 				</div>
 
 				{/* ── Face gallery ── */}
 				<div className="px-3 pb-3">
 					<div className="rounded-xl bg-white/3 border border-white/8 p-3">
 						<div className="flex items-center justify-between mb-2.5">
-							<span className="text-[10px] font-semibold text-white">All Detected Faces ({FACES.length})</span>
+							<span className="text-[10px] font-semibold text-white">All Detected Faces ({GALLERY_FACES.length})</span>
 							<div className="flex items-center gap-1">
 								<div className="text-[9px] px-1.5 py-0.5 rounded-lg bg-white/5 border border-white/10 text-slate-400">Blur All</div>
 								<div className="text-[9px] px-1.5 py-0.5 rounded-lg bg-white/5 border border-white/10 text-slate-400">Clear</div>
@@ -115,7 +115,7 @@ export function MockUI() {
 						</div>
 
 						<div className="flex gap-2">
-							{FACES.map((i) => (
+							{GALLERY_FACES.map((i) => (
 								<div
 									key={i}
 									className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 border-2 border-blue-500 ring-1 ring-blue-500/30 bg-slate-800 flex items-center justify-center"
