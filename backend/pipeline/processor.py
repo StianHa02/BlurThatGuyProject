@@ -136,6 +136,7 @@ def process_detection(
             if mad > cut_threshold and sampled_gap >= min_cut_gap:
                 cut_frames.add(fi)
                 last_cut_fi = fi
+                logger.info(f"[Scene cut] frame {fi} (MAD={mad:.1f})")
         prev_thumb = gray
 
     def drain_one() -> None:

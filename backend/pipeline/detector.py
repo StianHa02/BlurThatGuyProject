@@ -24,7 +24,7 @@ FACE_DETECTION_CONFIG = {"score_threshold": 0.55, "nms_threshold": 0.25, "max_fa
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
 
 
-_SCRFD_SIZE = 480
+_SCRFD_SIZE = 640
 _scrfd_anchors: dict = {}
 _SCRFD_INPUT = "input.1"
 _SCRFD_STRIDES = [
