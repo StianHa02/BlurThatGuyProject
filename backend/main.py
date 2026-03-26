@@ -44,7 +44,9 @@ from jobs.stream_generators import detect_stream_generator, export_stream_genera
 from pipeline.tracker import _precompute_track_lookups
 
 
-# ===== Logging =====
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -70,7 +72,9 @@ _configure_access_log_filter()
 os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")
 
 
-# ===== Auth =====
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
 async def verify_api_key(x_api_key: str = Header(default=None)) -> bool:
     api_key = os.environ.get("API_KEY", "")
     dev_mode = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
@@ -83,7 +87,9 @@ async def verify_api_key(x_api_key: str = Header(default=None)) -> bool:
     return True
 
 
-# ===== Request Models =====
+# ---------------------------------------------------------------------------
+# Request Models
+# ---------------------------------------------------------------------------
 class FaceDetectionResult(BaseModel):
     bbox: List[float]
     score: float
@@ -123,7 +129,9 @@ class ExportRequest(BaseModel):
     blurMode: str = Field(default="pixelate", pattern="^(pixelate|blackout)$")
 
 
-# ===== App Lifecycle =====
+# ---------------------------------------------------------------------------
+# App Lifecycle
+# ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_environment()
@@ -153,7 +161,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Face Detection API", lifespan=lifespan)
 
 
-# ===== Middleware =====
+# ---------------------------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------------------------
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -178,7 +188,9 @@ app.add_middleware(
 )
 
 
-# ===== Endpoint Helpers =====
+# ---------------------------------------------------------------------------
+# Endpoint Helpers
+# ---------------------------------------------------------------------------
 def _get_redis_client(request: Request):
     redis_client = getattr(request.app.state, "redis_client", None)
     if redis_client is None:
@@ -200,7 +212,9 @@ def _process_batch_frame(frame_index: int, image_data: str) -> dict:
         return {"frameIndex": frame_index, "faces": [], "error": str(e)}
 
 
-# ===== Video Endpoints =====
+# ---------------------------------------------------------------------------
+# Video Endpoints
+# ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": "SCRFD-2.5G"}
@@ -435,7 +449,9 @@ async def submit_job(request: Request, file: UploadFile = File(...), _: bool = D
         raise HTTPException(status_code=500, detail="Failed to submit job")
 
 
-# ===== Job Endpoints =====
+# ---------------------------------------------------------------------------
+# Job Endpoints
+# ---------------------------------------------------------------------------
 @app.post("/job/{job_id}/cancel")
 async def cancel_job(job_id: str, request: Request, _: bool = Depends(verify_api_key)):
     redis_client = _get_redis_client(request)

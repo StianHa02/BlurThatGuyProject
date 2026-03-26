@@ -3,7 +3,7 @@
 import { EyeOff, Eye, Upload, Download, Save } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const FACES = [1, 2, 3, 4];
+const FACES = [1, 2];
 const GALLERY_FACES = FACES.slice(0, 2);
 
 export function MockUI() {
@@ -17,7 +17,7 @@ export function MockUI() {
 			{/* Ambient glow */}
 			<div className="absolute -inset-6 bg-blue-500/10 rounded-[3rem] blur-3xl pointer-events-none" />
 
-			<div className="relative rounded-2xl border border-white/8 bg-[var(--bg)] overflow-hidden shadow-2xl shadow-black/70">
+			<div className="relative rounded-2xl border border-white/8 bg-(--bg) overflow-hidden shadow-2xl shadow-black/70">
 
 				{/* ── Header — logo left · steps center · spacer right ── */}
 				<div className="flex items-center justify-between gap-4 px-4 py-2.5 border-b border-white/8">

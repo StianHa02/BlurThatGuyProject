@@ -1,7 +1,7 @@
 "use client";
 
 import { LucideIcon } from 'lucide-react';
-import { useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 
 interface FeatureCardProps {
   icon: LucideIcon;
@@ -63,7 +63,7 @@ export function FeatureCard({ icon: Icon, step, title, description, color }: Fea
       ref={boxRef}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
-      className="group relative rounded-2xl p-[1px] flex flex-col shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-black/40"
+      className="group relative rounded-2xl p-px flex flex-col shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-black/40"
       style={{ background: borderBg }}
     >
       <div className="relative flex-1 rounded-[calc(1rem-1px)] p-5 bg-[#0d1b2e]/80 overflow-hidden">

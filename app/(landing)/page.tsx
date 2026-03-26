@@ -50,6 +50,9 @@ const BENEFITS = [
 	},
 ];
 
+/* Landing page component: renders the hero and "How it works" sections,
+   wires up scrolling behavior and keeps the URL hash in sync for
+   "#how-it-works" using refs and the useLandingHashSync hook. */
 export default function Home() {
 	const [scrolled, setScrolled] = useState(false);
 	const heroRef = useRef<HTMLDivElement>(null);
@@ -101,8 +104,8 @@ export default function Home() {
 								initial={{ opacity: 0, x: -16 }}
 								animate={{ opacity: 1, x: 0 }}
 								transition={{ duration: 0.5, ease: 'easeOut' }}
-								className="text-center lg:text-left"
-							>
+								className="text-center lg:text-left">
+
 								<div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/25 text-blue-300 text-xs sm:text-sm font-medium mb-8 backdrop-blur-sm">
 									<Shield className="w-3.5 h-3.5" />
 									Privacy-First Video Processing
@@ -121,16 +124,16 @@ export default function Home() {
 								<div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start mb-10">
 									<Link
 										href="/upload"
-										className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 transition-all font-semibold text-white shadow-lg shadow-blue-600/30 hover:shadow-blue-500/40"
-									>
+										className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 transition-all font-semibold text-white shadow-lg shadow-blue-600/30 hover:shadow-blue-500/40">
+
 										<Upload className="w-4 h-4 group-hover:scale-110 transition-transform" />
 										Start Blurring
 									</Link>
 									<Link
 										href="/#how-it-works"
 										onClick={scrollToHowItWorks}
-										className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all font-medium backdrop-blur-sm"
-									>
+										className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all font-medium backdrop-blur-sm">
+
 										See How It Works
 									</Link>
 								</div>
@@ -165,8 +168,8 @@ export default function Home() {
 					<Link
 						href="/#how-it-works"
 						onClick={scrollToHowItWorks}
-						className="flex flex-col items-center gap-2 text-slate-600 hover:text-slate-300 transition-colors"
-					>
+						className="flex flex-col items-center gap-2 text-slate-600 hover:text-slate-300 transition-colors">
+
 						<span className="text-xs font-medium tracking-widest uppercase">Scroll</span>
 						<svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -180,8 +183,8 @@ export default function Home() {
 				<section
 					id="how-it-works"
 					ref={howItWorksRef}
-					className="flex-1 flex flex-col items-center justify-center px-6 py-20 relative z-10"
-				>
+					className="flex-1 flex flex-col items-center justify-center px-6 py-20 relative z-10">
+
 					<div className="max-w-7xl mx-auto w-full flex flex-col items-center">
 
 						{/* Section header */}

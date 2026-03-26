@@ -1,9 +1,9 @@
 import logging
 import threading
+import redis
 from pathlib import Path
 from typing import Callable
 
-import redis
 
 from jobs.queue_manager import (
     get_job_status,

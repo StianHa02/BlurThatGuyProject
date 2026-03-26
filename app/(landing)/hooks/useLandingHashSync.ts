@@ -1,5 +1,11 @@
 import { useEffect, type RefObject } from 'react';
 
+/**
+ * useLandingHashSync
+ * Keep the URL hash in sync with landing sections. Adds '#how-it-works'
+ * when the corresponding section is visible and removes it when the hero
+ * is visible. Uses IntersectionObserver and history.replaceState.
+ */
 export function useLandingHashSync(
 	heroRef: RefObject<HTMLDivElement | null>,
 	howItWorksRef: RefObject<HTMLElement | null>

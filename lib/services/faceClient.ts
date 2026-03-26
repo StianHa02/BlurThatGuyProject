@@ -1,7 +1,3 @@
-// lib/faceClient.ts
-// Face detection via Python backend (YuNet), proxied through Next.js API routes.
-// Tracking now happens server-side. Detection stream returns Track objects directly.
-
 import { API_URL } from '@/lib/config';
 import type { Track, BlurMode } from '@/types';
 
@@ -112,7 +108,7 @@ export async function cancelJob(jobId: string): Promise<void> {
       keepalive: true,
     });
   } catch {
-    // fire-and-forget
+
   }
 }
 

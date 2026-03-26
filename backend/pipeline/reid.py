@@ -1,14 +1,3 @@
-# reid.py
-# Re-identification module: merges fragmented tracks belonging to the same person.
-#
-# v7 – Identity drift protection
-#   - All v6 features: landmark-aligned ArcFace, centroid matching, quality
-#     filtering (blur + profile), intra-track coherence check, flip augmentation
-#   - NEW: Drift-aware incremental centroid. Embeddings are added one-at-a-time;
-#     each must pass a consistency gate (cosine sim ≥ 0.50 to running centroid).
-#     If the tracker switched people mid-track, the drifted embeddings are
-#     rejected, keeping the centroid clean and preventing false merges.
-
 import cv2
 import numpy as np
 import threading
@@ -21,15 +10,10 @@ import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
 
-# ── Session pool (mirrors detector.py's _DetectorLease pattern) ─────────────
-# Multiple independent sessions so concurrent threads (inline embed_detections
-# + parallel ReID embedding) never serialize through a single .run() call.
-#
-# Scaling rules (same logic applies on a 2-vCPU EC2 and a 16-core Ryzen):
-#   pool_size        = clamp(cpu_count // 2, 1, 4)
-#   intra_op_threads = clamp(cpu_count // pool_size, 1, 4)
-# This guarantees pool_size × intra_op_threads ≤ cpu_count so we never
-# over-subscribe — e.g. 2 vCPUs → pool=1, intra=2; 8 cores → pool=4, intra=2.
+# ---------------------------------------------------------------------------
+# Session pool
+# ---------------------------------------------------------------------------
+# pool_size × intra_op_threads ≤ cpu_count to avoid over-subscription.
 _CPU_COUNT = multiprocessing.cpu_count()
 REID_POOL_SIZE = max(1, min(4, _CPU_COUNT // 2))
 _REID_INTRA_THREADS = max(1, min(4, _CPU_COUNT // REID_POOL_SIZE))
@@ -40,27 +24,28 @@ _pool_lock = threading.Lock()
 _pool_semaphore: threading.Semaphore | None = None
 _loaded = False
 
-# ── Tunables (all overridable via env) ──────────────────────────────────────
-REID_THRESHOLD = 0.72    # correct for w600k_r50 embedding geometry.
-                         # Lower to 0.68 only if downgrading to w600k_mbf.
+# ---------------------------------------------------------------------------
+# Tunables
+# ---------------------------------------------------------------------------
+REID_THRESHOLD = 0.72
+
 _REID_SIZE = 112
-_SAMPLES_PER_TRACK = 15  # max samples per track; adaptively reduced on long videos
+_SAMPLES_PER_TRACK = 15
 _TEMPORAL_BINS = 5
 _MIN_CROP_PX = 30
 _SIZE_RATIO_GATE = 5.0
 
-# Total video-seek budget across all tracks. With 1014 tracks this caps seeks
-# at ~3000 rather than 15210, keeping ReID fast on long multi-person videos.
 _MAX_TOTAL_SEEKS = int(os.environ.get("REID_MAX_SEEKS", "3000"))
 
-# Quality gates
-_MIN_LAPLACIAN_VAR = 15.0    # reject blurry crops below this
-_MAX_YAW_RATIO = 2.8         # reject profile faces
-_MIN_TRACK_COHERENCE = 0.5   # reject tracks whose embeddings are too scattered
-_MIN_EMBEDDABLE_SAMPLES = 3  # need at least this many good embeddings per track
-_DRIFT_GATE = 0.45           # slightly permissive for natural lighting/angle variation
+_MIN_LAPLACIAN_VAR = 15.0
+_MAX_YAW_RATIO = 2.8
+_MIN_TRACK_COHERENCE = 0.5
+_MIN_EMBEDDABLE_SAMPLES = 3
+_DRIFT_GATE = 0.45
 
-# ── ArcFace 112×112 alignment template (standard 5-point) ──────────────────
+# ---------------------------------------------------------------------------
+# ArcFace alignment template
+# ---------------------------------------------------------------------------
 _ARCFACE_DST = np.array([
     [38.2946, 51.6963],  # left eye
     [73.5318, 51.5014],  # right eye
@@ -72,8 +57,6 @@ _ARCFACE_DST = np.array([
 
 def _model_path() -> Path:
     models_dir = Path(__file__).resolve().parent.parent / "models"
-    # Prefer ResNet-50 ArcFace (significantly better FP/FN) over MobileFaceNet.
-    # Drop w600k_r50.onnx from insightface model-zoo next to w600k_mbf.onnx.
     r50 = models_dir / "w600k_r50.onnx"
     mbf = models_dir / "w600k_mbf.onnx"
     if r50.exists():
@@ -124,17 +107,14 @@ def get_reid_model() -> ort.InferenceSession | None:
 
 
 def apply_thread_budget(n_threads: int) -> None:
-    """Safely apply a new ONNX thread budget by recreating ReID sessions."""
     global _reid_thread_budget, _loaded
-    # Divide budget across pool so total threads never exceeds n_threads.
-    # e.g. budget=16, pool=4 → 4 threads/session (16 total, not 224).
     target_threads = max(1, int(n_threads) // REID_POOL_SIZE)
     if _pool_semaphore is None and not _reid_pool:
         _reid_thread_budget = target_threads
         return
 
     if _pool_semaphore is not None:
-        # Drain all leases so no thread is running inference during recreation.
+        # Drain all leases before recreating sessions.
         for _ in range(REID_POOL_SIZE):
             _pool_semaphore.acquire()
 
@@ -165,7 +145,9 @@ class _ReidLease:
         _pool_semaphore.release()
 
 
-# ── Quality checks ──────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Quality checks
+# ---------------------------------------------------------------------------
 
 def _is_blurry(crop: np.ndarray) -> bool:
     """Reject blurry faces via Laplacian variance."""
@@ -174,8 +156,7 @@ def _is_blurry(crop: np.ndarray) -> bool:
 
 
 def _is_profile(kps: list) -> bool:
-    """Reject near-profile faces using landmark geometry.
-    If the nose is much closer to one eye than the other, it's a strong yaw."""
+    """Reject near-profile faces via nose-to-eye distance ratio."""
     pts = np.array(kps, dtype=np.float32).reshape(5, 2)
     left_eye, right_eye, nose = pts[0], pts[1], pts[2]
 
@@ -186,13 +167,13 @@ def _is_profile(kps: list) -> bool:
     nose_to_left = np.linalg.norm(nose - left_eye)
     nose_to_right = np.linalg.norm(nose - right_eye)
 
-    # For a frontal face, nose is roughly equidistant from both eyes.
-    # For a profile, one distance is much larger.
     ratio = max(nose_to_left, nose_to_right) / (min(nose_to_left, nose_to_right) + 1e-6)
     return ratio > _MAX_YAW_RATIO
 
 
-# ── ArcFace alignment ──────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# ArcFace alignment
+# ---------------------------------------------------------------------------
 
 def _align_face(frame: np.ndarray, kps: list) -> np.ndarray | None:
     """Align a face using 5-point landmarks to the ArcFace 112×112 template."""
@@ -229,14 +210,18 @@ def _extract_face_crop(frame: np.ndarray, bbox: list, kps: list | None) -> np.nd
     return cv2.resize(crop, (_REID_SIZE, _REID_SIZE))
 
 
-# ── Pre-processing ──────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Pre-processing
+# ---------------------------------------------------------------------------
 
 def _preprocess_single(img_112: np.ndarray) -> np.ndarray:
     """Normalise a 112×112 BGR image → (1, 3, 112, 112) float32."""
     return ((img_112.astype(np.float32) - 127.5) / 127.5).transpose(2, 0, 1)[np.newaxis, ...]
 
 
-# ── Quality-aware frame selection ───────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Quality-aware frame selection
+# ---------------------------------------------------------------------------
 
 def _pick_sample_frames(frames: list[dict]) -> list[dict]:
     """Up to _SAMPLES_PER_TRACK frames, spread across _TEMPORAL_BINS.
@@ -265,7 +250,6 @@ def _pick_sample_frames(frames: list[dict]) -> list[dict]:
         kps = f.get("kps")
         if kps:
             base *= 2.0
-            # Penalise profile faces in sampling priority
             if _is_profile(kps):
                 base *= 0.3
         return base
@@ -285,7 +269,9 @@ def _pick_sample_frames(frames: list[dict]) -> list[dict]:
     return selected[:n]
 
 
-# ── Flip-augmented ONNX inference ───────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Flip-augmented ONNX inference
+# ---------------------------------------------------------------------------
 
 def _embed_single(session: ort.InferenceSession, input_name: str,
                   face_112: np.ndarray) -> np.ndarray:
@@ -299,28 +285,21 @@ def _embed_single(session: ort.InferenceSession, input_name: str,
     return emb / norm if norm > 1e-8 else emb
 
 
-_EMBED_BATCH_SIZE = 32  # max crops per ONNX call — caps memory usage
+_EMBED_BATCH_SIZE = 32
 
 
 def _embed_crops(session: ort.InferenceSession,
                  crops: list[np.ndarray]) -> np.ndarray:
-    """Embed multiple 112×112 faces with batched ONNX inference + flip augmentation.
-
-    Instead of 2*N individual session.run() calls, stacks crops into batches
-    of up to _EMBED_BATCH_SIZE and runs 2 calls per batch (original + flipped).
-    Returns (N, D) L2-normed embeddings.
-    """
+    """Batched ONNX inference with flip augmentation. Returns (N, D) L2-normed embeddings."""
     if not crops:
         return np.empty((0, 512), dtype=np.float32)
     input_name = session.get_inputs()[0].name
     all_embs = []
     for start in range(0, len(crops), _EMBED_BATCH_SIZE):
         batch = crops[start:start + _EMBED_BATCH_SIZE]
-        # Stack originals: (B, 3, 112, 112)
         blob_orig = np.concatenate(
             [_preprocess_single(c) for c in batch], axis=0
         )
-        # Stack flipped: (B, 3, 112, 112)
         blob_flip = np.concatenate(
             [_preprocess_single(c[:, ::-1].copy()) for c in batch], axis=0
         )
@@ -333,15 +312,12 @@ def _embed_crops(session: ort.InferenceSession,
     return np.concatenate(all_embs, axis=0)
 
 
-# ── Inline per-frame embedding (for tracker appearance gate) ────────────────
+# ---------------------------------------------------------------------------
+# Inline per-frame embedding
+# ---------------------------------------------------------------------------
 
 def embed_detections(frame: np.ndarray, detections: list[dict]) -> list[dict]:
-    """Compute ArcFace embedding for each detection and attach as 'emb' field.
-
-    Called inline during the detection loop so embeddings are available for
-    the tracker's appearance gate.  Skips profiles/blurry/tiny faces — those
-    detections keep their bbox/score/kps but get no 'emb' key.
-    """
+    """Attach ArcFace 'emb' field to each viable detection. Skips tiny/blurry/profile faces."""
     if not _reid_pool or not detections:
         return detections
 
@@ -352,11 +328,9 @@ def embed_detections(frame: np.ndarray, detections: list[dict]) -> list[dict]:
             kps = det.get("kps")
             bbox = det["bbox"]
 
-            # Skip tiny faces
             if bbox[2] < _MIN_CROP_PX or bbox[3] < _MIN_CROP_PX:
                 continue
 
-            # Skip profiles
             if kps and _is_profile(kps):
                 continue
 
@@ -364,17 +338,18 @@ def embed_detections(frame: np.ndarray, detections: list[dict]) -> list[dict]:
             if crop is None:
                 continue
 
-            # Skip blurry
             if _is_blurry(crop):
                 continue
 
             emb = _embed_single(session, input_name, crop)
-            det["emb"] = emb  # numpy array, shape (512,)
+            det["emb"] = emb
 
     return detections
 
 
-# ── Track metadata ──────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Track metadata
+# ---------------------------------------------------------------------------
 
 def _track_meta(t: dict) -> dict:
     frames = t["frames"]
@@ -388,20 +363,15 @@ def _track_meta(t: dict) -> dict:
     }
 
 
-# ── Centroid + coherence (drift-aware) ──────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Centroid + coherence
+# ---------------------------------------------------------------------------
 
 def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
-    """Build L2-normalised centroid incrementally with identity drift gate.
+    """Incremental L2-normalised centroid that rejects drifted embeddings.
 
-    Instead of naively averaging all embeddings (which corrupts the centroid
-    if the tracker switched identities mid-track), we:
-      1. Start with the first embedding as the centroid.
-      2. For each subsequent embedding, check cosine similarity to current centroid.
-      3. If sim < _DRIFT_GATE → reject it (likely a different person / drift).
-      4. Otherwise add it and update the running centroid.
-
-    Returns (centroid, coherence) where coherence = mean sim of accepted
-    embeddings to the final centroid.
+    Returns (centroid, coherence) where coherence = mean cosine similarity
+    of accepted embeddings to the final centroid.
     """
     if len(embeddings) == 0:
         return np.zeros(512, dtype=np.float32), 0.0
@@ -411,7 +381,6 @@ def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
         norm = np.linalg.norm(e)
         return (e / norm if norm > 1e-8 else e), 1.0
 
-    # Incremental centroid with drift gate
     accepted_count = 1
     running_sum = embeddings[0].copy()
     centroid = running_sum.copy()
@@ -424,7 +393,6 @@ def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
         if sim >= _DRIFT_GATE:
             accepted_count += 1
             running_sum += emb
-            # Update centroid incrementally
             centroid = running_sum / accepted_count
             norm = np.linalg.norm(centroid)
             if norm > 1e-8:
@@ -447,7 +415,9 @@ def _build_centroid(embeddings: np.ndarray) -> tuple[np.ndarray, float]:
     return centroid, coherence
 
 
-# ── Main entry point ───────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=None) -> list[dict]:
     if not _reid_pool or len(tracks) < 2:
@@ -457,13 +427,7 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
     if not cap.isOpened():
         return [{**t, "mergedFrom": [t["id"]]} for t in tracks]
 
-    # ── 0. Pre-filter: separate embeddable tracks from guaranteed-failures ───
-    # A track with fewer raw frames than _MIN_EMBEDDABLE_SAMPLES can never
-    # produce enough good crops to embed reliably. Skip all video seeks for
-    # those tracks and return them as-is after the merge pass.
-    # This is the key optimisation for interview/talk-show footage where most
-    # of 1000+ tracks are short cut-fragments of the same 5 people — we still
-    # process ALL of them but skip reads for the ones that can't be embedded.
+    # 0. Pre-filter: skip tracks too short to embed
     embeddable_indices = [
         i for i, t in enumerate(tracks)
         if len(t["frames"]) >= _MIN_EMBEDDABLE_SAMPLES
@@ -484,7 +448,7 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
         cap.release()
         return [{**t, "mergedFrom": [t["id"]]} for t in tracks]
 
-    # ── 1. Adaptive sampling — keep total seeks ≤ _MAX_TOTAL_SEEKS ──────────
+    # 1. Adaptive sampling — cap total seeks
     n_embeddable = len(embeddable_indices)
     samples_per_track = max(
         _MIN_EMBEDDABLE_SAMPLES,
@@ -497,7 +461,7 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
             f"budget={_MAX_TOTAL_SEEKS} seeks)"
         )
 
-    # ── 2. Plan which frames to sample ──────────────────────────────────────
+    # 2. Plan which frames to sample
     emb_tracks = [tracks[i] for i in embeddable_indices]
     sample_plan: list[list[dict]] = []
     frame_requests: dict[int, list[tuple[int, int]]] = {}
@@ -508,7 +472,7 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
         for si, f in enumerate(chosen):
             frame_requests.setdefault(f["frameIndex"], []).append((ti, si))
 
-    # ── 3. Single sequential video pass → read all crops ────────────────────
+    # 3. Single sequential video pass → read all crops
     needed_frames = sorted(frame_requests.keys())
     track_crops: list[list[np.ndarray]] = [[] for _ in range(len(emb_tracks))]
 
@@ -546,10 +510,7 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
     if cancel_token and cancel_token.cancelled:
         raise InterruptedError("Job cancelled")
 
-    # ── 4. Embed all crops in parallel → centroid per embeddable track ───────
-    # Each worker leases a session from the pool, embeds its track's crops, and
-    # returns (ti, embs). REID_POOL_SIZE workers run simultaneously, keeping all
-    # ReID cores busy instead of serialising through a single session.
+    # 4. Embed all crops in parallel → centroid per track
     centroids: list[np.ndarray | None] = [None] * len(emb_tracks)
     coherences: list[float] = [0.0] * len(emb_tracks)
     valid_local_indices: list[int] = []
@@ -582,10 +543,10 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
     if len(valid_local_indices) < 2:
         return [{**t, "mergedFrom": [t["id"]]} for t in tracks]
 
-    # ── 5. Track metadata ────────────────────────────────────────────────────
+    # 5. Track metadata
     emb_metas = [_track_meta(t) for t in emb_tracks]
 
-    # ── 6. Vectorised pairwise cosine similarity ─────────────────────────────
+    # 6. Pairwise cosine similarity
     valid_centroids = np.stack(
         [centroids[i] for i in valid_local_indices], axis=0
     )  # (M, 512)
@@ -600,12 +561,12 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
             j = valid_local_indices[jj]
             mj = emb_metas[j]
 
-            # STAGE 1a: temporal overlap — cannot be same person
+            # Skip temporal overlap
             if mi["start"] <= mj["end"] and mj["start"] <= mi["end"]:
                 if not mi["frame_set"].isdisjoint(mj["frame_set"]):
                     continue
 
-            # STAGE 1b: face-area ratio gate
+            # Skip mismatched face sizes
             ratio = mi["median_area"] / max(mj["median_area"], 1.0)
             if ratio > _SIZE_RATIO_GATE or ratio < 1.0 / _SIZE_RATIO_GATE:
                 continue
@@ -620,7 +581,7 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
         f"{len(candidates)} merge candidates (threshold={REID_THRESHOLD})"
     )
 
-    # ── 7. Conflict-aware union-find merge (over embeddable tracks only) ─────
+    # 7. Conflict-aware union-find merge
     n_emb = len(emb_tracks)
     parent = list(range(n_emb))
     group_frames: dict[int, set] = {
@@ -642,7 +603,7 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
         parent[rb] = ra
         group_frames[ra].update(group_frames[rb])
 
-    # ── 8. Build output ──────────────────────────────────────────────────────
+    # 8. Build output
     groups: dict[int, list[int]] = {}
     for i in range(n_emb):
         groups.setdefault(find(i), []).append(i)
@@ -672,7 +633,6 @@ def merge_tracks_by_identity(tracks: list[dict], video_path: Path, cancel_token=
         })
         new_id += 1
 
-    # Re-attach non-embeddable tracks as individual entries
     for i in non_embeddable_indices:
         t = tracks[i]
         result.append({**t, "mergedFrom": [t["id"]], "id": new_id})

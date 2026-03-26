@@ -1,7 +1,3 @@
-# blur.py
-# Per-frame pixelation blur with ellipse mask.
-# Called by main.py's export pipeline (via ThreadPoolExecutor).
-
 import cv2
 import numpy as np
 

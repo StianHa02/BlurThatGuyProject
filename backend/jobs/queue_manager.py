@@ -1,8 +1,8 @@
 import os
 import time
+import redis
 from typing import Any
 
-import redis
 
 TTL_SECONDS = 3600
 MAX_ACTIVE_JOBS = 2
@@ -12,7 +12,7 @@ WAITING_KEY = "btg:waiting"
 SYSTEM_THREADS_KEY = "btg:system:total_threads"
 # Heartbeat: active jobs must touch this key at least once every N seconds.
 # Allows the queue to recover from jobs that died without calling on_job_finish
-# (e.g. server OOM, client beacon that never arrived).
+
 HEARTBEAT_TTL = 60  # seconds — must exceed the longest gap between progress events
 _default_budget = os.cpu_count() or 4
 TOTAL_THREAD_BUDGET = max(1, int(os.environ.get("TOTAL_THREAD_BUDGET") or _default_budget))
@@ -80,7 +80,6 @@ def evict_stale_jobs(r: redis.Redis) -> list[str]:
         lock = r.lock(ADMISSION_LOCK_KEY, timeout=5, blocking_timeout=1)
         try:
             with lock:
-                # Re-check inside the lock — another thread may have just evicted it
                 if not r.sismember(ACTIVE_KEY, job_id) or r.exists(_heartbeat_key(job_id)):
                     continue
                 r.srem(ACTIVE_KEY, job_id)
@@ -96,7 +95,7 @@ def evict_stale_jobs(r: redis.Redis) -> list[str]:
                 _refresh_waiting_positions(r)
                 evicted.append(job_id)
         except Exception:
-            pass  # lock timeout — another worker is handling it
+            pass
 
     return evicted
 
@@ -179,7 +178,6 @@ def on_job_finish(r: redis.Redis, job_id: str) -> None:
         r.delete(_position_key(job_id))
         r.delete(_progress_key(job_id))
         r.delete(_heartbeat_key(job_id))
-        # Only mark cancelled if not already set to a terminal state by the job itself
         current_status = r.get(_status_key(job_id))
         if current_status not in ("done", "error"):
             r.set(_status_key(job_id), "cancelled", ex=TTL_SECONDS)

@@ -1,7 +1,3 @@
-# detector.py
-# SCRFD-2.5G face detector optimized for CPU.
-# Exports: detect_faces, get_face_detector, get_thread_pool, DETECTOR_POOL_SIZE
-
 import cv2
 import numpy as np
 import threading
@@ -20,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 FACE_DETECTION_CONFIG = {"score_threshold": 0.55, "nms_threshold": 0.25, "max_faces": 5000}
 
-# Exported for main.py
 DETECTOR_POOL_SIZE = int(os.environ.get("DETECTOR_POOL_SIZE", max(2, multiprocessing.cpu_count())))
 
 
@@ -58,7 +53,6 @@ def _get_model_path() -> Path:
 
 
 def get_thread_pool() -> ThreadPoolExecutor:
-    """Restored function for main.py"""
     global _thread_pool
     if _thread_pool is None:
         _thread_pool = ThreadPoolExecutor(max_workers=DETECTOR_POOL_SIZE)
@@ -100,15 +94,8 @@ def get_face_detector() -> None:
 
 
 def apply_thread_budget(n_threads: int) -> None:
-    """Safely apply a new ONNX thread budget.
-
-    If the pool is idle all sessions are rebuilt immediately.
-    If inference is in progress the budget is updated for the *next* rebuild
-    (which happens on the next idle apply_thread_budget call) rather than
-    blocking active jobs for several seconds while sessions are recreated.
-    """
+    """Apply new thread budget. Rebuilds sessions if idle, defers if busy."""
     global _onnx_thread_budget
-    # Divide budget across pool so total threads never exceeds n_threads.
     target_threads = max(1, int(n_threads) // DETECTOR_POOL_SIZE)
     if target_threads == _onnx_thread_budget:
         return
@@ -118,9 +105,6 @@ def apply_thread_budget(n_threads: int) -> None:
         return
 
     if _pool_semaphore is not None:
-        # Try to acquire all slots non-blocking.  If any are held by active
-        # inference we skip the session rebuild this time — the budget variable
-        # is updated so the next idle call will pick it up.
         acquired = 0
         for _ in range(DETECTOR_POOL_SIZE):
             if _pool_semaphore.acquire(blocking=False):
@@ -190,7 +174,6 @@ def _scrfd_decode(outputs: list, output_names: list, scale: float) -> list[dict]
         y2 = (a[:, 1] + b[:, 3]) / scale
         all_boxes.append(np.stack([x1, y1, x2 - x1, y2 - y1], axis=1))
         all_scores.append(score[mask])
-        # Decode keypoints: anchor + offset, then rescale to original image coords
         k[:, :, 0] = (k[:, :, 0] + a[:, 0:1]) / scale
         k[:, :, 1] = (k[:, :, 1] + a[:, 1:2]) / scale
         all_kps.append(k.reshape(-1, 10))
@@ -199,7 +182,6 @@ def _scrfd_decode(outputs: list, output_names: list, scale: float) -> list[dict]
     boxes  = np.concatenate(all_boxes)
     scores = np.concatenate(all_scores)
     kps_all = np.concatenate(all_kps)
-    # cv2.dnn.NMSBoxes accepts ndarray; keep as lists-of-lists for the API
     idx = cv2.dnn.NMSBoxes(boxes.tolist(), scores.tolist(), thresh, FACE_DETECTION_CONFIG["nms_threshold"])
     if not len(idx):
         return []

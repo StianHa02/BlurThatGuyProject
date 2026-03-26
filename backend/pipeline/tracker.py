@@ -1,6 +1,3 @@
-# tracker.py
-# IOU + distance-based face tracker with appearance gating
-
 import bisect
 import numpy as np
 
@@ -246,9 +243,9 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
                 used_tracks.add(next_id)
                 next_id += 1
 
-    # -----------------------------------------------------------------------
-    # finalize tracks
-    # -----------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Finalize tracks
+    # ---------------------------------------------------------------------------
 
     result = []
 

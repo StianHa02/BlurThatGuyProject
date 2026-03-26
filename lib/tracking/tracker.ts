@@ -1,10 +1,4 @@
-// lib/tracker.ts
-// IOU + distance-based tracker for face detections across frames.
-// v2 – Anti-drift: max_misses=12, max_center_distance=1.5,
-//   tighter size ratio, distance decay on frame gap.
-
 import type { BBox, Detection, Track } from '@/types';
-
 export type { BBox, Detection, Track };
 
 // Calculate IOU (Intersection over Union)
