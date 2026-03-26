@@ -8,7 +8,6 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-# Keep env loading centralized for all modules importing settings.
 try:
     import importlib
 

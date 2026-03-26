@@ -37,7 +37,7 @@ ENCODER_ARGS: dict[str, list[str]] = {
 
 
 def get_encoder() -> str:
-    """Test-encode a null frame with each HW encoder; use first that actually works."""
+    """Probe HW encoders and return the first working one."""
     global _h264_encoder
     if _h264_encoder is not None:
         return _h264_encoder
@@ -110,7 +110,6 @@ def process_detection(
     detections_per_frame: dict[int, list[dict]] = {}
     cut_frames: set[int] = set()
 
-    # Per-job pool sized to budget prevents jobs starving each other.
     _own_pool = thread_budget is not None
     pool = ThreadPoolExecutor(max_workers=max(1, thread_budget)) if _own_pool else get_thread_pool()
     pending_futures: list[tuple[int, object]] = []

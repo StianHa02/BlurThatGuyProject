@@ -44,7 +44,6 @@ def _similar_size(a, b) -> bool:
 
 
 def _cosine(a, b) -> float:
-    """Safe cosine similarity."""
     na = np.linalg.norm(a)
     nb = np.linalg.norm(b)
     if na < 1e-8 or nb < 1e-8:
@@ -57,8 +56,7 @@ def _cosine(a, b) -> float:
 # ---------------------------------------------------------------------------
 
 def _batch_iou(track_boxes: np.ndarray, det_box: np.ndarray) -> np.ndarray:
-    """Compute IoU of (N, 4) xywh track boxes against a single (4,) det box.
-    Returns (N,) array of IoU values."""
+    """IoU of (N,4) xywh boxes against a single (4,) box."""
     tx, ty, tw, th = track_boxes[:, 0], track_boxes[:, 1], track_boxes[:, 2], track_boxes[:, 3]
     dx, dy, dw, dh = det_box
     iw = np.maximum(0.0, np.minimum(tx + tw, dx + dw) - np.maximum(tx, dx))
@@ -69,8 +67,7 @@ def _batch_iou(track_boxes: np.ndarray, det_box: np.ndarray) -> np.ndarray:
 
 
 def _batch_center_dist(track_boxes: np.ndarray, det_box: np.ndarray) -> np.ndarray:
-    """Normalized center distance of (N, 4) track boxes vs single (4,) det box.
-    Returns (N,) array."""
+    """Normalized center distance of (N,4) boxes vs single (4,) box."""
     tx, ty, tw, th = track_boxes[:, 0], track_boxes[:, 1], track_boxes[:, 2], track_boxes[:, 3]
     dx, dy, dw, dh = det_box
     avg = (tw + th + dw + dh) / 4.0
@@ -99,8 +96,6 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
     min_len = TRACKER_CONFIG["min_track_length"]
     max_dist = TRACKER_CONFIG["max_center_distance"]
 
-    # Pre-sort cuts once into a list so we can use bisect for O(log n) range
-    # queries instead of scanning the entire set for every track candidate.
     import bisect
     cuts_sorted = sorted(cut_frames) if cut_frames else []
 
@@ -118,21 +113,16 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
 
         used_tracks = set()
 
-        # Pre-filter active tracks for this frame
         active_tracks = [t for t in tracks if fi - t["last_frame"] <= max_misses]
 
-        # Initialize vectorized arrays (used inside the detection loop)
         track_boxes = np.empty((0, 4), dtype=np.float64)
         track_last_frames = np.empty(0, dtype=np.int64)
         cut_mask = np.empty(0, dtype=bool)
 
         if active_tracks and detections_per_frame[fi]:
-            # Build (N, 4) array of active track boxes for vectorized matching
             track_boxes = np.array([t["last_box"] for t in active_tracks], dtype=np.float64)
             track_last_frames = np.array([t["last_frame"] for t in active_tracks])
 
-            # Pre-compute cut masks: for each active track, check if there's a
-            # cut between its last_frame and fi
             if cuts_sorted:
                 cut_mask = np.array([_cut_between(t["last_frame"], fi) for t in active_tracks])
             else:
@@ -144,10 +134,9 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
             best_score = -1e9
 
             if not active_tracks:
-                pass  # skip to new-track creation below
+                pass
             else:
                 det_box = np.array(det["bbox"], dtype=np.float64)
-                # Vectorized IoU and distance for ALL active tracks at once
                 ious = _batch_iou(track_boxes, det_box)
                 dists = _batch_center_dist(track_boxes, det_box)
                 sim_sizes = _batch_similar_size(track_boxes, det_box)
@@ -159,7 +148,6 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
                     if t["id"] in used_tracks:
                         continue
 
-                    # Skip tracks across scene cuts
                     if cut_mask[ti]:
                         continue
 
@@ -168,12 +156,11 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
 
                     score = iou
 
-                    # fallback distance matching
+                    # Fallback: distance + appearance matching
                     if iou < iou_th and dist < max_dist and sim_sizes[ti]:
 
                         dist_score = (0.5 - dist * 0.2) * float(gap_decays[ti])
 
-                        # appearance gate ONLY for fallback matching
                         det_emb = det.get("emb")
                         t_centroid = t.get("centroid")
 
@@ -203,7 +190,7 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
                 best_track["last_box"] = det["bbox"]
                 best_track["last_frame"] = fi
 
-                # update appearance centroid
+                # Update appearance centroid
                 det_emb = det.get("emb")
                 if det_emb is not None:
 
@@ -272,15 +259,8 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
 # ---------------------------------------------------------------------------
 
 class TrackLookup:
-    """Lazy per-frame bbox lookup with linear interpolation between detections.
-
-    Stores only the original detection keyframes in sorted order.
-    On __contains__/get, uses bisect to find surrounding keyframes and
-    interpolates the bbox in O(log n) time.
-
-    Gap-aware: refuses to interpolate when the distance between two
-    consecutive detections exceeds max_gap. This prevents blur from
-    bleeding across scene cuts where ReID merged track fragments.
+    """Per-frame bbox lookup with O(log n) interpolation between keyframes.
+    Refuses to interpolate across gaps > max_gap (scene cuts).
     """
     __slots__ = ('_indices', '_by_idx', '_max_gap')
 
@@ -304,7 +284,6 @@ class TrackLookup:
         idx = bisect.bisect_right(self._indices, fi)
         fi0 = self._indices[idx - 1]
         fi1 = self._indices[idx]
-        # Don't interpolate across large gaps (scene cuts / long absences)
         if fi1 - fi0 > self._max_gap:
             return None
         f0 = self._by_idx[fi0]
@@ -321,10 +300,5 @@ class TrackLookup:
 def _precompute_track_lookups(
     tracks_frames: list[list[dict]], total_frames: int, max_gap: int = 36
 ) -> list[TrackLookup]:
-    """Build lazy lookup objects, one per track.
-
-    max_gap: maximum frame distance to interpolate across. Gaps larger than
-    this (e.g. scene cuts) are left unblurred. Default 36 = max_misses(12)
-    * sample_rate(3).
-    """
+    """Build one TrackLookup per track. max_gap = max interpolation distance."""
     return [TrackLookup(frames, max_gap) for frames in tracks_frames]

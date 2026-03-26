@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 class _AccessLogFilter(logging.Filter):
-    """Hide noisy successful queue-poll access logs."""
+    """Filter out successful /job/*/status access logs."""
 
     _status_poll_re = re.compile(r'"GET /job/[^\s]+/status(?:\?[^\s"]*)? HTTP/[^\"]+" 200\b')
 

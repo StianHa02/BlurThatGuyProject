@@ -15,14 +15,12 @@ def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
         h = min(int(oh * (1 + padding * 2)), height - y)
         if w > 0 and h > 0:
             region = frame[y:y + h, x:x + w]
-            # Ellipse mask: only anonymise the face oval, not the full bounding box
+            # Ellipse mask for face oval only
             mask = np.zeros((h, w), dtype=np.uint8)
             cv2.ellipse(mask, (w // 2, h // 2), (w // 2, h // 2), 0, 0, 360, 255, -1)
             if blur_mode == "blackout":
                 replacement = np.zeros_like(region)
             else:
-                # Adaptive block size: same block density regardless of face size.
-                # Minimum 6px so pixelation is always visible even on small faces.
                 block_size = max(6, min(w, h) // target_blocks)
                 small = cv2.resize(
                     region,

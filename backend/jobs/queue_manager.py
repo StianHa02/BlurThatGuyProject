@@ -10,10 +10,7 @@ ADMISSION_LOCK_KEY = "btg:admission_lock"
 ACTIVE_KEY = "btg:active"
 WAITING_KEY = "btg:waiting"
 SYSTEM_THREADS_KEY = "btg:system:total_threads"
-# Heartbeat: active jobs must touch this key at least once every N seconds.
-# Allows the queue to recover from jobs that died without calling on_job_finish
-
-HEARTBEAT_TTL = 60  # seconds — must exceed the longest gap between progress events
+HEARTBEAT_TTL = 60  # must exceed longest gap between progress events
 _default_budget = os.cpu_count() or 4
 TOTAL_THREAD_BUDGET = max(1, int(os.environ.get("TOTAL_THREAD_BUDGET") or _default_budget))
 
@@ -43,31 +40,22 @@ def set_job_progress(r: redis.Redis, job_id: str, progress: float) -> None:
 
 
 def touch_job_heartbeat(r: redis.Redis, job_id: str) -> None:
-    """Called periodically by running jobs so the queue can detect ghost jobs."""
     r.set(_heartbeat_key(job_id), 1, ex=HEARTBEAT_TTL)
 
 
 def _promote_next_locked(r: redis.Redis) -> None:
-    """Promote the next waiter if there is capacity. Must be called inside the admission lock."""
+    """Promote the next waiter if there is capacity. Caller must hold admission lock."""
     if r.scard(ACTIVE_KEY) < MAX_ACTIVE_JOBS:
         next_job_id = r.lpop(WAITING_KEY)
         if next_job_id:
             r.sadd(ACTIVE_KEY, next_job_id)
             _touch_key(r, ACTIVE_KEY)
-            # Keep status/progress initialization centralized in rebalance() so
-            # queued workers do not observe "running" before thread_budget exists.
             set_job_progress(r, next_job_id, 0.0)
-            # Prime heartbeat on promotion to avoid a stale-eviction race
-            # before the worker starts sending progress heartbeats.
             touch_job_heartbeat(r, next_job_id)
 
 
 def evict_stale_jobs(r: redis.Redis) -> list[str]:
-    """Evict active jobs whose heartbeat has expired. Returns evicted job ids.
-
-    Called from the status-polling endpoint so that a user in the queue can
-    self-heal even when the dead job's server process never called on_job_finish.
-    """
+    """Evict active jobs whose heartbeat has expired. Returns evicted job ids."""
     active_jobs = list(r.smembers(ACTIVE_KEY))
     if not active_jobs:
         return []
@@ -183,7 +171,6 @@ def on_job_finish(r: redis.Redis, job_id: str) -> None:
             r.set(_status_key(job_id), "cancelled", ex=TTL_SECONDS)
         _touch_key(r, ACTIVE_KEY)
 
-        # Promote before rebalancing so rebalance sees the final active set.
         if was_active:
             _promote_next_locked(r)
 

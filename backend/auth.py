@@ -4,7 +4,6 @@ from pathlib import Path
 
 from fastapi import Header, HTTPException
 
-# Best-effort dotenv loading keeps local dev behavior stable.
 try:
     from dotenv import load_dotenv
 

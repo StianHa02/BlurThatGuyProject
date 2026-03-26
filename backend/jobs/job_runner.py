@@ -86,8 +86,7 @@ def run_queued_detection_job(
     apply_job_thread_budget(r, job_id)
     set_job_progress(r, job_id, 0.0)
 
-    # Keep heartbeat independent from progress callbacks so long ReID stages
-    # do not get marked stale and evicted while still actively processing.
+    # Independent heartbeat so long-running stages don't get evicted.
     hb_stop = threading.Event()
 
     def _heartbeat_loop() -> None:
