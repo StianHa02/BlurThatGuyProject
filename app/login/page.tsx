@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogIn, Mail, Lock } from 'lucide-react';
+import {LogIn, Mail, Lock, ArrowLeft} from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { BackgroundBlobs, Logo, Alert } from '@/components';
 
@@ -29,7 +29,14 @@ export default function LoginPage() {
             <BackgroundBlobs />
 
             <div className="relative z-10 w-full max-w-md">
-                <Logo className="justify-center mb-10" />
+                {/* Header */ }
+                <div className="flex items-center gap-3 mb-10">
+                    <Link href="/" className="btn btn-ghost btn-icon">
+                        <ArrowLeft className="w-4 h-4" />
+                    </Link>
+                    <Logo />
+                    <span className="font-bold text-lg text-white tracking-tight">/ Settings</span>
+                </div>
 
                 <div className="card-glass p-8">
                     <h1 className="text-2xl font-bold text-white mb-1">Welcome back</h1>

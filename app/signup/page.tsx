@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { UserPlus, Mail, Lock, User, CheckCircle } from 'lucide-react';
+import {UserPlus, Mail, Lock, User, CheckCircle, ArrowLeft} from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { BackgroundBlobs, Logo, Alert } from '@/components';
 
@@ -21,6 +21,27 @@ export default function SignupPage() {
         if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
         if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
         setLoading(true);
+
+        // Check if email already in use
+        try {
+            const normalizedEmail = email.trim().toLowerCase();
+            const checkRes = await fetch('/api/auth/check-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: normalizedEmail }),
+            });
+            const { exists, error: checkError } = await checkRes.json();
+            if (checkError) {
+                console.error('Check email error:', checkError);
+            } else if (exists) {
+                setError('Email is already in use.');
+                setLoading(false);
+                return;
+            }
+        } catch (err) {
+            console.error('Failed to check email:', err);
+        }
+
         const supabase = createClient();
         const { error } = await supabase.auth.signUp({
             email, password, options: { data: { username } },
@@ -35,7 +56,14 @@ export default function SignupPage() {
             <BackgroundBlobs />
 
             <div className="relative z-10 w-full max-w-md">
-                <Logo className="justify-center mb-10" />
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-10">
+                    <Link href="/" className="btn btn-ghost btn-icon">
+                        <ArrowLeft className="w-4 h-4" />
+                    </Link>
+                    <Logo />
+                    <span className="font-bold text-lg text-white tracking-tight">/ Settings</span>
+                </div>
 
                 <div className="card-glass p-8">
                     {success ? (
