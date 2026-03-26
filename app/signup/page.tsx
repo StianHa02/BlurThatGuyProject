@@ -93,7 +93,7 @@ export default function SignupPage() {
                                     <div className="relative">
                                         <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
                                         <input
-                                            id="username" type="text" autoComplete="username" required
+                                            id="username" type="text" autoComplete="off" required
                                             value={username} onChange={(e) => setUsername(e.target.value)}
                                             placeholder="yourname"
                                             className="input-field pl-10"

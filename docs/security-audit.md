@@ -23,6 +23,7 @@ The backend has solid fundamentals:
 | S3 key from client in delete | Critical | `app/api/videos/delete/route.ts` | Read `s3_key` from DB record, not request body |
 | Bucket cap bypassed RLS | Medium | `app/api/videos/presign/route.ts` | Use admin client for global sum |
 | S3 orphans on account delete | Medium | `app/api/user/delete/route.ts` | Delete all S3 objects before removing user |
+| Missing CSP header | Medium | `next.config.ts` | Added restrictive CSP with Supabase/S3 support |
 
 ## Remaining Recommendations
 
@@ -56,10 +57,8 @@ Several proxy routes forward `error.detail` from the backend to the client. Coul
 
 **Fix:** Return generic messages ("Detection failed", "Export failed") and log the real error server-side.
 
-### 5. Add Content-Security-Policy header (Medium)
-No CSP configured in `next.config.ts`. CSP prevents XSS by restricting script sources.
-
-**Fix:** Add `headers()` config in `next.config.ts` with a restrictive CSP policy.
+### 5. Add Content-Security-Policy header (Fixed)
+CSP is now configured in `next.config.ts` with a policy that allows Supabase and S3 sources while blocking everything else by default.
 
 ## Not Issues (false positives from automated scan)
 

@@ -50,6 +50,10 @@ Go to **Project Settings → API** and copy:
    - Set **Site URL** to your domain (e.g. `https://blurthatguy.no`)
    - Add `http://localhost:3000` to **Redirect URLs** for local development
    - Optionally disable **Confirm email** during development
+3. **Custom Email Branding:**
+   - Go to **Authentication → Email Templates**
+   - Copy the content of `docs/email-templates/confirmation.html` into the **Confirm signup** template
+   - This ensures the email matches the app's dark-mode branding and includes the logo.
 
 ### 1.4 Run the Database Migration
 

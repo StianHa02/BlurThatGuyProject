@@ -12,9 +12,33 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // Allow loading models from public folder with caching
+  // Security headers including CSP
   async headers() {
+    const cspHeader = `
+      default-src 'self';
+      script-src 'self' 'unsafe-eval' 'unsafe-inline';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' blob: data: https://*.supabase.co;
+      font-src 'self';
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+      frame-ancestors 'none';
+      connect-src 'self' https://*.supabase.co https://*.s3.eu-north-1.amazonaws.com;
+      media-src 'self' blob: https://*.s3.eu-north-1.amazonaws.com;
+      upgrade-insecure-requests;
+    `.replace(/\s{2,}/g, ' ').trim();
+
     return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: cspHeader,
+          },
+        ],
+      },
       {
         source: '/models/:path*',
         headers: [
