@@ -108,7 +108,7 @@ export default function MyVideosPage() {
 
                                     <div className="flex gap-2 items-center">
                                         <a
-                                            href={video.signedUrl}
+                                            href={`/api/videos/download?id=${video.id}`}
                                             download={video.filename}
                                             className="flex flex-1 items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs font-medium transition-all whitespace-nowrap"
                                         >

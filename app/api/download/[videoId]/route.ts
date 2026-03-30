@@ -1,11 +1,18 @@
 // app/api/download/[videoId]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
 ) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { videoId } = await params;
     const response = await fetch(`${BACKEND_URL}/download/${videoId}`, {
