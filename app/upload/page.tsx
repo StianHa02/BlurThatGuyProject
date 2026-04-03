@@ -336,8 +336,8 @@ export default function UploadPage() {
                     const ok = await exportHook.saveVideo();
                     if (ok) setSaved(true);
                   }}
-                  disabled={exportHook.saving || exportHook.exporting || detection.selectedTrackIds.length === 0}
-                  className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden whitespace-nowrap ${
+                  disabled={exportHook.saving || exportHook.exporting || detection.selectedTrackIds.length === 0 || saved}
+                  className={`flex items-center justify-center gap-2 w-28 sm:w-36 py-2 rounded-xl font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden whitespace-nowrap ${
                     canSave
                       ? 'bg-blue-600 hover:bg-blue-500'
                       : 'bg-blue-600/40 hover:bg-blue-600/50'

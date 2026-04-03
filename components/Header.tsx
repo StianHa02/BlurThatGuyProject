@@ -29,11 +29,11 @@ export function Header({ currentStep }: HeaderProps) {
           aria-label="Back to home"
         >
           <ArrowLeft className="w-4 h-4 shrink-0" />
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 shadow-sm shadow-blue-600/40">
-              <EyeOff className="w-3.5 h-3.5 text-white" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-md bg-blue-500 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/30">
+              <EyeOff className="w-4 h-4 text-white" />
             </div>
-            <span className="font-semibold text-white">BlurThatGuy</span>
+            <span className="font-bold text-lg text-white tracking-tight">BlurThatGuy</span>
           </div>
           <span className="text-xs text-slate-600 group-hover:text-slate-400 hidden sm:inline ml-1">Home</span>
         </Link>
