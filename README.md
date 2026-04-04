@@ -38,6 +38,7 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 - [Deployment](#deployment)
 - [User Integration](#user-integration)
 - [Architecture Diagram](#architecture-diagram)
+- [CI/CD Pipeline](#cicd-pipeline)
 - [Project Structure](#project-structure)
 - [Docker Tips](#docker-tips)
 - [Troubleshooting](#troubleshooting)
@@ -54,9 +55,11 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 
 ---
 
-### Option 2: Run with Docker
+### Option 2: Run with Docker _(recommended)_
 
-**Requirements:** Docker Desktop
+**Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
+
+> **No environment variables needed.** The full core flow (upload a video, detect faces, select who to blur, export and download the result) works out of the box with `docker compose up --build` and zero configuration. Supabase auth and S3 video storage are opt-in extras, but not nesessary.
 
 ```bash
 # Clone the repository
@@ -68,7 +71,7 @@ cd BlurThatGuyProject
 > [https://huggingface.co/maze/faceX/blob/main/w600k_r50.onnx](https://huggingface.co/maze/faceX/blob/main/w600k_r50.onnx)
 
 ```bash
-# Start everything
+# Start everything 
 docker compose up --build
 
 # Stop
@@ -364,6 +367,35 @@ Row Level Security on the Supabase `videos` table ensures users can only query t
 
 ---
 
+## CI/CD Pipeline
+
+Every push and pull request triggers a GitHub Actions workflow (`.github/workflows/ci.yml`) that runs **6 parallel jobs**:
+
+| Job | What it does |
+|---|---|
+| **Frontend Lint** | Runs ESLint with zero-warning policy |
+| **Frontend Tests** | Runs Vitest unit tests (format utils, API client) |
+| **Backend Tests** | Runs pytest suite (config validation, storage, tracker, API endpoints) |
+| **Backend Health** | Starts the backend with Redis and verifies `/health` responds |
+| **Frontend Health** | Spins up both backend + frontend and verifies the Next.js API proxy (`/api/health`) works end-to-end |
+| **Build Smoke** | Runs `next build` production build + backend import check |
+
+The pipeline uses `concurrency` groups to cancel in-progress runs on the same branch, keeping CI fast. Redis is provided as a service container for jobs that need it.
+
+```
+Push / PR
+  ├── ESLint ──────────────────────► ✓
+  │     ├── Frontend Tests ────────► ✓
+  │     ├── Frontend Health ───────► ✓
+  │     └── Build Smoke ───────────► ✓
+  ├── Backend Tests ───────────────► ✓
+  └── Backend Health ──────────────► ✓
+```
+
+For production deployment, the live environment runs on **AWS EC2** behind an Application Load Balancer. Deploys are triggered via GitHub Actions after CI passes, building Docker images and rolling them out to the target instances.
+
+---
+
 ## Project Structure
 
 ```
@@ -376,10 +408,10 @@ BlurThatGuyProject/
 │   ├── (landing)/                     # Landing page (route group, serves /)
 │   │   ├── page.tsx                   # Hero, features, and demo sections
 │   │   ├── components/
-│   │   └── hooks/                     # Hook for syncsing URL hash with scroll position
+│   │   └── hooks/                     # Hook for syncing URL hash with scroll position
 │   ├── upload/                        # Core blurring workflow (3-step single page)
 │   │   ├── page.tsx                   # Upload → Detect → Select/Export wizard
-│   │   ├── components/                # Upload spesific UI components
+│   │   ├── components/                # Upload-specific UI components
 │   │   └── hooks/
 │   │       ├── useVideoUpload.ts      # File validation, upload to backend, metadata extraction
 │   │       ├── useFaceDetection.ts    # Detection polling, queue status, track state
@@ -409,7 +441,6 @@ BlurThatGuyProject/
 ├── lib/
 │   ├── config.ts                      # NEXT_PUBLIC_* env vars and feature flags
 │   ├── services/                      # Client-side API wrapper (upload, detect, export, jobs)
-│   ├── tracking/                      # Track interpolation and merging logic for the UI              
 │   ├── utils/                         # formatFileSize, formatDuration, formatDate           
 │   ├── supabase/
 │   │   ├── client.ts                  # Browser Supabase client
@@ -421,7 +452,6 @@ BlurThatGuyProject/
 ├── backend/                           # Python FastAPI backend
 │   ├── main.py                        # App entry point + all API endpoints
 │   ├── config.py                      # Env vars, validation, temp file paths
-│   ├── auth.py                        # API key verification dependency
 │   ├── storage.py                     # In-memory tracks and job-result store
 │   ├── pipeline/
 │   │   ├── detector.py                # SCRFD face detection + ONNX session pool
@@ -433,6 +463,11 @@ BlurThatGuyProject/
 │   │   ├── job_runner.py              # Async job execution with thread budget splitting
 │   │   ├── queue_manager.py           # Redis-backed FIFO queue + admission control
 │   │   └── stream_generators.py       # NDJSON generators for detect/export progress
+│   ├── tests/
+│   │   ├── test_config.py             # Config validation & path traversal tests
+│   │   ├── test_storage.py            # In-memory store CRUD tests
+│   │   ├── test_tracker.py            # IoU, geometry, tracking & interpolation tests
+│   │   └── test_api.py                # API endpoint tests (FastAPI TestClient)
 │   ├── models/                        # ONNX model weights (not committed)
 │   └── requirements.txt
 ├── docker-compose.yml                 # Main local production setup 
@@ -440,7 +475,7 @@ BlurThatGuyProject/
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
 └── .github/workflows/
-    ├── ci.yml                         # Lint, type-check, build on PR
+    ├── ci.yml                         # Lint, tests, health checks, build on PR
     └── cd.yml                         # Deploy to EC2 on push to main
 ```
 
@@ -464,6 +499,8 @@ docker compose up --build
 # Check running containers
 docker compose ps
 ```
+
+> **Apple Silicon note:** The Docker images use `python:3.11-slim` and `node:20-alpine`, which both support `linux/arm64` natively. On Apple Silicon Macs (M1/M2/M3/M4), Docker Desktop will build and run these containers at native speed — no x86 emulation required. All Python dependencies (`onnxruntime`, `opencv-python`, `numpy`) ship ARM64 wheels.
 
 ---
 
