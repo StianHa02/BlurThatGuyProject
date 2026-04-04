@@ -25,7 +25,4 @@ def get_tracks(video_id: str) -> list[dict] | None:
         return _detection_store.get(video_id)
 
 
-def clear_tracks(video_id: str) -> None:
-    with _store_lock:
-        _detection_store.pop(video_id, None)
 
