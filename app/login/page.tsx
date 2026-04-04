@@ -35,7 +35,7 @@ export default function LoginPage() {
                         <ArrowLeft className="w-4 h-4" />
                     </Link>
                     <Logo />
-                    <span className="font-bold text-lg text-white tracking-tight">/ Settings</span>
+                    <span className="font-bold text-lg text-white tracking-tight">/ Login</span>
                 </div>
 
                 <div className="card-glass p-8">

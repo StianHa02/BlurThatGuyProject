@@ -275,8 +275,8 @@ The application runs on two independent EC2 instances situated behind an **Appli
 
 | Node | Instance Type | Role | Key Specifications |
 | :--- | :--- | :--- | :--- |
-| **Primary** | `c7i.8xlarge` | Primary Compute | 32 vCPU, Intel Sapphire Rapids |
-| **Secondary** | `c7i-flex.large` | Burst Overflow | 2 vCPU, Cost-optimized |
+| **Primary** | `c7i` | Primary Compute | High vCPU count, Intel Sapphire Rapids |
+| **Secondary** | `c7i` | Burst Overflow | Lower vCPU count, cost-optimized |
 
 ### Traffic Orchestration
 * **Routing Algorithm:** The ALB utilizes the **Least Outstanding Requests** algorithm. This ensures that new jobs are automatically sent to the node with the lowest active workload. Due to the high core count of the Primary node, it naturally absorbs the majority of traffic by completing jobs faster.
@@ -291,7 +291,16 @@ The application runs on two independent EC2 instances situated behind an **Appli
 
 ## User Integration
 
-User integration is an optional feature controlled by the `NEXT_PUBLIC_USER_INTEGRATION` flag. When enabled (`=1`), it adds authentication and personal video storage. When disabled (`=0` or omitted), the app runs as a fully public tool with no accounts required.
+User integration is an **optional** feature controlled by the `NEXT_PUBLIC_USER_INTEGRATION` environment variable. When enabled (`=1`), it adds user accounts and personal video storage. When disabled (`=0` or omitted), the app runs as a fully public tool with no sign-up required.
+
+### How It Works
+
+Without user integration, the app is stateless from the user's perspective: upload a video, blur faces, download the result. Enabling user integration layers on two capabilities:
+
+1. **Accounts** — users can sign up, log in, and manage their profile. The navbar switches from a static link to a user dropdown with access to settings and saved videos.
+2. **Persistent video storage** — after blurring, users can save the processed video to their personal library and re-download it later from any device.
+
+Both features are powered by external services (Supabase for auth/database, AWS S3 for file storage) and require their own credentials. The core blurring workflow works identically with or without user integration.
 
 ### Authentication
 
@@ -339,7 +348,13 @@ All limits are constants in `app/api/videos/presign/route.ts`.
 | Storage abuse | Per-user quota + total bucket cap |
 | Oversized files | File size checked before issuing the upload URL |
 
-A full setup guide with Supabase, AWS S3, and environment variable instructions is available in [`docs/user-integration.md`](docs/user-integration.md).
+### Why S3 + Supabase
+
+Video files can be hundreds of megabytes, so storing them inside a traditional database would be slow and expensive. Instead, the binary data lives in an **AWS S3 bucket** — purpose-built for large object storage, while only lightweight metadata (filename, S3 key, file size, owner ID, timestamp) is stored in a **Supabase Postgres** table. This separation keeps the database small and fast while letting S3 handle the heavy lifting of serving large files.
+
+The upload path reinforces this split: the server never touches the video bytes. It generates a short-lived **pre-signed PUT URL** scoped to the authenticated user's storage path, and the browser uploads directly to S3. After a successful upload the browser reports the S3 key back to the server, which writes the metadata row. Downloads work the same way in reverse — the server issues a pre-signed GET URL and the browser streams the file straight from S3.
+
+Row Level Security on the Supabase `videos` table ensures users can only query their own rows, and the S3 key structure (`videos/{userId}/…`) isolates files at the storage level.
 
 ---
 
