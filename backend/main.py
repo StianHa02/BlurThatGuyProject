@@ -1,14 +1,11 @@
 from contextlib import asynccontextmanager
 import asyncio
-import base64
 import logging
 import os
 import re
 import uuid
-from typing import List
 
 import cv2
-import numpy as np
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -90,31 +87,8 @@ async def verify_api_key(x_api_key: str = Header(default=None)) -> bool:
 # ---------------------------------------------------------------------------
 # Request Models
 # ---------------------------------------------------------------------------
-class FaceDetectionResult(BaseModel):
-    bbox: List[float]
-    score: float
-
-
-class BatchFrameRequest(BaseModel):
-    frameIndex: int = Field(..., ge=0)
-    image: str = Field(..., min_length=100, max_length=50_000_000)
-
-
-class BatchDetectRequest(BaseModel):
-    batch: List[BatchFrameRequest] = Field(..., min_length=1, max_length=25)
-
-
-class BatchFrameResult(BaseModel):
-    frameIndex: int
-    faces: List[FaceDetectionResult]
-
-
-class BatchDetectResponse(BaseModel):
-    results: List[BatchFrameResult]
-
-
 class ExportRequest(BaseModel):
-    selectedTrackIds: List[int] = Field(..., max_length=400)
+    selectedTrackIds: list[int] = Field(..., max_length=400)
     padding: float = Field(
         default=VIDEO_PROCESSING_CONFIG["default_padding"],
         ge=0.0,
@@ -198,36 +172,12 @@ def _get_redis_client(request: Request):
     return redis_client
 
 
-def _process_batch_frame(frame_index: int, image_data: str) -> dict:
-    try:
-        raw = image_data.split(",", 1)[-1] if "," in image_data else image_data
-        image = cv2.imdecode(np.frombuffer(base64.b64decode(raw), np.uint8), cv2.IMREAD_COLOR)
-        if image is None:
-            return {"frameIndex": frame_index, "faces": []}
-        from pipeline.detector import detect_faces
-
-        faces = detect_faces(image)
-        return {"frameIndex": frame_index, "faces": [{"bbox": f["bbox"], "score": f["score"]} for f in faces]}
-    except Exception as e:
-        return {"frameIndex": frame_index, "faces": [], "error": str(e)}
-
-
 # ---------------------------------------------------------------------------
 # Video Endpoints
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": "SCRFD-2.5G"}
-
-
-@app.get("/health/auth")
-async def health_authenticated(_: bool = Depends(verify_api_key)):
-    return {
-        "status": "ok",
-        "model": "SCRFD-2.5G",
-        "authenticated": True,
-        "max_upload_mb": MAX_UPLOAD_SIZE_MB,
-    }
 
 
 @app.post("/upload-video")
@@ -373,80 +323,6 @@ async def download_video(video_id: str, _: bool = Depends(verify_api_key)):
     if not output_path.exists():
         raise HTTPException(status_code=404, detail="Blurred video not found. Please export first.")
     return FileResponse(str(output_path), media_type="video/mp4", filename="blurred-video.mp4")
-
-
-@app.post("/detect-batch", response_model=BatchDetectResponse)
-async def detect_batch_endpoint(batch_request: BatchDetectRequest, _: bool = Depends(verify_api_key)):
-    try:
-        loop = asyncio.get_running_loop()
-        pool = get_thread_pool()
-        results = await asyncio.gather(
-            *[loop.run_in_executor(pool, _process_batch_frame, fr.frameIndex, fr.image) for fr in batch_request.batch]
-        )
-        return BatchDetectResponse(
-            results=[
-                BatchFrameResult(
-                    frameIndex=result["frameIndex"],
-                    faces=[FaceDetectionResult(bbox=f["bbox"], score=f["score"]) for f in result["faces"]],
-                )
-                for result in results
-            ]
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to detect faces in batch: {e}")
-
-
-@app.post("/submit-job")
-async def submit_job(request: Request, file: UploadFile = File(...), _: bool = Depends(verify_api_key)):
-    validate_video_file(file.filename or "video.mp4", file.content_type)
-    if MAX_UPLOAD_SIZE_MB > 0:
-        content_length = request.headers.get("content-length")
-        if content_length:
-            try:
-                if int(content_length) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-                    raise HTTPException(status_code=413, detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
-            except ValueError:
-                pass
-
-    video_id = str(uuid.uuid4())
-    video_path = get_safe_video_path(video_id, ".mp4")
-    max_size = MAX_UPLOAD_SIZE_MB * 1024 * 1024 if MAX_UPLOAD_SIZE_MB > 0 else 0
-    size = 0
-    try:
-        with open(video_path, "wb") as handle:
-            while chunk := await file.read(CHUNK_SIZE):
-                size += len(chunk)
-                if max_size and size > max_size:
-                    video_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail=f"Video too large. Maximum size is {MAX_UPLOAD_SIZE_MB}MB.")
-                handle.write(chunk)
-
-        cap = cv2.VideoCapture(str(video_path))
-        if not cap.isOpened():
-            video_path.unlink(missing_ok=True)
-            raise HTTPException(status_code=400, detail="Invalid video file.")
-
-        fps = float(cap.get(cv2.CAP_PROP_FPS)) or 30.0
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.release()
-
-        request.app.state.logger.info(f"Job submitted for video {video_id}")
-        return JSONResponse(
-            {
-                "jobId": video_id,
-                "status": "submitted",
-                "videoId": video_id,
-                "metadata": {"fps": fps, "width": width, "height": height, "frameCount": frame_count},
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        request.app.state.logger.error(f"Job submission error: {e}")
-        video_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail="Failed to submit job")
 
 
 # ---------------------------------------------------------------------------

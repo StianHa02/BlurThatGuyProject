@@ -1,7 +1,5 @@
 'use client';
 
-import React from 'react';
-
 export function BackgroundBlobs() {
 	return (
 		<div className="fixed inset-0 overflow-hidden pointer-events-none z-0">

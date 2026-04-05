@@ -31,10 +31,14 @@ export function DropZone({ onFileSelect }: DropZoneProps) {
     <div className="space-y-4">
       {/* Drop area */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="Drop zone: drag and drop a video file here, or press Enter to browse"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); } }}
         className={`relative border-2 border-dashed rounded-2xl p-16 text-center cursor-pointer transition-all ${
           dragOver
             ? 'border-blue-500 bg-blue-500/8'

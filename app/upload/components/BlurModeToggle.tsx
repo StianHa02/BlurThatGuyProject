@@ -27,6 +27,8 @@ export function BlurModeToggle({ value, onChange }: BlurModeToggleProps) {
             <button
               key={mode}
               onClick={() => onChange(mode)}
+              aria-pressed={isActive}
+              aria-label={`${label} blur mode`}
               className={`relative isolate flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-3 py-1.5 transition-colors cursor-pointer whitespace-nowrap ${
                 isActive
                   ? 'text-white'

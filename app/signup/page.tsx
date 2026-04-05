@@ -62,7 +62,7 @@ export default function SignupPage() {
                         <ArrowLeft className="w-4 h-4" />
                     </Link>
                     <Logo />
-                    <span className="font-bold text-lg text-white tracking-tight">/ Settings</span>
+                    <span className="font-bold text-lg text-white tracking-tight">/ Sign Up</span>
                 </div>
 
                 <div className="card-glass p-8">

@@ -187,6 +187,8 @@ export function FaceGallery({
               <button
                 key={track.id}
                 onClick={() => onToggleTrack(track.id)}
+                aria-label={`Face ${index + 1} – ${isSelected ? 'selected for blur, click to unblur' : 'click to select for blur'}. Appears in ${track.frames.length} frames`}
+                aria-pressed={isSelected}
                 className={`
                   relative aspect-square rounded-lg overflow-hidden border-2 transition-all group
                   ${isSelected

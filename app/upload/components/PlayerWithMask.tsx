@@ -1,22 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-
-export type BBox = [number, number, number, number];
-
-export interface Detection {
-  frameIndex: number;
-  bbox: BBox;
-  score: number;
-}
-
-export interface Track {
-  id: number;
-  frames: Detection[];
-  startFrame: number;
-  endFrame: number;
-  thumbnailFrameIndex: number;
-}
+import { useEffect, useRef, useState, useMemo } from 'react';
+import type { BBox, Detection, Track } from '@/types';
 
 interface Props {
   videoUrl: string;
@@ -194,7 +179,6 @@ export default function PlayerWithMask({
         currentVisibleFaces.push({ trackId, bbox: [x, y, w, h], isSelected });
 
         if (isSelected) {
-          // Clip to ellipse — only the face oval is anonymised, not the full bounding box
           ctx.save();
           ctx.beginPath();
           ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
@@ -204,7 +188,6 @@ export default function PlayerWithMask({
             ctx.fillStyle = 'black';
             ctx.fill();
           } else {
-            // Adaptive pixelation matching backend: block density = targetBlocks across shortest dimension
             const blockSize = Math.max(1, Math.floor(Math.min(w, h) / targetBlocks));
             const tmpW = Math.max(1, Math.floor(w / blockSize));
             const tmpH = Math.max(1, Math.floor(h / blockSize));
@@ -212,9 +195,9 @@ export default function PlayerWithMask({
             const offscreen = new OffscreenCanvas(tmpW, tmpH);
             const offCtx = offscreen.getContext('2d');
             if (offCtx) {
-              offCtx.imageSmoothingEnabled = true;  // INTER_LINEAR equivalent on downsample
+              offCtx.imageSmoothingEnabled = true;
               offCtx.drawImage(video, x, y, w, h, 0, 0, tmpW, tmpH);
-              ctx.imageSmoothingEnabled = false;    // INTER_NEAREST equivalent on upsample
+              ctx.imageSmoothingEnabled = false;
               ctx.drawImage(offscreen, 0, 0, tmpW, tmpH, x, y, w, h);
               ctx.imageSmoothingEnabled = true;
             } else {
@@ -224,23 +207,15 @@ export default function PlayerWithMask({
           }
 
           ctx.restore();
-
-          // Draw red ellipse outline around blurred faces too
-          ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 1, h / 2 - 1, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        } else {
-          // Draw red ellipse outline for unselected faces
-          ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 1, h / 2 - 1, 0, 0, Math.PI * 2);
-          ctx.stroke();
         }
+
+        // Red ellipse outline for all detected faces
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 1, h / 2 - 1, 0, 0, Math.PI * 2);
+        ctx.stroke();
       }
 
       // Only update state if faces changed (reduces re-renders)

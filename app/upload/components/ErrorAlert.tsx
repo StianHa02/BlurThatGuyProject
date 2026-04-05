@@ -1,6 +1,5 @@
 'use client';
 
-// Re-exports the shared Alert with a compatible interface for backward-compat
 import { Alert } from '@/components/Alert';
 
 interface ErrorAlertProps {
