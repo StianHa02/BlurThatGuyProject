@@ -228,7 +228,8 @@ export default function UploadPage() {
                     <input
                       type="range" min={1} max={10} value={sampleRate}
                       onChange={e => setSampleRate(Number(e.target.value))}
-                      className="flex-1 accent-blue-500"
+                      disabled={detection.processing}
+                      className="flex-1 accent-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                     <span className="text-sm font-mono w-5 text-white text-right">{sampleRate}</span>
                   </div>

@@ -243,7 +243,13 @@ Since the backend is designed as a standalone API, it can still be deployed inde
 Uses **SCRFD-2.5G** (`scrfd_2.5g.onnx`), A lightweight ONNX model optimised for CPU. Runs inference on sampled frames at a configurable rate (default: every 3rd frame). Detects 5 facial keypoints per crop. Frames are decoded via ffmpeg for speed, with an OpenCV fallback.
 
 ### Face Tracking
-Builds continuous face tracks across frames using IoU-based assignment. Detects scene cuts via mean absolute difference on downscaled thumbnails and resets track state at hard transitions, preventing identity bleed. Handles occlusion and brief disappearances.
+Builds continuous face tracks across frames using IoU-based assignment with a fallback to normalised centre-distance and appearance similarity for occluded or briefly-missing faces.
+
+**MAD Scene Cut Detection**
+Each sampled frame is downscaled to a 64×36 thumbnail and converted to grayscale. The mean absolute difference (MAD) between consecutive thumbnails is computed. If the MAD exceeds a threshold (45.0) and at least 8 sampled frames have passed since the last detected cut, the frame is recorded as a scene boundary. These cut frames are handed to the tracker, which blocks IoU assignment across a cut boundary (`cut_mask`). Without this gate, a face visible in the last frame of one scene could be incorrectly linked to a similar-looking face in the opening frame of the next scene, causing identity bleed and wrong blurs.
+
+**Track Boundary Hold**
+At high sample rates only every Nth frame is analysed, so a track's last detected keyframe may be up to `sample_rate − 1` frames before a scene cut. During export, the `TrackLookup` now holds the last known bounding box for up to `sample_rate − 1` frames beyond the final keyframe (and mirrors this before the first keyframe). This ensures blur is continuous right up to the cut with no unblurred gap between the last sampled detection and the scene transition.
 
 ### Re-Identification (ReID)
 Uses **ArcFace** (`w600k_r50.onnx` preferred, `w600k_mbf.onnx` as fallback) to generate 512-dimensional L2-normalised identity vectors per face crop. Merges fragmented tracks across scene cuts by cosine similarity with a union-find algorithm. Includes quality gates: blur rejection (Laplacian variance), profile angle rejection (landmark geometry), and an incremental drift-aware centroid that rejects embeddings inconsistent with the track's running identity.
