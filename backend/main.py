@@ -5,6 +5,10 @@ import os
 import re
 import uuid
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
 import cv2
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -134,6 +138,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Face Detection API", lifespan=lifespan)
 
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 # ---------------------------------------------------------------------------
 # Middleware
@@ -181,6 +189,7 @@ async def health():
 
 
 @app.post("/upload-video")
+@limiter.limit("10/minute")
 async def upload_video(request: Request, file: UploadFile = File(...), _: bool = Depends(verify_api_key)):
     validate_video_file(file.filename or "video.mp4", file.content_type)
     if MAX_UPLOAD_SIZE_MB > 0:
@@ -230,6 +239,7 @@ async def upload_video(request: Request, file: UploadFile = File(...), _: bool =
 
 
 @app.post("/detect-video/{video_id}")
+@limiter.limit("10/minute")
 def detect_video_id_endpoint(
     video_id: str,
     request: Request,
@@ -287,6 +297,7 @@ def detect_video_id_endpoint(
 
 
 @app.post("/export/{video_id}")
+@limiter.limit("20/minute")
 def export_video(video_id: str, request: Request, export_request: ExportRequest, _: bool = Depends(verify_api_key)):
     input_path = get_safe_video_path(video_id, ".mp4")
     if not input_path.exists():

@@ -11,6 +11,7 @@ import { formatFileSize, formatDuration } from '@/lib/utils';
 import type { User } from '@supabase/supabase-js';
 
 const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
+import PlayerErrorBoundary from './components/PlayerErrorBoundary';
 
 type Step = 'upload' | 'detect' | 'select';
 
@@ -121,13 +122,6 @@ export default function UploadPage() {
               <div className="h-full w-1/3 rounded-full bg-blue-500 animate-[slide_1.4s_ease-in-out_infinite]"
                 style={{ animation: 'upload-slide 1.4s ease-in-out infinite' }} />
             </div>
-            <style>{`
-              @keyframes upload-slide {
-                0%   { transform: translateX(-100%); }
-                50%  { transform: translateX(200%); }
-                100% { transform: translateX(200%); }
-              }
-            `}</style>
           </div>
         )}
 
@@ -187,13 +181,6 @@ export default function UploadPage() {
                           <div className="h-full w-1/3 rounded-full bg-blue-500 animate-[queue-slide_1.4s_ease-in-out_infinite]" />
                         </div>
                         <p className="text-xs text-slate-500">Waiting for an available processing slot...</p>
-                        <style>{`
-                          @keyframes queue-slide {
-                            0%   { transform: translateX(-100%); }
-                            50%  { transform: translateX(220%); }
-                            100% { transform: translateX(220%); }
-                          }
-                        `}</style>
                       </div>
                     ) : (
                       <ProgressBar
@@ -366,17 +353,19 @@ export default function UploadPage() {
             </div>
 
             <div className="rounded-2xl p-2 mb-6 bg-white/5 border border-white/8">
-              <PlayerWithMask
-                videoUrl={upload.fileUrl}
-                tracks={detection.tracks}
-                selectedTrackIds={detection.selectedTrackIds}
-                onToggleTrack={detection.toggleTrack}
-                blurMode={blurMode}
-                sampleRate={sampleRate}
-                fps={upload.videoMetadata?.fps || 30}
-                padding={0.4}
-                targetBlocks={12}
-              />
+              <PlayerErrorBoundary>
+                <PlayerWithMask
+                  videoUrl={upload.fileUrl}
+                  tracks={detection.tracks}
+                  selectedTrackIds={detection.selectedTrackIds}
+                  onToggleTrack={detection.toggleTrack}
+                  blurMode={blurMode}
+                  sampleRate={sampleRate}
+                  fps={upload.videoMetadata?.fps || 30}
+                  padding={0.4}
+                  targetBlocks={12}
+                />
+              </PlayerErrorBoundary>
             </div>
 
             <div className="rounded-2xl p-6 bg-white/5 border border-white/8">

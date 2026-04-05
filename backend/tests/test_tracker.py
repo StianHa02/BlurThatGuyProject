@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from pipeline.tracker import (
     TrackLookup,
@@ -140,6 +141,3 @@ class TestTrackDetections:
         assert "startFrame" in t
         assert "endFrame" in t
         assert "thumbnailFrameIndex" in t
-
-
-import pytest

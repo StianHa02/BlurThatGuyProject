@@ -221,6 +221,19 @@ body {
   color: #64748b;
 }
 
+/* ─── Upload / queue progress animations ─────────────────── */
+@keyframes upload-slide {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(200%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes queue-slide {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(220%); }
+  100% { transform: translateX(220%); }
+}
+
 /* ─── Glass effect (legacy alias) ────────────────────────── */
 .glass {
   background: rgba(13, 27, 46, 0.80);

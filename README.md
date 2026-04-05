@@ -369,7 +369,7 @@ Row Level Security on the Supabase `videos` table ensures users can only query t
 
 ## CI/CD Pipeline
 
-Every push and pull request triggers a GitHub Actions workflow (`.github/workflows/ci.yml`) that runs **6 parallel jobs**:
+Every push and pull request triggers a GitHub Actions workflow (`.github/workflows/ci.yml`)
 
 | Job | What it does |
 |---|---|

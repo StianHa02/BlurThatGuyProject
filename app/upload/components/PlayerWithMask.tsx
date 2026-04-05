@@ -96,6 +96,7 @@ export default function PlayerWithMask({
 }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const offscreenRef = useRef<OffscreenCanvas | null>(null);
   const rafRef = useRef<number | null>(null);
   const lastFrameRef = useRef<number>(-1);
   const [visibleFaces, setVisibleFaces] = useState<{trackId: number, bbox: BBox, isSelected: boolean}[]>([]);
@@ -192,7 +193,12 @@ export default function PlayerWithMask({
             const tmpW = Math.max(1, Math.floor(w / blockSize));
             const tmpH = Math.max(1, Math.floor(h / blockSize));
 
-            const offscreen = new OffscreenCanvas(tmpW, tmpH);
+            if (!offscreenRef.current || offscreenRef.current.width < tmpW || offscreenRef.current.height < tmpH) {
+              offscreenRef.current = new OffscreenCanvas(tmpW, tmpH);
+            }
+            const offscreen = offscreenRef.current;
+            offscreen.width = tmpW;
+            offscreen.height = tmpH;
             const offCtx = offscreen.getContext('2d');
             if (offCtx) {
               offCtx.imageSmoothingEnabled = true;
