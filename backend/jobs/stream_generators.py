@@ -9,22 +9,21 @@ from pathlib import Path
 from typing import Any, Callable
 
 
-
 def detect_stream_generator(
-    *,
-    r,
-    job_id: str,
-    video_id: str,
-    video_path: Path,
-    sample_rate: int,
-    stream_budget: int | None,
-    stream_token,
-    process_detection: Callable[..., list[dict]],
-    touch_job_heartbeat: Callable[..., None],
-    set_job_status: Callable[..., None],
-    unregister_cancel_token: Callable[[str], None],
-    on_job_finish: Callable[..., None],
-    logger,
+        *,
+        r,
+        job_id: str,
+        video_id: str,
+        video_path: Path,
+        sample_rate: int,
+        stream_budget: int | None,
+        stream_token,
+        process_detection: Callable[..., list[dict]],
+        touch_job_heartbeat: Callable[..., None],
+        set_job_status: Callable[..., None],
+        unregister_cancel_token: Callable[[str], None],
+        on_job_finish: Callable[..., None],
+        logger,
 ):
     message_queue: queue.Queue = queue.Queue()
 
@@ -74,20 +73,20 @@ def detect_stream_generator(
 
 
 def export_stream_generator(
-    *,
-    video_id: str,
-    export_request,
-    tracks: list[dict],
-    input_path: Path,
-    output_path: Path,
-    precompute_track_lookups: Callable[..., Any],
-    get_thread_pool: Callable[[], Any],
-    detector_pool_size: int,
-    get_encoder: Callable[[], str],
-    encoder_args: dict[str, list[str]],
-    get_safe_video_path: Callable[[str, str], Path],
-    blur_frame: Callable[..., Any],
-    logger,
+        *,
+        video_id: str,
+        export_request,
+        tracks: list[dict],
+        input_path: Path,
+        output_path: Path,
+        precompute_track_lookups: Callable[..., Any],
+        get_thread_pool: Callable[[], Any],
+        detector_pool_size: int,
+        get_encoder: Callable[[], str],
+        encoder_args: dict[str, list[str]],
+        get_safe_video_path: Callable[[str, str], Path],
+        blur_frame: Callable[..., Any],
+        logger,
 ):
     cap = out = ffmpeg_proc = dec = None
     stderr_chunks: list[bytes] = []
@@ -113,7 +112,8 @@ def export_stream_generator(
         cap = None
 
         max_gap = 12 * max(export_request.sampleRate, 1)  # max_misses * sample_rate
-        track_lookup_dicts = precompute_track_lookups([t["frames"] for t in tracks_map.values()], total_frames, max_gap=max_gap)
+        track_lookup_dicts = precompute_track_lookups([t["frames"] for t in tracks_map.values()], total_frames,
+                                                      max_gap=max_gap)
         pad, target_blocks, blur_mode = export_request.padding, export_request.targetBlocks, export_request.blurMode
         pool = get_thread_pool()
         chunk: list[tuple] = []
@@ -287,4 +287,3 @@ def export_stream_generator(
                     ffmpeg_proc.stdin.close()
             except Exception:
                 pass
-

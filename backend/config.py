@@ -89,7 +89,8 @@ def validate_environment() -> None:
         if os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes"):
             logger.warning("WARNING: Running in DEV_MODE without API_KEY - API is unprotected")
         else:
-            raise RuntimeError("FATAL: API_KEY environment variable is required. Set DEV_MODE=true for local development.")
+            raise RuntimeError("FATAL: API_KEY environment variable is required. Set DEV_MODE=true for local "
+                               "development.")
 
     if not os.environ.get("ALLOWED_ORIGINS"):
         logger.warning("WARNING: ALLOWED_ORIGINS not set - using localhost only")
