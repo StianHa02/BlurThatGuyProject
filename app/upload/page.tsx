@@ -1,12 +1,14 @@
-/* Main upload and processing page. Manages the full workflow: file upload → face detection → face selection → export/save. */
+/* Main upload and processing page. Manages the full workflow: file upload → face detection → face selection → export/save.
+   Supports restoring a saved project via ?projectId= URL param, which jumps directly to the select step. */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Eye, EyeOff, Users, Info, Download, Loader2, Upload as UploadIcon, Save, CheckCircle, Lock } from 'lucide-react';
 import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
 import { DropZone, ProgressBar, ErrorAlert, FaceGallery, Bentobox } from './components';
-import type { BlurMode } from '@/types';
+import type { BlurMode, Track } from '@/types';
 import { BackgroundBlobs, Header } from '@/components';
 import { formatFileSize, formatDuration } from '@/lib/utils';
 import type { User } from '@supabase/supabase-js';
@@ -16,14 +18,87 @@ import PlayerErrorBoundary from './components/PlayerErrorBoundary';
 
 type Step = 'upload' | 'detect' | 'select';
 
-export default function UploadPage() {
-  const [currentStep, setCurrentStep] = useState<Step>('upload');
+interface RestoreData {
+  videoId: string;
+  fileUrl: string;
+  fileName: string;
+  metadata: { fps: number; width: number; height: number; frameCount: number };
+  tracks: Track[];
+  sampleRate: number;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Outer component: reads ?projectId, runs restore, then mounts Inner.
+ * This ensures the hooks inside Inner only mount AFTER restore data is ready.
+ * ──────────────────────────────────────────────────────────────────────────── */
+function UploadPageOuter() {
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get('projectId');
+
+  const [restoreData, setRestoreData] = useState<RestoreData | null>(null);
+  const [restoring, setRestoring] = useState(!!projectId);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    fetch(`/api/projects/${projectId}/restore`, { method: 'POST' })
+      .then(async (res) => {
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || 'Failed to restore project');
+        }
+        return res.json();
+      })
+      .then(async ({ videoId, metadata, tracksSignedUrl, originalSignedUrl, filename, sampleRate }) => {
+        const tracksRes = await fetch(tracksSignedUrl);
+        if (!tracksRes.ok) throw new Error('Failed to load face tracks');
+        const tracks: Track[] = await tracksRes.json();
+
+        setRestoreData({
+          videoId,
+          fileUrl: originalSignedUrl,
+          fileName: filename || '',
+          metadata,
+          tracks,
+          sampleRate: sampleRate ?? 3,
+        });
+        setRestoring(false);
+      })
+      .catch((err) => {
+        console.error('Restore failed:', err);
+        setRestoreError(err.message);
+        setRestoring(false);
+      });
+  }, [projectId]);
+
+  if (restoring) {
+    return (
+      <div className="min-h-screen bg-[#070f1c] text-white flex flex-col items-center justify-center gap-4">
+        <BackgroundBlobs />
+        <Loader2 className="w-8 h-8 text-blue-400 animate-spin relative z-10" />
+        <p className="text-slate-400 text-sm relative z-10">Restoring project…</p>
+      </div>
+    );
+  }
+
+  return <UploadPageInner restoreData={restoreData} restoreError={restoreError} />;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Inner component: hooks mount here with correct initial values.
+ * ──────────────────────────────────────────────────────────────────────────── */
+function UploadPageInner({ restoreData, restoreError }: { restoreData: RestoreData | null; restoreError: string | null }) {
+  const router = useRouter();
+  const isRestore = !!restoreData;
+
+  const [currentStep, setCurrentStep] = useState<Step>(isRestore ? 'select' : 'upload');
   const [uploading, setUploading] = useState(false);
   const [uploadingFileName, setUploadingFileName] = useState('');
-  const [sampleRate, setSampleRate] = useState(3);
+  const [sampleRate, setSampleRate] = useState(restoreData?.sampleRate ?? 3);
   const [blurMode, setBlurMode] = useState<BlurMode>('pixelate');
   const [abortController, setAbortController] = useState(() => new AbortController());
-  const [saved, setSaved] = useState(false);
+  const [projectSaved, setProjectSaved] = useState(false);
 
   const userIntegration = process.env.NEXT_PUBLIC_USER_INTEGRATION === '1';
   const [user, setUser] = useState<User | null>(null);
@@ -41,19 +116,30 @@ export default function UploadPage() {
     });
   }, [userIntegration]);
 
-  const upload = useVideoUpload();
+  const upload = useVideoUpload({
+    initialVideoId: restoreData?.videoId,
+    initialFileUrl: restoreData?.fileUrl,
+    initialFileName: restoreData?.fileName,
+    initialVideoMetadata: restoreData?.metadata,
+  });
+
   const detection = useFaceDetection({
     sampleRate,
     videoId: upload.videoId,
     onError: upload.setError,
     signal: abortController.signal,
+    initialTracks: restoreData?.tracks,
   });
+
   const exportHook = useVideoExport({
     videoId: upload.videoId,
     fileName: upload.fileName,
     selectedTrackIds: detection.selectedTrackIds,
     sampleRate,
     blurMode,
+    tracks: detection.tracks,
+    videoMetadata: upload.videoMetadata,
+    fileRef: upload.fileRef,
     onError: upload.setError,
     signal: abortController.signal,
   });
@@ -77,7 +163,11 @@ export default function UploadPage() {
     upload.reset();
     detection.reset();
     setCurrentStep('upload');
+    setProjectSaved(false);
+    // Clear ?projectId from URL so a fresh upload starts clean
+    router.replace('/upload');
   }
+
   const shortName = upload.fileName.length > 28
     ? upload.fileName.slice(0, 25) + '...'
     : upload.fileName;
@@ -95,8 +185,8 @@ export default function UploadPage() {
       <Header currentStep={currentStep} />
 
       <main className="relative z-10 flex-1 flex flex-col max-w-6xl w-full mx-auto px-6 py-8">
-        {upload.error && (
-          <ErrorAlert message={upload.error} onDismiss={() => upload.setError(null)} />
+        {(upload.error || restoreError) && (
+          <ErrorAlert message={upload.error || restoreError!} onDismiss={() => upload.setError(null)} />
         )}
 
         {/* ===== UPLOADING STATE ===== */}
@@ -302,7 +392,7 @@ export default function UploadPage() {
                 {/* Download */}
                 <button
                   onClick={() => exportHook.exportVideo()}
-                  disabled={exportHook.exporting || exportHook.saving || detection.selectedTrackIds.length === 0}
+                  disabled={exportHook.exporting || exportHook.savingProject || detection.selectedTrackIds.length === 0}
                   className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden whitespace-nowrap"
                 >
                   {exportHook.exporting && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.exportProgress}%` }} />}
@@ -314,33 +404,33 @@ export default function UploadPage() {
                   </span>
                 </button>
 
-                {/* Save Video */}
+                {/* Save Project */}
                 <button
                   onClick={async () => {
                     if (!canSave) {
-                      upload.setError(!userIntegration ? 'Save is not available.' : 'Please log in to save videos.');
+                      upload.setError(!userIntegration ? 'Save is not available.' : 'Please log in to save projects.');
                       return;
                     }
-                    setSaved(false);
-                    const ok = await exportHook.saveVideo();
-                    if (ok) setSaved(true);
+                    setProjectSaved(false);
+                    const ok = await exportHook.saveProject();
+                    if (ok) setProjectSaved(true);
                   }}
-                  disabled={exportHook.saving || exportHook.exporting || detection.selectedTrackIds.length === 0 || saved}
-                  className={`flex items-center justify-center gap-2 w-28 sm:w-36 py-2 rounded-xl font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden whitespace-nowrap ${
+                  disabled={exportHook.savingProject || exportHook.exporting || detection.tracks.length === 0 || projectSaved}
+                  className={`flex items-center justify-center gap-2 w-32 sm:w-38 py-2 rounded-xl font-semibold text-white text-sm transition-colors cursor-pointer relative overflow-hidden whitespace-nowrap ${
                     canSave
                       ? 'bg-blue-600 hover:bg-blue-500'
                       : 'bg-blue-600/40 hover:bg-blue-600/50'
                   } disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
-                  {exportHook.saving && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.saveProgress}%` }} />}
+                  {exportHook.savingProject && <span className="absolute inset-0 bg-white/10 transition-all duration-500" style={{ width: `${exportHook.saveProjectProgress}%` }} />}
                   <span className="relative flex items-center gap-2">
-                    {exportHook.saving
-                      ? <><Loader2 className="w-4 h-4 animate-spin" /><span className="hidden sm:inline">Saving... {exportHook.saveProgress}%</span></>
-                      : saved
+                    {exportHook.savingProject
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /><span className="hidden sm:inline">Saving… {exportHook.saveProjectProgress}%</span></>
+                      : projectSaved
                         ? <><CheckCircle className="w-4 h-4 text-emerald-300" /><span className="hidden sm:inline">Saved!</span></>
                         : !canSave
-                          ? <><Lock className="w-4 h-4 opacity-60" /><span className="hidden sm:inline">Save Video</span></>
-                          : <><Save className="w-4 h-4" /><span className="hidden sm:inline">Save Video</span></>
+                          ? <><Lock className="w-4 h-4 opacity-60" /><span className="hidden sm:inline">Save Project</span></>
+                          : <><Save className="w-4 h-4" /><span className="hidden sm:inline">Save Project</span></>
                     }
                   </span>
                 </button>
@@ -391,5 +481,13 @@ export default function UploadPage() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function UploadPage() {
+  return (
+    <Suspense>
+      <UploadPageOuter />
+    </Suspense>
   );
 }

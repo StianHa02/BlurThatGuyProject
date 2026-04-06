@@ -1,4 +1,5 @@
-/* Deletes a video by id. Expects { id } in the JSON body. Verifies ownership, removes the object from S3, then deletes the database record. */
+/* Deletes a project by id. Verifies ownership, removes both the original video and
+   tracks JSON from S3, then deletes the database record. */
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { createClient } from '@/lib/supabase/server';
@@ -23,24 +24,27 @@ export async function DELETE(req: NextRequest) {
 
     const { id } = await req.json();
 
-    // Verify ownership and get s3_key from the DB (never trust client-supplied keys)
-    const { data: video } = await supabase
-        .from('videos')
-        .select('user_id, s3_key')
+    // Verify ownership and get S3 keys from the DB (never trust client-supplied keys)
+    const { data: project } = await supabase
+        .from('projects')
+        .select('user_id, original_s3_key, tracks_s3_key')
         .eq('id', id)
         .single();
 
-    if (!video || video.user_id !== user.id) {
+    if (!project || project.user_id !== user.id) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Delete from S3 using the DB record's key
+    // Delete both S3 objects
     const s3 = getS3Client();
     const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
-    await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: video.s3_key }));
+    await Promise.all([
+        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: project.original_s3_key })),
+        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: project.tracks_s3_key })),
+    ]);
 
-    // Delete from Supabase
-    await supabase.from('videos').delete().eq('id', id);
+    // Delete the DB record
+    await supabase.from('projects').delete().eq('id', id);
 
     return NextResponse.json({ success: true });
 }

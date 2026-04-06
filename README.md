@@ -287,62 +287,58 @@ The application runs on two independent EC2 instances situated behind an **Appli
 
 ## User Integration
 
-User integration is an **optional** feature controlled by the `NEXT_PUBLIC_USER_INTEGRATION` environment variable. When enabled (`=1`), it adds user accounts and personal video storage. When disabled (`=0` or omitted), the app runs as a fully public tool with no sign-up required.
+Optional feature. Controlled by `NEXT_PUBLIC_USER_INTEGRATION`. Set to `1` to enable accounts and project storage. Set to `0` or omit to run as a public tool with no sign-up.
 
-### How It Works
+Full setup: [`docs/user-integration.md`](docs/user-integration.md)
 
-Without user integration, the app is stateless from the user's perspective: upload a video, blur faces, download the result. Enabling user integration layers on two capabilities:
+### What It Adds
 
-1. **Accounts** — users can sign up, log in, and manage their profile. The navbar switches from a static link to a user dropdown with access to settings and saved videos.
-2. **Persistent video storage** — after blurring, users can save the processed video to their personal library and re-download it later from any device.
-
-Both features are powered by external services (Supabase for auth/database, AWS S3 for file storage) and require their own credentials. The core blurring workflow works identically with or without user integration.
-
-### Authentication
-
-User accounts are handled by [Supabase](https://supabase.com) Auth. Signup collects a username, email, and password. The username is stored in Supabase user metadata and displayed in the navbar. Sessions use cookie-based tokens via `@supabase/ssr`, compatible with Next.js server components and route handlers.
-
-| Route | Purpose |
+| Feature | Description |
 |---|---|
-| `/login` | Sign in with email and password |
-| `/signup` | Create account with username |
-| `/settings` | Change password, delete account |
-| `/my-videos` | Personal library of saved videos |
+| Accounts | Sign up, log in, manage profile via navbar dropdown |
+| Projects | Save original video + face tracks to S3 for re-editing later |
+| Re-edit | Re-open a saved project, pick different faces, download a new export without re-running detection |
 
-### Video Storage
+Powered by Supabase (auth + database) and AWS S3 (file storage).
 
-Processed videos are stored in a private AWS S3 bucket. Video metadata (filename, S3 key, file size, owner) is stored in a Supabase `videos` table protected by Row Level Security, so users can only see their own entries.
+### Save Flow
 
-The save flow works like this:
+**Save Project** uploads the original unblurred video and face tracks to S3, then stores metadata in Supabase. No blurred output is stored. It is always generated on demand.
 
-1. The browser requests a pre-signed PUT URL from the server (`/api/videos/presign`). The server checks authentication, rate limits, and storage quotas before issuing the URL.
-2. The browser uploads the video blob directly to S3 using the pre-signed URL. This bypasses the Next.js server entirely, so large files never pass through the application layer.
-3. After a successful upload, the browser calls `/api/videos/save` to store the S3 key and metadata in Supabase.
+1. `POST /api/projects/presign` returns a signed S3 PUT URL (auth + quota checks)
+2. Browser uploads the original video directly to S3
+3. `POST /api/projects/presign-tracks` returns a signed URL for the tracks JSON
+4. Browser uploads the tracks JSON directly to S3
+5. `POST /api/projects/save` writes both S3 keys + metadata to Supabase
 
-When the My Videos page loads, the server generates 1-hour pre-signed GET URLs for each video. These are used only to render the thumbnail preview in the grid (`<video preload="metadata">` — no controls, no playback). To download a video, the Download button hits `/api/videos/download`, which generates a fresh 60-second signed URL on each click and redirects the browser to it. The bucket itself has no public access.
+### Re-edit Flow
 
-Videos are stored at `videos/{userId}/{uuid}-filename.mp4`, isolating users at the storage level.
+1. `POST /api/projects/{id}/restore` generates signed URLs, re-uploads the original to the backend, returns a new `videoId` + tracks URL
+2. Browser fetches the tracks JSON from S3
+3. Browser navigates to `/upload?projectId=xxx`, landing on the face-select step with all tracks loaded
+4. User picks faces, exports, and downloads as usual
 
-### Storage Limits
+### Storage
 
-All limits are constants in `app/api/videos/presign/route.ts`.
+Private S3 bucket. All files scoped to the authenticated user.
 
-| Limit | Default |
+| Type | Key pattern |
 |---|---|
-| Max file size | 2 GB |
-| Per-user quota | 5 GB |
-| Total bucket cap | 30 GB |
-| Rate limit | 10 uploads per user per hour |
+| Original video | `projects/{userId}/{uuid}-{filename}` |
+| Face tracks | `projects/{userId}/{uuid}-tracks.json` |
+
+**Limits:** 2 GB per file, 5 GB per user, 30 GB bucket cap, 10 saves/user/hour.
 
 ### Security
 
 | Threat | Mitigation |
 |---|---|
-| Cross-user video access | Private bucket, owner-scoped signed URLs |
-| Upload path spoofing | Pre-signed PUT URLs generated server-side using the authenticated user's ID |
-| Spam / abuse | 10 uploads per user per hour (enforced via DB row count) |
-| Storage abuse | Per-user quota + total bucket cap |
-| Oversized files | File size checked before issuing the upload URL |
+| Cross-user file access | Private bucket, owner-scoped signed URLs |
+| Upload path spoofing | Signed PUT URLs generated server-side using the authenticated user's ID |
+| SSRF on re-edit | Backend only accepts downloads from `*.amazonaws.com` hosts |
+| Spam / abuse | Rate-limited to 10 saves per user per hour |
+| Storage abuse | Per-user quota + bucket cap |
+| Oversized files | Size checked before issuing upload URL |
 
 ---
 
@@ -404,7 +400,7 @@ BlurThatGuyProject/
 │   ├── login/page.tsx                 # Supabase email/password login
 │   ├── signup/page.tsx                # Account creation with username
 │   ├── settings/page.tsx              # Account management and deletion
-│   ├── my-videos/page.tsx             # Saved videos grid with S3 playback
+│   ├── my-projects/page.tsx            # Saved projects grid with re-edit and delete
 │   └── api/                           # Next.js Route Handlers (proxy to FastAPI)
 │       ├── upload-video/
 │       ├── detect-video/[videoId]/
@@ -415,10 +411,12 @@ BlurThatGuyProject/
 │       │   ├── status/
 │       │   ├── result/
 │       │   └── cancel/
-│       ├── videos/
-│       │   ├── save/
-│       │   ├── delete/
-│       │   └── presign/
+│       ├── projects/
+│       │   ├── presign/               # Pre-signed S3 URL for original video upload
+│       │   ├── presign-tracks/        # Pre-signed S3 URL for tracks JSON upload
+│       │   ├── save/                  # Save project metadata to Supabase
+│       │   ├── delete/                # Delete project (S3 + DB)
+│       │   └── [id]/restore/          # Re-upload original to backend for re-editing
 │       └── user/delete/
 ├── components/                        # Shared UI components (used across routes)
 ├── types/                             # Shared TypeScript types

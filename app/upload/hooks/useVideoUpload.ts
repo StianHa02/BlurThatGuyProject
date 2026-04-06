@@ -3,16 +3,30 @@
 import { useState, useRef, useCallback } from 'react';
 import { API_URL } from '@/lib/config';
 
-export function useVideoUpload() {
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [fileName, setFileName] = useState<string>('');
-  const [videoId, setVideoId] = useState<string | null>(null);
-  const [videoMetadata, setVideoMetadata] = useState<{
-    fps: number;
-    width: number;
-    height: number;
-    frameCount: number;
-  } | null>(null);
+interface VideoMetadata {
+  fps: number;
+  width: number;
+  height: number;
+  frameCount: number;
+}
+
+interface UseVideoUploadOptions {
+  initialVideoId?: string;
+  initialFileUrl?: string;
+  initialFileName?: string;
+  initialVideoMetadata?: VideoMetadata;
+}
+
+export function useVideoUpload({
+  initialVideoId,
+  initialFileUrl,
+  initialFileName,
+  initialVideoMetadata,
+}: UseVideoUploadOptions = {}) {
+  const [fileUrl, setFileUrl] = useState<string | null>(initialFileUrl ?? null);
+  const [fileName, setFileName] = useState<string>(initialFileName ?? '');
+  const [videoId, setVideoId] = useState<string | null>(initialVideoId ?? null);
+  const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(initialVideoMetadata ?? null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<File | null>(null);
 

@@ -220,9 +220,13 @@ export default function PlayerWithMask({
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
         ctx.lineWidth = 2;
         ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 1, h / 2 - 1, 0, 0, Math.PI * 2);
-        ctx.stroke();
+        const rx = Math.max(0, w / 2 - 1);
+        const ry = Math.max(0, h / 2 - 1);
+        if (rx > 0 && ry > 0) {
+          ctx.beginPath();
+          ctx.ellipse(x + w / 2, y + h / 2, rx, ry, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
 
       // Only update state if faces changed (reduces re-renders)

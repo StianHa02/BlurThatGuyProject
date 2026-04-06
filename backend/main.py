@@ -5,6 +5,8 @@ import os
 import re
 import uuid
 
+import httpx
+
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -326,6 +328,53 @@ def export_video(video_id: str, request: Request, export_request: ExportRequest,
         ),
         media_type="application/x-ndjson",
     )
+
+
+@app.post("/reupload-from-url")
+async def reupload_from_url(body: dict, _: bool = Depends(verify_api_key)):
+    """Download a video from a signed S3 URL and store it as a new videoId.
+    Used when re-editing a saved project — avoids routing the large file through the browser."""
+    url = body.get("url", "")
+    # Only allow downloads from AWS S3 to prevent SSRF
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if not parsed.hostname or not parsed.hostname.endswith(".amazonaws.com"):
+        raise HTTPException(status_code=400, detail="Invalid URL: must be an S3 signed URL")
+
+    video_id = str(uuid.uuid4())
+    video_path = get_safe_video_path(video_id, ".mp4")
+
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            async with client.stream("GET", url) as r:
+                if r.status_code != 200:
+                    raise HTTPException(status_code=502, detail="Failed to fetch video from storage")
+                with open(video_path, "wb") as f:
+                    async for chunk in r.aiter_bytes(65536):
+                        f.write(chunk)
+
+        cap = cv2.VideoCapture(str(video_path))
+        if not cap.isOpened():
+            video_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=400, detail="Downloaded file is not a valid video")
+
+        fps = float(cap.get(cv2.CAP_PROP_FPS)) or 30.0
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+
+        logger.info(f"Re-uploaded project video as {video_id}")
+        return {
+            "videoId": video_id,
+            "metadata": {"fps": fps, "width": width, "height": height, "frameCount": frame_count},
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        video_path.unlink(missing_ok=True)
+        logger.error(f"Reupload-from-url error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to download video from storage")
 
 
 @app.get("/download/{video_id}")

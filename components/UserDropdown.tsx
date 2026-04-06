@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Video, Settings, LogOut, LogIn } from 'lucide-react';
+import { ChevronDown, FolderOpen, Settings, LogOut, LogIn } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 
@@ -81,12 +81,12 @@ export function UserDropdown() {
 
           <div className="p-1">
             <Link
-              href="/my-videos"
+              href="/my-projects"
               onClick={() => setOpen(false)}
               className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-white/8 transition-all"
             >
-              <Video className="w-4 h-4" />
-              My Videos
+              <FolderOpen className="w-4 h-4" />
+              My Projects
             </Link>
             <Link
               href="/settings"

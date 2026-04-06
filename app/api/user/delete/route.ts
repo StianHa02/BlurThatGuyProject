@@ -22,20 +22,21 @@ export async function DELETE() {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Delete all user videos from S3 before removing the account
+    // Delete all user S3 files before removing the account
     // (CASCADE will remove DB rows, but we need s3_key values first)
-    const { data: videos } = await supabase
-        .from('videos')
-        .select('s3_key')
+    const { data: projects } = await supabase
+        .from('projects')
+        .select('original_s3_key, tracks_s3_key')
         .eq('user_id', user.id);
 
-    if (videos && videos.length > 0) {
+    if (projects && projects.length > 0) {
         const s3 = getS3Client();
         const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
         await Promise.all(
-            videos.map((v) =>
-                s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: v.s3_key }))
-            )
+            projects.flatMap((p) => [
+                s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: p.original_s3_key })),
+                s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: p.tracks_s3_key })),
+            ])
         );
     }
 

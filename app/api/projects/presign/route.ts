@@ -1,4 +1,5 @@
-/* Generates a pre-signed S3 PUT URL for direct browser upload. Expects { filename, contentType, fileSize } in the JSON body. Enforces per-file (2 GB), per-user (5 GB), bucket (30 GB) limits, and a rate limit of 10 uploads per hour. */
+/* Generates a pre-signed S3 PUT URL for direct browser upload of an original (unblurred) project video.
+   Enforces per-file (2 GB), per-user (5 GB), bucket (30 GB) limits, and a rate limit of 10 saves per hour. */
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -16,10 +17,10 @@ function getS3Client() {
     });
 }
 
-const MAX_FILE_SIZE_BYTES  = 2  * 1024 * 1024 * 1024; // 2 GB per file
-const USER_QUOTA_BYTES     = 5  * 1024 * 1024 * 1024; // 5 GB per user
-const BUCKET_CAP_BYTES     = 30 * 1024 * 1024 * 1024; // 30 GB total bucket
-const RATE_LIMIT_PER_HOUR  = 10;                        // uploads per user per hour
+const MAX_FILE_SIZE_BYTES = 2  * 1024 * 1024 * 1024; // 2 GB per file
+const USER_QUOTA_BYTES    = 5  * 1024 * 1024 * 1024; // 5 GB per user
+const BUCKET_CAP_BYTES    = 30 * 1024 * 1024 * 1024; // 30 GB total bucket
+const RATE_LIMIT_PER_HOUR = 10;                        // saves per user per hour
 
 export async function POST(req: NextRequest) {
     const supabase = await createClient();
@@ -39,28 +40,28 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // ── 2. Rate limit: max 10 uploads per user per hour ───────────────────────
+    // ── 2. Rate limit: max 10 saves per user per hour ─────────────────────────
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const { count: recentUploads } = await supabase
-        .from('videos')
+    const { count: recentProjects } = await supabase
+        .from('projects')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .gte('created_at', oneHourAgo);
 
-    if ((recentUploads ?? 0) >= RATE_LIMIT_PER_HOUR) {
+    if ((recentProjects ?? 0) >= RATE_LIMIT_PER_HOUR) {
         return NextResponse.json(
-            { error: `Rate limit exceeded — max ${RATE_LIMIT_PER_HOUR} uploads per hour.` },
+            { error: `Rate limit exceeded — max ${RATE_LIMIT_PER_HOUR} saves per hour.` },
             { status: 429 }
         );
     }
 
-    // ── 3. Per-user quota: 5 GB ───────────────────────────────────────────────
-    const { data: userVideos } = await supabase
-        .from('videos')
+    // ── 3. Per-user quota: 5 GB ──────────────────────────────────────────────
+    const { data: userProjects } = await supabase
+        .from('projects')
         .select('file_size')
         .eq('user_id', user.id);
 
-    const userUsed = userVideos?.reduce((sum, v) => sum + (v.file_size ?? 0), 0) ?? 0;
+    const userUsed = userProjects?.reduce((s, p) => s + (p.file_size ?? 0), 0) ?? 0;
 
     if (userUsed + (fileSize ?? 0) > USER_QUOTA_BYTES) {
         return NextResponse.json(
@@ -70,13 +71,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Total bucket cap: 30 GB ────────────────────────────────────────────
-    // Use admin client to bypass RLS and sum all users' storage
     const admin = createAdminClient();
-    const { data: allVideos } = await admin
-        .from('videos')
-        .select('file_size');
+    const { data: allProjects } = await admin.from('projects').select('file_size');
 
-    const bucketUsed = allVideos?.reduce((sum, v) => sum + (v.file_size ?? 0), 0) ?? 0;
+    const bucketUsed = allProjects?.reduce((s, p) => s + (p.file_size ?? 0), 0) ?? 0;
 
     if (bucketUsed + (fileSize ?? 0) > BUCKET_CAP_BYTES) {
         return NextResponse.json(
@@ -88,10 +86,8 @@ export async function POST(req: NextRequest) {
     // ── 5. Generate pre-signed PUT URL ────────────────────────────────────────
     const s3 = getS3Client();
     const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
-    const key = `videos/${user.id}/${randomUUID()}-${filename}`;
+    const key = `projects/${user.id}/${randomUUID()}-${filename}`;
 
-    // Do NOT include ContentLength — it becomes a signed header and browsers
-    // cannot set Content-Length manually in fetch(), causing SignatureDoesNotMatch.
     const command = new PutObjectCommand({
         Bucket: BUCKET,
         Key: key,

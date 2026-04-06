@@ -9,12 +9,13 @@ interface UseDetectionOptions {
   videoId: string | null;
   onError: (error: string) => void;
   signal?: AbortSignal;
+  initialTracks?: Track[];
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDetectionOptions) {
-  const [tracks, setTracks] = useState<Track[]>([]);
+export function useFaceDetection({ sampleRate, videoId, onError, signal, initialTracks }: UseDetectionOptions) {
+  const [tracks, setTracks] = useState<Track[]>(initialTracks ?? []);
   const [selectedTrackIds, setSelectedTrackIds] = useState<number[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
