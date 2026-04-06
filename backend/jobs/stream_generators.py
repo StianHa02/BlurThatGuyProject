@@ -1,3 +1,9 @@
+# ---------------------------------------------------------------------------
+# NDJSON streaming generators for the detection and export endpoints.
+# Heavy work runs in background threads; progress events are yielded to the
+# client as newline-delimited JSON.
+# ---------------------------------------------------------------------------
+
 import json
 import queue
 import shutil
@@ -8,6 +14,10 @@ import numpy as np
 from pathlib import Path
 from typing import Any, Callable
 
+
+# ---------------------------------------------------------------------------
+# Detection stream
+# ---------------------------------------------------------------------------
 
 def detect_stream_generator(
         *,
@@ -71,6 +81,10 @@ def detect_stream_generator(
         stream_token.cancel()
         logger.info(f"Client disconnected from stream for job {job_id}, cancelling")
 
+
+# ---------------------------------------------------------------------------
+# Export stream
+# ---------------------------------------------------------------------------
 
 def export_stream_generator(
         *,

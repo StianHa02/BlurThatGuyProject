@@ -19,7 +19,7 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState(0);
 
-  /** Shared: run the export pipeline on the backend, stream progress, resolve with true on done */
+  // Shared by exportVideo and saveVideo
   const runExport = useCallback(async (onProgress: (p: number) => void): Promise<boolean> => {
     if (!videoId) { onError('No video uploaded.'); return false; }
     if (selectedTrackIds.length === 0) { onError('Please select at least one face to blur.'); return false; }

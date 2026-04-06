@@ -1,3 +1,4 @@
+/* Sticky top header for the upload flow. Shows the logo with a home link, animated step indicator pills, and the user dropdown. */
 'use client';
 
 import Link from 'next/link';

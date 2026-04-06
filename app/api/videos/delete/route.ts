@@ -1,3 +1,4 @@
+/* Deletes a video by id. Expects { id } in the JSON body. Verifies ownership, removes the object from S3, then deletes the database record. */
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { createClient } from '@/lib/supabase/server';

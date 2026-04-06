@@ -1,3 +1,8 @@
+# ---------------------------------------------------------------------------
+# Job lifecycle management: cancellation tokens, queued job execution, and
+# heartbeat keep-alive for long-running detection jobs.
+# ---------------------------------------------------------------------------
+
 import logging
 import threading
 import redis
@@ -15,6 +20,10 @@ from jobs.queue_manager import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Cancellation token
+# ---------------------------------------------------------------------------
+
 class CancellationToken:
     """Cooperative cancellation flag for detection jobs."""
 
@@ -28,6 +37,10 @@ class CancellationToken:
     def cancelled(self) -> bool:
         return self._cancelled.is_set()
 
+
+# ---------------------------------------------------------------------------
+# Token registry
+# ---------------------------------------------------------------------------
 
 _cancel_tokens: dict[str, CancellationToken] = {}
 _tokens_lock = threading.Lock()
@@ -49,6 +62,10 @@ def get_cancel_token(job_id: str) -> CancellationToken | None:
     with _tokens_lock:
         return _cancel_tokens.get(job_id)
 
+
+# ---------------------------------------------------------------------------
+# Job execution
+# ---------------------------------------------------------------------------
 
 def cancel_detection_job(r: redis.Redis, job_id: str, logger: logging.Logger) -> None:
     token = get_cancel_token(job_id)

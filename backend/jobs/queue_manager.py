@@ -1,8 +1,17 @@
+# ---------------------------------------------------------------------------
+# Redis-backed job queue: admission control, thread-budget rebalancing,
+# heartbeat eviction, and per-job status and progress tracking.
+# ---------------------------------------------------------------------------
+
 import os
 import time
 import redis
 from typing import Any
 
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 TTL_SECONDS = 3600
 MAX_ACTIVE_JOBS = 2
@@ -14,6 +23,10 @@ HEARTBEAT_TTL = 60  # must exceed longest gap between progress events
 _default_budget = os.cpu_count() or 4
 TOTAL_THREAD_BUDGET = max(1, int(os.environ.get("TOTAL_THREAD_BUDGET") or _default_budget))
 
+
+# ---------------------------------------------------------------------------
+# Redis key helpers
+# ---------------------------------------------------------------------------
 
 def _status_key(job_id: str) -> str:
     return f"btg:job:{job_id}:status"
@@ -35,6 +48,10 @@ def _heartbeat_key(job_id: str) -> str:
     return f"btg:job:{job_id}:hb"
 
 
+# ---------------------------------------------------------------------------
+# Progress and heartbeat
+# ---------------------------------------------------------------------------
+
 def set_job_progress(r: redis.Redis, job_id: str, progress: float) -> None:
     r.set(_progress_key(job_id), round(progress, 1), ex=TTL_SECONDS)
 
@@ -42,6 +59,10 @@ def set_job_progress(r: redis.Redis, job_id: str, progress: float) -> None:
 def touch_job_heartbeat(r: redis.Redis, job_id: str) -> None:
     r.set(_heartbeat_key(job_id), 1, ex=HEARTBEAT_TTL)
 
+
+# ---------------------------------------------------------------------------
+# Admission control
+# ---------------------------------------------------------------------------
 
 def _promote_next_locked(r: redis.Redis) -> None:
     """Promote the next waiter if there is capacity. Caller must hold admission lock."""
@@ -63,7 +84,7 @@ def evict_stale_jobs(r: redis.Redis) -> list[str]:
     evicted: list[str] = []
     for job_id in active_jobs:
         if r.exists(_heartbeat_key(job_id)):
-            continue  # alive
+            continue
 
         lock = r.lock(ADMISSION_LOCK_KEY, timeout=5, blocking_timeout=1)
         try:
@@ -157,6 +178,10 @@ def try_admit(r: redis.Redis, job_id: str) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Job status and lifecycle
+# ---------------------------------------------------------------------------
+
 def on_job_finish(r: redis.Redis, job_id: str) -> None:
     lock = r.lock(ADMISSION_LOCK_KEY, timeout=5, blocking_timeout=5)
     with lock:
@@ -203,6 +228,10 @@ def wait_until_admitted(r: redis.Redis, job_id: str, timeout: int = 300) -> bool
         time.sleep(0.5)
     return False
 
+
+# ---------------------------------------------------------------------------
+# Redis client
+# ---------------------------------------------------------------------------
 
 def create_redis_client() -> redis.Redis:
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")

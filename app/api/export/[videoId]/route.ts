@@ -1,9 +1,7 @@
-// app/api/export/[videoId]/route.ts
+/* Proxies a blur-export job to the backend and streams NDJSON progress back to the client. Expects export config in the JSON body. Timeout is 30 minutes for large videos. */
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 
-// Long exports can take 10+ minutes for large videos.
-// undici (Node fetch) closes idle sockets quickly by default.
 const EXPORT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function POST(

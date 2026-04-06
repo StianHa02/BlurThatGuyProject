@@ -1,3 +1,4 @@
+/* Generates a short-lived (60 s) signed S3 download URL for a user-owned video. Expects ?id= query param. Redirects directly to the signed URL to trigger a browser download. */
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';

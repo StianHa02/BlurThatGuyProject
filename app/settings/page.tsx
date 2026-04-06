@@ -1,3 +1,4 @@
+/* Account settings page. Allows authenticated users to change their password or permanently delete their account. */
 'use client';
 
 import { useState, useEffect } from 'react';

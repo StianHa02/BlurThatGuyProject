@@ -1,6 +1,15 @@
+# ---------------------------------------------------------------------------
+# Frame-level blur worker: applies pixelation or blackout to detected face
+# regions using an elliptical mask. Runs inside the thread pool during export.
+# ---------------------------------------------------------------------------
+
 import cv2
 import numpy as np
 
+
+# ---------------------------------------------------------------------------
+# Blur
+# ---------------------------------------------------------------------------
 
 def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
     idx, frame, track_lookup_dicts, padding, target_blocks, width, height, blur_mode = args
@@ -15,7 +24,6 @@ def _blur_frame(args: tuple) -> tuple[int, np.ndarray]:
         h = min(int(oh * (1 + padding * 2)), height - y)
         if w > 0 and h > 0:
             region = frame[y:y + h, x:x + w]
-            # Ellipse mask for face oval only
             mask = np.zeros((h, w), dtype=np.uint8)
             cv2.ellipse(mask, (w // 2, h // 2), (w // 2, h // 2), 0, 0, 360, 255, -1)
             if blur_mode == "blackout":

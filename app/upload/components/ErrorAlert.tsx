@@ -1,3 +1,4 @@
+/* Thin wrapper around Alert for displaying dismissible error messages on the upload page. */
 'use client';
 
 import { Alert } from '@/components/Alert';

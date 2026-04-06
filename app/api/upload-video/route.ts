@@ -1,4 +1,4 @@
-// app/api/upload-video/route.ts
+/* Proxies a multipart video upload to the backend. Expects a multipart/form-data body. */
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 

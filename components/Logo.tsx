@@ -1,3 +1,4 @@
+/* App logo with two size variants: md (default) shows a larger icon with bold text, sm shows a smaller muted version for footers. */
 'use client';
 
 import Link from 'next/link';
@@ -11,7 +12,6 @@ interface LogoProps {
 
 export function Logo({ size = 'md', href = '/', className = '' }: LogoProps) {
   if (size === 'sm') {
-    // Footer variant: smaller icon, muted text
     return (
       <Link href={href} className={`flex items-center gap-2 ${className}`}>
         <div className="w-6 h-6 rounded bg-blue-500 flex items-center justify-center shadow-sm shadow-blue-500/30 shrink-0">

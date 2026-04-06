@@ -1,4 +1,4 @@
-// app/api/download/[videoId]/route.ts
+/* Streams a processed (blurred) video from the backend to the client. Requires authentication. Proxies GET /download/:videoId and forwards the video bytes as video/mp4. */
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 import { createClient } from '@/lib/supabase/server';

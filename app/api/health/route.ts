@@ -1,4 +1,4 @@
-// app/api/health/route.ts
+/* Proxies a health check to the backend service. Returns backend status or 503 if unreachable. */
 import { NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 

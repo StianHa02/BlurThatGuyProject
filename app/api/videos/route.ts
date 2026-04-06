@@ -1,3 +1,4 @@
+/* Returns all videos owned by the authenticated user, each with a 1-hour signed S3 GET URL. */
 import { NextResponse } from 'next/server';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';

@@ -1,8 +1,7 @@
-// app/api/detect-video/[videoId]/route.ts
+/* Proxies face detection and ReID to the backend and streams NDJSON results back. Accepts optional ?sample_rate query param. Forwards X-Job-Id header for cancellation. Timeout is 30 minutes. */
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 
-// Detection + ReID can take a long time for large videos.
 const DETECT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function POST(

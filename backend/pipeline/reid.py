@@ -1,3 +1,8 @@
+# ---------------------------------------------------------------------------
+# ArcFace ReID module: session pool management, face alignment, quality
+# filtering, embedding, and cross-track identity merging via union-find.
+# ---------------------------------------------------------------------------
+
 import cv2
 import numpy as np
 import threading
@@ -10,10 +15,10 @@ import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
 # Session pool
 # ---------------------------------------------------------------------------
-# pool_size × intra_op_threads ≤ cpu_count to avoid over-subscription.
 _CPU_COUNT = multiprocessing.cpu_count()
 REID_POOL_SIZE = max(1, min(4, _CPU_COUNT // 2))
 _REID_INTRA_THREADS = max(1, min(4, _CPU_COUNT // REID_POOL_SIZE))

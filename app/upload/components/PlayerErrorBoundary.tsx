@@ -1,3 +1,4 @@
+/* Class-based error boundary that catches render errors in the video player and shows a fallback message. */
 'use client';
 
 import { Component, type ReactNode } from 'react';

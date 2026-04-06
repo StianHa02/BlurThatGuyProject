@@ -1,3 +1,8 @@
+# ---------------------------------------------------------------------------
+# Environment configuration, file validation, path helpers, and periodic
+# cleanup for the BlurThatGuy backend.
+# ---------------------------------------------------------------------------
+
 import asyncio
 import logging
 import os
@@ -18,6 +23,11 @@ except Exception:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 VIDEO_PROCESSING_CONFIG = {
     "default_padding": 0.4,
@@ -41,6 +51,10 @@ except Exception:
     MAX_UPLOAD_SIZE_MB = 0
 
 
+# ---------------------------------------------------------------------------
+# Path and validation helpers
+# ---------------------------------------------------------------------------
+
 def validate_video_id(video_id: str) -> str:
     if not UUID_PATTERN.match(video_id):
         raise HTTPException(status_code=400, detail="Invalid video ID format")
@@ -60,6 +74,10 @@ def validate_video_file(filename: str | None, content_type: str | None) -> None:
     if content_type and content_type not in ALLOWED_VIDEO_MIMETYPES:
         raise HTTPException(status_code=400, detail="Invalid video MIME type")
 
+
+# ---------------------------------------------------------------------------
+# File cleanup
+# ---------------------------------------------------------------------------
 
 def cleanup_old_files() -> None:
     try:
@@ -83,6 +101,10 @@ async def periodic_cleanup() -> None:
         await asyncio.sleep(3600)
         cleanup_old_files()
 
+
+# ---------------------------------------------------------------------------
+# Environment validation and CORS origins
+# ---------------------------------------------------------------------------
 
 def validate_environment() -> None:
     if not os.environ.get("API_KEY"):

@@ -1,3 +1,4 @@
+/* Grid of detected face thumbnails. Extracts thumbnails by seeking an offscreen video element to each track's midpoint frame. Supports blur-all, clear, and individual toggle. */
 'use client';
 
 import Image from 'next/image';

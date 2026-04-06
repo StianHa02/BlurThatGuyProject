@@ -1,3 +1,4 @@
+/* Top navigation bar for the landing page. Shows the logo and either the user dropdown or a portfolio link depending on the user integration flag. */
 'use client';
 
 import { ExternalLink } from 'lucide-react';

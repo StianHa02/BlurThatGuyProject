@@ -1,3 +1,4 @@
+/* User avatar button with a dropdown menu linking to My Videos and Settings, and a sign-out action. Renders a login link when no user is authenticated. Hidden when user integration is disabled. */
 'use client';
 
 import { useEffect, useRef, useState } from 'react';

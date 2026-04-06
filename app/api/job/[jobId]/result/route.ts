@@ -1,3 +1,4 @@
+/* Fetches the final result of a completed backend job by jobId. Proxies GET /job/:jobId/result. */
 import { NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 

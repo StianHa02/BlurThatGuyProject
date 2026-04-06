@@ -28,7 +28,6 @@ export function useVideoUpload() {
     const url = URL.createObjectURL(f);
     setFileUrl(url);
 
-    // Upload video to backend (via API proxy)
     try {
       const formData = new FormData();
       formData.append('file', f);

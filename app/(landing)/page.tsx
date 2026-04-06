@@ -1,3 +1,4 @@
+/* Landing page. Shows the hero section, feature walkthrough, and benefits. Handles smooth scroll to #how-it-works. */
 'use client';
 
 import Link from 'next/link';
@@ -50,9 +51,6 @@ const BENEFITS = [
 	},
 ];
 
-/* Landing page component: renders the hero and "How it works" sections,
-   wires up scrolling behavior and keeps the URL hash in sync for
-   "#how-it-works" using refs and the useLandingHashSync hook. */
 export default function Home() {
 	const [scrolled, setScrolled] = useState(false);
 	const heroRef = useRef<HTMLDivElement>(null);

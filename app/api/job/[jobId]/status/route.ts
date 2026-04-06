@@ -1,3 +1,4 @@
+/* Polls the current status of a backend job by jobId. Proxies GET /job/:jobId/status. */
 import { NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 

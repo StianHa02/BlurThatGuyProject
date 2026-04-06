@@ -1,3 +1,4 @@
+/* Login page. Authenticates users via email and password using Supabase. */
 'use client';
 
 import { useState } from 'react';

@@ -1,3 +1,8 @@
+# ---------------------------------------------------------------------------
+# Detection pipeline orchestrator: reads frames via ffmpeg or OpenCV, runs
+# face detection in a thread pool, tracks identities, and stores results.
+# ---------------------------------------------------------------------------
+
 import logging
 import queue
 import shutil
@@ -24,6 +29,11 @@ from storage import store_tracks
 from pipeline.tracker import track_detections
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Encoder selection
+# ---------------------------------------------------------------------------
 
 _h264_encoder: str | None = None
 
@@ -77,6 +87,10 @@ def get_encoder() -> str:
     return _h264_encoder
 
 
+# ---------------------------------------------------------------------------
+# Thread budget
+# ---------------------------------------------------------------------------
+
 def apply_job_thread_budget(r: redis.Redis, job_id: str) -> None:
     status = get_job_status(r, job_id)
     budget = status.get("thread_budget")
@@ -87,6 +101,10 @@ def apply_job_thread_budget(r: redis.Redis, job_id: str) -> None:
     apply_detector_thread_budget(n_threads)
     apply_reid_thread_budget(n_threads)
 
+
+# ---------------------------------------------------------------------------
+# Detection pipeline
+# ---------------------------------------------------------------------------
 
 def process_detection(
     video_id: str,

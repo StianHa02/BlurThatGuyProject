@@ -1,5 +1,11 @@
+# ---------------------------------------------------------------------------
+# IoU/appearance-based multi-object tracker with scene-cut awareness and a
+# lazy TrackLookup for gap-interpolated bbox queries during export.
+# ---------------------------------------------------------------------------
+
 import bisect
 import numpy as np
+
 
 # ---------------------------------------------------------------------------
 # Config

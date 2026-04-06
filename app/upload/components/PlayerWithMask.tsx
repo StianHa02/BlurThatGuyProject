@@ -1,3 +1,4 @@
+/* Video player with a canvas overlay that draws blur/blackout masks on selected face tracks in real time. Interpolates bounding boxes between sampled frames for smooth playback. */
 'use client';
 
 import { useEffect, useRef, useState, useMemo } from 'react';

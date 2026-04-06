@@ -1,3 +1,4 @@
+/* Generates a pre-signed S3 PUT URL for direct browser upload. Expects { filename, contentType, fileSize } in the JSON body. Enforces per-file (2 GB), per-user (5 GB), bucket (30 GB) limits, and a rate limit of 10 uploads per hour. */
 import { NextRequest, NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';

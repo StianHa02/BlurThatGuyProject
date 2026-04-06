@@ -1,3 +1,4 @@
+/* Drag-and-drop file input for video uploads. Accepts MP4, MOV, and WebM. Calls onFileSelect with the chosen file. */
 'use client';
 
 import { useCallback, useRef, useState } from 'react';

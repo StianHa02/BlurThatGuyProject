@@ -1,3 +1,4 @@
+/* Main upload and processing page. Manages the full workflow: file upload → face detection → face selection → export/save. */
 'use client';
 
 import { useState, useEffect } from 'react';

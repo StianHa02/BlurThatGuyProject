@@ -22,13 +22,9 @@ export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDe
   const [queued, setQueued] = useState(false);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
 
-  // Keep last progress in a ref to prevent regressions
   const lastProgressRef = useRef<number>(0);
   const activeJobIdRef = useRef<string | null>(null);
 
-  // Fire cancel via sendBeacon on page reload or tab close.
-  // sendBeacon is guaranteed to be dispatched even during unload,
-  // unlike fetch which the browser may kill mid-flight.
   useEffect(() => {
     const handleUnload = () => {
       if (activeJobIdRef.current) {
@@ -76,8 +72,6 @@ export function useFaceDetection({ sampleRate, videoId, onError, signal }: UseDe
         if (num < 85) setStatus('Detecting faces...');
         else setStatus('Building face tracks...');
       }, signal, (jobId) => {
-        // Set immediately when first NDJSON line arrives so
-        // beforeunload/abort can cancel even mid-stream.
         activeJobIdRef.current = jobId;
       });
 

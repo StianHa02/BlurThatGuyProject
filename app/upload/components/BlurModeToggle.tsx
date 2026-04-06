@@ -1,3 +1,4 @@
+/* Segmented toggle for switching between pixelate and blackout blur modes. Uses a Framer Motion layout animation for the active indicator. */
 'use client';
 
 import { Grid2x2, Square } from 'lucide-react';

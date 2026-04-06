@@ -1,3 +1,4 @@
+/* Cancels a running backend job by jobId. Proxies POST /job/:jobId/cancel to the backend. */
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
 

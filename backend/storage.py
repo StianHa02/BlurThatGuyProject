@@ -1,9 +1,12 @@
+# ---------------------------------------------------------------------------
+# In-memory thread-safe store for detection tracks and job results.
+# ---------------------------------------------------------------------------
+
 import threading
 
 _detection_store: dict[str, list[dict]] = {}
 _job_result_store: dict[str, dict] = {}
 _store_lock = threading.Lock()
-
 
 def store_tracks(video_id: str, tracks: list[dict]) -> None:
     with _store_lock:

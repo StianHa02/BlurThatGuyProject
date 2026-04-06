@@ -1,3 +1,4 @@
+/* Saves a successfully uploaded video to the database. Expects { key, filename, fileSize } in the JSON body. Validates the S3 key belongs to the authenticated user. */
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 

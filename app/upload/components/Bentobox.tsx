@@ -1,3 +1,4 @@
+/* Styled card wrapper used as a layout tile on the upload page. */
 'use client';
 
 interface BentoboxProps {

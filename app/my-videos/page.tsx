@@ -1,3 +1,4 @@
+/* My Videos page. Lists all saved videos for the authenticated user with options to download or delete each one. */
 'use client';
 
 import { useEffect, useState } from 'react';

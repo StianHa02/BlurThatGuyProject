@@ -1,3 +1,4 @@
+/* Shared alert component with error, success, and info variants. Supports an optional dismiss button. */
 'use client';
 
 import { AlertCircle, CheckCircle, Info, X } from 'lucide-react';

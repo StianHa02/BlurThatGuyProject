@@ -1,3 +1,4 @@
+/* Deletes the authenticated user's account. Removes all their S3 videos first, then deletes the Supabase auth record via the admin client. */
 import { NextResponse } from 'next/server';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { createClient } from '@/lib/supabase/server';

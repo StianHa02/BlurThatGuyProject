@@ -1,3 +1,4 @@
+/* Sign-up page. Registers new users with username, email, and password. Checks for duplicate emails before calling Supabase signUp. */
 'use client';
 
 import { useState } from 'react';
@@ -22,7 +23,6 @@ export default function SignupPage() {
         if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
         setLoading(true);
 
-        // Check if email already in use
         try {
             const normalizedEmail = email.trim().toLowerCase();
             const checkRes = await fetch('/api/auth/check-email', {

@@ -1,3 +1,4 @@
+/* Step card for the "How it works" section. Renders a mouse-tracking spotlight glow effect on hover. */
 "use client";
 
 import { LucideIcon } from 'lucide-react';

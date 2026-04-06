@@ -27,7 +27,7 @@ export function ProgressBar({ progress, status, hint }: ProgressBarProps) {
         aria-label={status}
       >
         <div
-          className="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 to-green-500/15 rounded-full transition-[width] duration-500 ease-out"
+          className="absolute inset-y-0 left-0 bg-linear-to-r from-blue-500 to-green-500/15 rounded-full transition-[width] duration-500 ease-out"
           style={{ width: `${pct}%` }}
         />
       </div>

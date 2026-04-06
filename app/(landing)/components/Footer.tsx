@@ -1,3 +1,4 @@
+/* Landing page footer. Displays the logo on the left and a creator credit link on the right. */
 'use client';
 
 import { EyeOff, ExternalLink } from 'lucide-react';

@@ -1,3 +1,8 @@
+# ---------------------------------------------------------------------------
+# Face detector: ONNX session pool, anchor decoding, NMS, and
+# a public detect_faces() function used by the detection pipeline.
+# ---------------------------------------------------------------------------
+
 import cv2
 import numpy as np
 import threading
@@ -9,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import onnxruntime as ort
 
 logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------
 # Config

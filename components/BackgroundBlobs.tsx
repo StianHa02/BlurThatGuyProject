@@ -1,3 +1,4 @@
+/* Fixed full-screen decorative blurred gradient blobs used as a background across pages. */
 'use client';
 
 export function BackgroundBlobs() {

@@ -8,7 +8,11 @@
 
 > A coding challenge submission for FONN Group and Mimir.
 ---
+<p align="center">
+  <img src="public/demo.gif" alt="BlurThatGuy demo" width="800" />
+</p>
 
+---
 
 ## Preface
 
@@ -33,7 +37,7 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 - [Environment Configuration](#environment-configuration)
 - [How to Use](#how-to-use)
 - [Tech Stack](#tech-stack)
-- [Design rationale](#design-rationale)
+- [Design Rationale](#design-rationale)
 - [Backend Features](#backend-features)
 - [Deployment](#deployment)
 - [User Integration](#user-integration)
@@ -199,7 +203,7 @@ REDIS_URL=redis://redis:6379
 
 ---
 
-## Design rationale
+## Design Rationale
 
 This system uses a shared-nothing architecture with sticky sessions.
 
@@ -223,20 +227,6 @@ In a production cloud system, this would likely be replaced with:
 - Centralized queue in a shared cache (e.g., AWS ElastiCache)
 ---
 
-### Deployment Considerations
-
-The system was initially designed with a split deployment model:
-- Frontend hosted separately (Vercel)
-- Backend hosted on AWS EC2
-
-During development, large video payloads exposed limitations with this approach, which required upgrade the Vercel plan.
-
-To avoid these constraints and simplify deployment, I chose co-locating both frontend and backend on the same EC2 nodes.
-
-Since the backend is designed as a standalone API, it can still be deployed independently of the frontend, with API key authentication enabling secure communication between services.
-
----
-
 ## Backend Features
 
 ### Face Detection
@@ -247,9 +237,6 @@ Builds continuous face tracks across frames using IoU-based assignment with a fa
 
 **MAD Scene Cut Detection**
 Each sampled frame is downscaled to a 64×36 thumbnail and converted to grayscale. The mean absolute difference (MAD) between consecutive thumbnails is computed. If the MAD exceeds a threshold (45.0) and at least 8 sampled frames have passed since the last detected cut, the frame is recorded as a scene boundary. These cut frames are handed to the tracker, which blocks IoU assignment across a cut boundary (`cut_mask`). Without this gate, a face visible in the last frame of one scene could be incorrectly linked to a similar-looking face in the opening frame of the next scene, causing identity bleed and wrong blurs.
-
-**Track Boundary Hold**
-At high sample rates only every Nth frame is analysed, so a track's last detected keyframe may be up to `sample_rate − 1` frames before a scene cut. During export, the `TrackLookup` now holds the last known bounding box for up to `sample_rate − 1` frames beyond the final keyframe (and mirrors this before the first keyframe). This ensures blur is continuous right up to the cut with no unblurred gap between the last sampled detection and the scene transition.
 
 ### Re-Identification (ReID)
 Uses **ArcFace** (`w600k_r50.onnx` preferred, `w600k_mbf.onnx` as fallback) to generate 512-dimensional L2-normalised identity vectors per face crop. Merges fragmented tracks across scene cuts by cosine similarity with a union-find algorithm. Includes quality gates: blur rejection (Laplacian variance), profile angle rejection (landmark geometry), and an incremental drift-aware centroid that rejects embeddings inconsistent with the track's running identity.
@@ -357,14 +344,6 @@ All limits are constants in `app/api/videos/presign/route.ts`.
 | Storage abuse | Per-user quota + total bucket cap |
 | Oversized files | File size checked before issuing the upload URL |
 
-### Why S3 + Supabase
-
-Video files can be hundreds of megabytes, so storing them inside a traditional database would be slow and expensive. Instead, the binary data lives in an **AWS S3 bucket** — purpose-built for large object storage, while only lightweight metadata (filename, S3 key, file size, owner ID, timestamp) is stored in a **Supabase Postgres** table. This separation keeps the database small and fast while letting S3 handle the heavy lifting of serving large files.
-
-The upload path reinforces this split: the server never touches the video bytes. It generates a short-lived **pre-signed PUT URL** scoped to the authenticated user's storage path, and the browser uploads directly to S3. After a successful upload the browser reports the S3 key back to the server, which writes the metadata row. Downloads work the same way in reverse — the server issues a pre-signed GET URL and the browser streams the file straight from S3.
-
-Row Level Security on the Supabase `videos` table ensures users can only query their own rows, and the S3 key structure (`videos/{userId}/…`) isolates files at the storage level.
-
 ---
 
 ## Architecture Diagram
@@ -427,21 +406,20 @@ BlurThatGuyProject/
 │   ├── settings/page.tsx              # Account management and deletion
 │   ├── my-videos/page.tsx             # Saved videos grid with S3 playback
 │   └── api/                           # Next.js Route Handlers (proxy to FastAPI)
-│       ├── upload-video/route.ts      # POST — proxy video upload
-│       ├── detect-video/[videoId]/    # POST — start detection (NDJSON stream)
-│       ├── export/[videoId]/          # POST — render blurred video (NDJSON stream)
-│       ├── download/[videoId]/        # GET  — download processed video
-│       ├── health/                    # GET  — backend health check
+│       ├── upload-video/
+│       ├── detect-video/[videoId]/
+│       ├── export/[videoId]/
+│       ├── download/[videoId]/
+│       ├── health/
 │       ├── job/[jobId]/
-│       │   ├── status/                # GET  — poll job status and queue position
-│       │   ├── result/                # GET  — fetch completed detection tracks
-│       │   └── cancel/                # POST — cancel a queued or running job
-│       ├── videos/                    # GET  — list user's saved videos
-│       │   ├── save/                  # POST — save processed video to S3
-│       │   ├── delete/                # POST — delete a saved video
-│       │   └── presign/               # POST — generate S3 pre-signed upload URL
-│       └── user/
-│           └── delete/                # POST — delete user account and data
+│       │   ├── status/
+│       │   ├── result/
+│       │   └── cancel/
+│       ├── videos/
+│       │   ├── save/
+│       │   ├── delete/
+│       │   └── presign/
+│       └── user/delete/
 ├── components/                        # Shared UI components (used across routes)
 ├── types/                             # Shared TypeScript types
 ├── lib/
@@ -453,8 +431,7 @@ BlurThatGuyProject/
 │   │   ├── server.ts                  # Server-side Supabase client (cookies)
 │   │   └── admin.ts                   # Service-role client for admin operations
 │   └── server/
-│       ├── backendProxy.ts            # Builds proxied fetch requests with API key
-│       └── env.ts                     # Server-only env var access
+│       └── backendProxy.ts            # Builds proxied fetch requests with API key
 ├── backend/                           # Python FastAPI backend
 │   ├── main.py                        # App entry point + all API endpoints
 │   ├── config.py                      # Env vars, validation, temp file paths
@@ -476,8 +453,9 @@ BlurThatGuyProject/
 │   │   └── test_api.py                # API endpoint tests (FastAPI TestClient)
 │   ├── models/                        # ONNX model weights (not committed)
 │   └── requirements.txt
-├── docker-compose.yml                 # Main local production setup 
-├── docker-compose.dev.yml             # Development setup with hot reload
+├── docker-compose.yml                 # Local development setup
+├── docker-compose.dev.yml             # Development with hot reload (backend + redis only)
+├── docker-compose.prod.yml            # Production deployment (uses .env.prod)
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
 └── .github/workflows/
@@ -505,9 +483,6 @@ docker compose up --build
 # Check running containers
 docker compose ps
 ```
-
-> **Apple Silicon note:** The Docker images use `python:3.11-slim` and `node:20-alpine`, which both support `linux/arm64` natively. On Apple Silicon Macs (M1/M2/M3/M4), Docker Desktop will build and run these containers at native speed — no x86 emulation required. All Python dependencies (`onnxruntime`, `opencv-python`, `numpy`) ship ARM64 wheels.
-
 ---
 
 ## Troubleshooting

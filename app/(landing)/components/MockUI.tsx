@@ -1,3 +1,4 @@
+/* Decorative mock of the upload page UI shown on the landing hero. Static — not interactive. */
 'use client';
 
 import { EyeOff, Eye, Upload, Download, Save } from 'lucide-react';
