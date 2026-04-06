@@ -51,7 +51,7 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 
 ## Quick Start
 
-### Option 1: Live Demo
+### Option 1: Live Demo  _(with user integration)_
 
 **Requirements:** Web browser (contact me to start the EC2 instance)
 
@@ -59,11 +59,9 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 
 ---
 
-### Option 2: Run with Docker _(recommended)_
+### Option 2: Run with Docker _(without user integration)_
 
 **Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
-
-> **No environment variables needed.** The full core flow (upload a video, detect faces, select who to blur, export and download the result) works out of the box with `docker compose up --build` and zero configuration. Supabase auth and S3 video storage are opt-in extras, but not nesessary.
 
 ```bash
 # Clone the repository

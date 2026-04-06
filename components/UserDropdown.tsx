@@ -44,7 +44,7 @@ export function UserDropdown() {
   if (!userIntegration) return null;
 
   const initials = user?.email?.[0].toUpperCase() ?? '?';
-  const username = user?.user_metadata?.username as string | undefined;
+  const username = user?.user_metadata?.display_name as string | undefined;
 
   if (!user) {
     return (

@@ -11,6 +11,7 @@ import { BackgroundBlobs, Logo, Alert } from '@/components';
 export default function SettingsPage() {
     const router = useRouter();
     const [email, setEmail] = useState('');
+    const [name, setName]   = useState('');
 
     const [newPassword, setNewPassword]         = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -26,6 +27,7 @@ export default function SettingsPage() {
         supabase.auth.getUser().then(({ data }) => {
             if (!data.user) { router.push('/login'); return; }
             setEmail(data.user.email ?? '');
+            setName(data.user.user_metadata?.display_name ?? '');
         });
     }, [router]);
 
@@ -69,9 +71,17 @@ export default function SettingsPage() {
 
                 {/* Account info */}
                 <div className="card-glass p-6 mb-5">
-                    <h2 className="section-label mb-3">Account</h2>
-                    <p className="text-sm text-slate-400">Signed in as</p>
-                    <p className="text-white font-medium mt-0.5">{email}</p>
+                    <h2 className="section-label mb-4">Account</h2>
+                    {name && (
+                        <div className="mb-3">
+                            <p className="text-xs text-slate-400">Name</p>
+                            <p className="text-white font-medium mt-0.5">{name}</p>
+                        </div>
+                    )}
+                    <div>
+                        <p className="text-xs text-slate-400">Signed in as</p>
+                        <p className="text-white font-medium mt-0.5">{email}</p>
+                    </div>
                 </div>
 
                 {/* Change password */}
