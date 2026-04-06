@@ -319,7 +319,7 @@ The save flow works like this:
 2. The browser uploads the video blob directly to S3 using the pre-signed URL. This bypasses the Next.js server entirely, so large files never pass through the application layer.
 3. After a successful upload, the browser calls `/api/videos/save` to store the S3 key and metadata in Supabase.
 
-For playback, the server generates short-lived pre-signed GET URLs (1-hour TTL) scoped to the authenticated user. The browser plays the video directly from S3. The bucket itself has no public access.
+When the My Videos page loads, the server generates 1-hour pre-signed GET URLs for each video. These are used only to render the thumbnail preview in the grid (`<video preload="metadata">` — no controls, no playback). To download a video, the Download button hits `/api/videos/download`, which generates a fresh 60-second signed URL on each click and redirects the browser to it. The bucket itself has no public access.
 
 Videos are stored at `videos/{userId}/{uuid}-filename.mp4`, isolating users at the storage level.
 
