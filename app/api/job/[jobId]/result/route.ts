@@ -1,11 +1,15 @@
 /* Fetches the final result of a completed backend job by jobId. Proxies GET /job/:jobId/result. */
 import { NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
+import { requireAuth } from '@/lib/server/auth';
 
 export async function GET(
   _: Request,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth.response) return auth.response;
+
   try {
     const { jobId } = await params;
     const response = await fetch(`${BACKEND_URL}/job/${jobId}/result`, {
@@ -27,4 +31,3 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch job result' }, { status: 500 });
   }
 }
-

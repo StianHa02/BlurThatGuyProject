@@ -1,6 +1,7 @@
 /* Proxies a blur-export job to the backend and streams NDJSON progress back to the client. Expects export config in the JSON body. Timeout is 30 minutes for large videos. */
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
+import { requireAuth } from '@/lib/server/auth';
 
 const EXPORT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -8,6 +9,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth.response) return auth.response;
+
   try {
     const { videoId } = await params;
     const body = await request.json();

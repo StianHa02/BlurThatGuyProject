@@ -1,29 +1,17 @@
 /* Returns all projects owned by the authenticated user, each with 1-hour signed S3 URLs
    for the original video (thumbnail preview) and tracks JSON. */
 import { NextResponse } from 'next/server';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { createClient } from '@/lib/supabase/server';
-
-function getS3Client() {
-    return new S3Client({
-        region: process.env['AWS_REGION'],
-        credentials: {
-            accessKeyId: process.env['AWS_ACCESS_KEY_ID']!,
-            secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY']!,
-        },
-    });
-}
+import { requireAuth } from '@/lib/server/auth';
+import { getS3Client, S3_BUCKET } from '@/lib/server/s3';
 
 const SIGNED_URL_TTL = 3600; // 1 hour
 
 export async function GET() {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (auth.response) return auth.response;
+    const { user, supabase } = auth;
 
     const { data: projects, error } = await supabase
         .from('projects')
@@ -36,13 +24,12 @@ export async function GET() {
     }
 
     const s3 = getS3Client();
-    const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
 
     const projectsWithUrls = await Promise.all(
         (projects ?? []).map(async (project) => {
             const [originalSignedUrl, tracksSignedUrl] = await Promise.all([
-                getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: project.original_s3_key }), { expiresIn: SIGNED_URL_TTL }),
-                getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: project.tracks_s3_key }),   { expiresIn: SIGNED_URL_TTL }),
+                getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: project.original_s3_key }), { expiresIn: SIGNED_URL_TTL }),
+                getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: project.tracks_s3_key }),   { expiresIn: SIGNED_URL_TTL }),
             ]);
             return { ...project, originalSignedUrl, tracksSignedUrl };
         })

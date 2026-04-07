@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI):
 
     pool = get_thread_pool()
     if pool:
-        pool.shutdown(wait=False)
+        pool.shutdown(wait=True, cancel_futures=True)
 
 
 app = FastAPI(title="Face Detection API", lifespan=lifespan)

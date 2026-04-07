@@ -142,12 +142,7 @@ export function useVideoExport({ videoId, fileName, selectedTrackIds, sampleRate
         signal,
       });
       if (!videoUploadRes.ok) {
-        const xml = await videoUploadRes.text().catch(() => '');
-        const match = xml.match(/<Message>(.*?)<\/Message>/);
-        const code  = xml.match(/<Code>(.*?)<\/Code>/);
-        const s3Msg = match?.[1] ?? `HTTP ${videoUploadRes.status}`;
-        const s3Code = code?.[1] ? ` (${code[1]})` : '';
-        throw new Error(`S3 upload failed${s3Code}: ${s3Msg}`);
+        throw new Error(`S3 upload failed: HTTP ${videoUploadRes.status}`);
       }
       setSaveProjectProgress(70);
 

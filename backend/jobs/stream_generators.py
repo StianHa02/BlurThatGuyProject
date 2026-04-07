@@ -35,7 +35,7 @@ def detect_stream_generator(
         on_job_finish: Callable[..., None],
         logger,
 ):
-    message_queue: queue.Queue = queue.Queue()
+    message_queue: queue.Queue = queue.Queue(maxsize=100)
 
     def run_stream_job() -> None:
         try:
@@ -59,7 +59,7 @@ def detect_stream_generator(
         except Exception as e:
             logger.error(f"Video detection stream error: {e}")
             set_job_status(r, job_id, "error")
-            message_queue.put(json.dumps({"type": "error", "error": str(e)}) + "\n")
+            message_queue.put(json.dumps({"type": "error", "error": "Detection failed unexpectedly"}) + "\n")
         finally:
             unregister_cancel_token(job_id)
             on_job_finish(r, job_id)
@@ -101,7 +101,10 @@ def export_stream_generator(
         get_safe_video_path: Callable[[str, str], Path],
         blur_frame: Callable[..., Any],
         logger,
+        cancel_event: threading.Event | None = None,
 ):
+    if cancel_event is None:
+        cancel_event = threading.Event()
     cap = out = ffmpeg_proc = dec = None
     stderr_chunks: list[bytes] = []
     stderr_thread: threading.Thread | None = None
@@ -204,7 +207,7 @@ def export_stream_generator(
             fi_r = 0
             try:
                 if dec:
-                    while True:
+                    while not cancel_event.is_set():
                         raw = dec.stdout.read(frame_size)
                         if not raw or len(raw) < frame_size:
                             break
@@ -212,7 +215,7 @@ def export_stream_generator(
                         read_queue.put((fi_r, frame))
                         fi_r += 1
                 else:
-                    while True:
+                    while not cancel_event.is_set():
                         ret, frame = cap.read()
                         if not ret:
                             break
@@ -224,7 +227,7 @@ def export_stream_generator(
         reader_thread = threading.Thread(target=_frame_reader, daemon=True)
         reader_thread.start()
 
-        while True:
+        while not cancel_event.is_set():
             item = read_queue.get()
             if item is None:
                 break
@@ -282,9 +285,12 @@ def export_stream_generator(
         logger.info(f"Export complete: {video_id}")
         yield json.dumps({"type": "done"}) + "\n"
 
+    except GeneratorExit:
+        cancel_event.set()
+        logger.info(f"Client disconnected from export for {video_id}, cancelling")
     except Exception as e:
         logger.error(f"Export error {video_id}: {e}")
-        yield json.dumps({"type": "error", "error": str(e)}) + "\n"
+        yield json.dumps({"type": "error", "error": "Export failed unexpectedly"}) + "\n"
     finally:
         if cap:
             cap.release()
@@ -301,3 +307,5 @@ def export_stream_generator(
                     ffmpeg_proc.stdin.close()
             except Exception:
                 pass
+            if cancel_event.is_set():
+                ffmpeg_proc.kill()

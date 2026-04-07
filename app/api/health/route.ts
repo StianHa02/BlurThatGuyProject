@@ -6,6 +6,7 @@ export async function GET() {
   try {
     const response = await fetch(`${BACKEND_URL}/health`, {
       headers: backendHeaders({ 'Content-Type': 'application/json' }),
+      signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return NextResponse.json({ error: 'Backend service unavailable' }, { status: response.status });
     return NextResponse.json(await response.json());

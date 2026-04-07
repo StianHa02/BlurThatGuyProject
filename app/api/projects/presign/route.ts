@@ -1,21 +1,13 @@
 /* Generates a pre-signed S3 PUT URL for direct browser upload of an original (unblurred) project video.
    Enforces per-file (2 GB), per-user (5 GB), bucket (30 GB) limits, and a rate limit of 10 saves per hour. */
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireAuth } from '@/lib/server/auth';
+import { getS3Client, S3_BUCKET } from '@/lib/server/s3';
+import { PresignSchema } from '@/lib/server/validation';
 import { randomUUID } from 'crypto';
-
-function getS3Client() {
-    return new S3Client({
-        region: process.env['AWS_REGION'],
-        credentials: {
-            accessKeyId: process.env['AWS_ACCESS_KEY_ID']!,
-            secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY']!,
-        },
-    });
-}
 
 const MAX_FILE_SIZE_BYTES = 2  * 1024 * 1024 * 1024; // 2 GB per file
 const USER_QUOTA_BYTES    = 5  * 1024 * 1024 * 1024; // 5 GB per user
@@ -23,17 +15,18 @@ const BUCKET_CAP_BYTES    = 30 * 1024 * 1024 * 1024; // 30 GB total bucket
 const RATE_LIMIT_PER_HOUR = 10;                        // saves per user per hour
 
 export async function POST(req: NextRequest) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const auth = await requireAuth();
+    if (auth.response) return auth.response;
+    const { user, supabase } = auth;
 
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const parsed = PresignSchema.safeParse(await req.json());
+    if (!parsed.success) {
+        return NextResponse.json({ error: 'Invalid request body', details: parsed.error.issues }, { status: 400 });
     }
-
-    const { filename, contentType, fileSize } = await req.json();
+    const { filename, contentType, fileSize } = parsed.data;
 
     // ── 1. File size guard ────────────────────────────────────────────────────
-    if (typeof fileSize === 'number' && fileSize > MAX_FILE_SIZE_BYTES) {
+    if (fileSize > MAX_FILE_SIZE_BYTES) {
         return NextResponse.json(
             { error: 'File exceeds the 2 GB per-upload limit.' },
             { status: 413 }
@@ -56,27 +49,24 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 3. Per-user quota: 5 GB ──────────────────────────────────────────────
-    const { data: userProjects } = await supabase
-        .from('projects')
-        .select('file_size')
-        .eq('user_id', user.id);
+    // ── 4. Total bucket cap: 30 GB ────────────────────────────────────────────
+    // Run both quota checks in parallel
+    const admin = createAdminClient();
+    const [userQuotaRes, bucketQuotaRes] = await Promise.all([
+        supabase.from('projects').select('file_size').eq('user_id', user.id),
+        admin.from('projects').select('file_size'),
+    ]);
 
-    const userUsed = userProjects?.reduce((s, p) => s + (p.file_size ?? 0), 0) ?? 0;
-
-    if (userUsed + (fileSize ?? 0) > USER_QUOTA_BYTES) {
+    const userUsed = userQuotaRes.data?.reduce((s, p) => s + (p.file_size ?? 0), 0) ?? 0;
+    if (userUsed + fileSize > USER_QUOTA_BYTES) {
         return NextResponse.json(
             { error: 'Storage quota exceeded — 5 GB per user.' },
             { status: 413 }
         );
     }
 
-    // ── 4. Total bucket cap: 30 GB ────────────────────────────────────────────
-    const admin = createAdminClient();
-    const { data: allProjects } = await admin.from('projects').select('file_size');
-
-    const bucketUsed = allProjects?.reduce((s, p) => s + (p.file_size ?? 0), 0) ?? 0;
-
-    if (bucketUsed + (fileSize ?? 0) > BUCKET_CAP_BYTES) {
+    const bucketUsed = bucketQuotaRes.data?.reduce((s, p) => s + (p.file_size ?? 0), 0) ?? 0;
+    if (bucketUsed + fileSize > BUCKET_CAP_BYTES) {
         return NextResponse.json(
             { error: 'Storage capacity reached. Please try again later.' },
             { status: 507 }
@@ -85,11 +75,10 @@ export async function POST(req: NextRequest) {
 
     // ── 5. Generate pre-signed PUT URL ────────────────────────────────────────
     const s3 = getS3Client();
-    const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
     const key = `projects/${user.id}/${randomUUID()}-${filename}`;
 
     const command = new PutObjectCommand({
-        Bucket: BUCKET,
+        Bucket: S3_BUCKET,
         Key: key,
         ContentType: contentType,
     });

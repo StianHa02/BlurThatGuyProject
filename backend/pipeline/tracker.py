@@ -102,7 +102,6 @@ def track_detections(detections_per_frame: dict, cut_frames: set[int] | None = N
     min_len = TRACKER_CONFIG["min_track_length"]
     max_dist = TRACKER_CONFIG["max_center_distance"]
 
-    import bisect
     cuts_sorted = sorted(cut_frames) if cut_frames else []
 
     def _cut_between(a: int, b: int) -> bool:

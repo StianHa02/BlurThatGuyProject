@@ -1,25 +1,26 @@
 /* Saves project metadata (original video S3 key + tracks S3 key) to the projects table.
    Validates that both S3 keys belong to the authenticated user before inserting. */
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { requireAuth } from '@/lib/server/auth';
+import { SaveProjectSchema } from '@/lib/server/validation';
 
 export async function POST(req: NextRequest) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const auth = await requireAuth();
+    if (auth.response) return auth.response;
+    const { user, supabase } = auth;
 
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const parsed = SaveProjectSchema.safeParse(await req.json());
+    if (!parsed.success) {
+        return NextResponse.json({ error: 'Invalid request body', details: parsed.error.issues }, { status: 400 });
     }
-
-    const { originalKey, tracksKey, filename, fps, frameCount, width, height, sampleRate, trackCount, fileSize } =
-        await req.json();
+    const { originalKey, tracksKey, filename, fps, frameCount, width, height, sampleRate, trackCount, fileSize } = parsed.data;
 
     // Validate both keys belong to this user
     const expectedPrefix = `projects/${user.id}/`;
-    if (typeof originalKey !== 'string' || !originalKey.startsWith(expectedPrefix)) {
+    if (!originalKey.startsWith(expectedPrefix)) {
         return NextResponse.json({ error: 'Invalid original storage key' }, { status: 403 });
     }
-    if (typeof tracksKey !== 'string' || !tracksKey.startsWith(expectedPrefix)) {
+    if (!tracksKey.startsWith(expectedPrefix)) {
         return NextResponse.json({ error: 'Invalid tracks storage key' }, { status: 403 });
     }
 

@@ -19,7 +19,7 @@ ADMISSION_LOCK_KEY = "btg:admission_lock"
 ACTIVE_KEY = "btg:active"
 WAITING_KEY = "btg:waiting"
 SYSTEM_THREADS_KEY = "btg:system:total_threads"
-HEARTBEAT_TTL = 60  # must exceed longest gap between progress events
+HEARTBEAT_TTL = 30  # must exceed longest gap between progress events (heartbeat interval is 15s)
 _default_budget = os.cpu_count() or 4
 TOTAL_THREAD_BUDGET = max(1, int(os.environ.get("TOTAL_THREAD_BUDGET") or _default_budget))
 

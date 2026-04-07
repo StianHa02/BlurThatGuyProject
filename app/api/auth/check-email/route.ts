@@ -1,53 +1,40 @@
+/* Checks if an email is already registered. Expects { email } in the request body. Uses Supabase admin client*/
 import { NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-
-
-/* Checks if an email is already registered. Expects { email } in the request body. Uses Supabase admin client*/
+import { CheckEmailSchema } from '@/lib/server/validation';
 
 export async function POST(req: Request) {
     try {
-        const { email: rawEmail } = await req.json();
-        const email = rawEmail?.trim().toLowerCase();
-
-        if (!email) {
+        const parsed = CheckEmailSchema.safeParse(await req.json());
+        if (!parsed.success) {
             return NextResponse.json({ error: 'Email is required' }, { status: 400 });
         }
+        const email = parsed.data.email.trim().toLowerCase();
 
         const admin = createAdminClient();
 
-        let page = 1;
-        let userExists = false;
-        
-        while (true) {
-            const { data: { users }, error } = await admin.auth.admin.listUsers({
-                page,
-                perPage: 1000,
-            });
+        // O(1) lookup via PostgREST instead of paginating all users
+        const { data, error } = await admin
+            .rpc('check_email_exists', { lookup_email: email });
 
-            if (error) {
-                console.error(`Error on page ${page} of listUsers:`, error.message);
-                return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) {
+            // Fallback: direct query on auth.users (service role bypasses RLS)
+            const { count, error: countError } = await admin
+                .schema('auth')
+                .from('users')
+                .select('id', { count: 'exact', head: true })
+                .ilike('email', email);
+
+            if (countError) {
+                console.error('check-email fallback error:', countError.message);
+                return NextResponse.json({ error: countError.message }, { status: 500 });
             }
 
-            if (!users || users.length === 0) {
-                break;
-            }
-
-            if (users.some(u => u.email?.toLowerCase() === email)) {
-                userExists = true;
-                break;
-            }
-
-            if (users.length < 1000) {
-                break; // Last page reached
-            }
-
-            page++;
+            return NextResponse.json({ exists: (count ?? 0) > 0 });
         }
 
-        return NextResponse.json({ exists: userExists });
+        return NextResponse.json({ exists: !!data });
     } catch (error: unknown) {
-        // Narrow unknown to a message string in a type-safe way
         const message = error instanceof Error ? error.message : String(error);
         return NextResponse.json({ error: message }, { status: 500 });
     }

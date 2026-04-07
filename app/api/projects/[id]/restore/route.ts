@@ -2,31 +2,19 @@
    tells the backend to download it (returning a new videoId), and returns the tracks signed URL.
    The client uses videoId to run export and tracksSignedUrl to restore face track state. */
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { createClient } from '@/lib/supabase/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
-
-function getS3Client() {
-    return new S3Client({
-        region: process.env['AWS_REGION'],
-        credentials: {
-            accessKeyId: process.env['AWS_ACCESS_KEY_ID']!,
-            secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY']!,
-        },
-    });
-}
+import { requireAuth } from '@/lib/server/auth';
+import { getS3Client, S3_BUCKET } from '@/lib/server/s3';
 
 export async function POST(
     _req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireAuth();
+    if (auth.response) return auth.response;
+    const { user, supabase } = auth;
 
     const { id } = await params;
 
@@ -42,16 +30,15 @@ export async function POST(
     }
 
     const s3 = getS3Client();
-    const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
 
     // Short-lived URL for the backend to download the original (5 min is enough)
     const originalDownloadUrl = await getSignedUrl(
-        s3, new GetObjectCommand({ Bucket: BUCKET, Key: project.original_s3_key }), { expiresIn: 300 }
+        s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: project.original_s3_key }), { expiresIn: 300 }
     );
     // Longer-lived URLs for the client: video playback + tracks fetch
     const [originalSignedUrl, tracksSignedUrl] = await Promise.all([
-        getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: project.original_s3_key }), { expiresIn: 3600 }),
-        getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: project.tracks_s3_key }),   { expiresIn: 300 }),
+        getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: project.original_s3_key }), { expiresIn: 3600 }),
+        getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: project.tracks_s3_key }),   { expiresIn: 300 }),
     ]);
 
     // Fetch tracks from S3 so we can send them to the backend alongside the video
@@ -67,6 +54,7 @@ export async function POST(
         method: 'POST',
         headers: backendHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ url: originalDownloadUrl, tracks }),
+        signal: AbortSignal.timeout(120_000),
     });
 
     if (!backendRes.ok) {

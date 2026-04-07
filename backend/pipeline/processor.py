@@ -253,7 +253,7 @@ def process_detection(
         drain_one()
 
     if _own_pool:
-        pool.shutdown(wait=False)
+        pool.shutdown(wait=True)
 
     if cancel_token and cancel_token.cancelled:
         raise InterruptedError("Job cancelled")

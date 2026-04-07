@@ -1,28 +1,21 @@
-/* Deletes a project by id. Verifies ownership, removes both the original video and
-   tracks JSON from S3, then deletes the database record. */
+/* Deletes a project by id. Verifies ownership, deletes the DB record first
+   (source of truth), then cleans up S3 objects as best-effort. */
 import { NextRequest, NextResponse } from 'next/server';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { createClient } from '@/lib/supabase/server';
-
-function getS3Client() {
-    return new S3Client({
-        region: process.env['AWS_REGION'],
-        credentials: {
-            accessKeyId: process.env['AWS_ACCESS_KEY_ID']!,
-            secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY']!,
-        },
-    });
-}
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { requireAuth } from '@/lib/server/auth';
+import { getS3Client, S3_BUCKET } from '@/lib/server/s3';
+import { DeleteProjectSchema } from '@/lib/server/validation';
 
 export async function DELETE(req: NextRequest) {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const auth = await requireAuth();
+    if (auth.response) return auth.response;
+    const { user, supabase } = auth;
 
-    if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const parsed = DeleteProjectSchema.safeParse(await req.json());
+    if (!parsed.success) {
+        return NextResponse.json({ error: 'Invalid request body', details: parsed.error.issues }, { status: 400 });
     }
-
-    const { id } = await req.json();
+    const { id } = parsed.data;
 
     // Verify ownership and get S3 keys from the DB (never trust client-supplied keys)
     const { data: project } = await supabase
@@ -35,16 +28,20 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Delete both S3 objects
-    const s3 = getS3Client();
-    const BUCKET = process.env['AWS_S3_BUCKET_NAME']!;
-    await Promise.all([
-        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: project.original_s3_key })),
-        s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: project.tracks_s3_key })),
-    ]);
-
-    // Delete the DB record
+    // Delete DB record first (source of truth) — orphaned S3 blobs are less
+    // harmful than phantom DB records pointing to deleted files.
     await supabase.from('projects').delete().eq('id', id);
+
+    // Best-effort S3 cleanup — don't fail the request if this errors
+    try {
+        const s3 = getS3Client();
+        await Promise.all([
+            s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: project.original_s3_key })),
+            s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: project.tracks_s3_key })),
+        ]);
+    } catch (err) {
+        console.error('S3 cleanup failed (DB record already deleted):', err);
+    }
 
     return NextResponse.json({ success: true });
 }

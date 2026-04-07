@@ -85,10 +85,21 @@ export function useFaceDetection({ sampleRate, videoId, onError, signal, initial
         setStatus('Queued for processing...');
 
         let runningSeen = false;
+        let consecutiveErrors = 0;
         while (true) {
           if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-          const job = await getJobStatus(result.jobId, signal);
+          let job;
+          try {
+            job = await getJobStatus(result.jobId, signal);
+            consecutiveErrors = 0;
+          } catch (pollErr) {
+            if ((pollErr as Error).name === 'AbortError') throw pollErr;
+            consecutiveErrors++;
+            if (consecutiveErrors >= 3) throw pollErr;
+            await sleep(2000 * Math.min(4, 2 ** consecutiveErrors));
+            continue;
+          }
           if (job.status === 'queued') {
             setQueued(true);
             setQueuePosition(job.position ?? null);
