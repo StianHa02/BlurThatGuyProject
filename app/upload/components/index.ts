@@ -4,3 +4,4 @@ export { ErrorAlert } from './ErrorAlert';
 export { FaceGallery } from './FaceGallery';
 export { Bentobox } from './Bentobox';
 export { BlurModeToggle } from './BlurModeToggle';
+export { LoadingState } from './LoadingState';

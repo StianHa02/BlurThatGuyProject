@@ -390,7 +390,6 @@ BlurThatGuyProject/
 │   │   └── hooks/                     # Hook for syncing URL hash with scroll position
 │   ├── upload/                        # Core blurring workflow (3-step single page)
 │   │   ├── page.tsx                   # Upload → Detect → Select/Export wizard
-│   │   ├── components/                # Upload-specific UI components
 │   │   └── hooks/
 │   │       ├── useVideoUpload.ts      # File validation, upload to backend, metadata extraction
 │   │       ├── useFaceDetection.ts    # Detection polling, queue status, track state
@@ -420,14 +419,22 @@ BlurThatGuyProject/
 ├── types/                             # Shared TypeScript types
 ├── lib/
 │   ├── config.ts                      # NEXT_PUBLIC_* env vars and feature flags
-│   ├── services/                      # Client-side API wrapper (upload, detect, export, jobs)
-│   ├── utils/                         # formatFileSize, formatDuration, formatDate           
-│   ├── supabase/
+│   ├── server/                        # Server-side utilities
+│   │   ├── auth.ts                    # API authentication and session checks
+│   │   ├── backendProxy.ts            # Builds proxied fetch requests with API key
+│   │   ├── s3.ts                      # AWS S3 integration for project files
+│   │   └── validation.ts              # Validation logic for server routes
+│   ├── services/                      # Client-side API wrappers
+│   │   ├── faceClient.ts              # Functions for upload, detect, export, and job polling
+│   │   └── __tests__/                 # Vitest tests for the API client
+│   ├── supabase/                      # Supabase integration layers
+│   │   ├── admin.ts                   # Service-role client for admin operations
 │   │   ├── client.ts                  # Browser Supabase client
-│   │   ├── server.ts                  # Server-side Supabase client (cookies)
-│   │   └── admin.ts                   # Service-role client for admin operations
-│   └── server/
-│       └── backendProxy.ts            # Builds proxied fetch requests with API key
+│   │   └── server.ts                  # Server-side Supabase client (cookies)
+│   └── utils/                         # Shared pure functions
+│       ├── format.ts                  # formatFileSize, formatDuration, formatDate
+│       ├── index.ts                   # Centralised exports
+│       └── __tests__/                 # Tests for formatting utilities
 ├── backend/                           # Python FastAPI backend
 │   ├── main.py                        # App entry point + all API endpoints
 │   ├── config.py                      # Env vars, validation, temp file paths
@@ -447,7 +454,7 @@ BlurThatGuyProject/
 │   │   ├── test_storage.py            # In-memory store CRUD tests
 │   │   ├── test_tracker.py            # IoU, geometry, tracking & interpolation tests
 │   │   └── test_api.py                # API endpoint tests (FastAPI TestClient)
-│   ├── models/                        # ONNX model weights (not committed)
+│   ├── models/                        # 
 │   └── requirements.txt
 ├── docker-compose.yml                 # Local development setup
 ├── docker-compose.dev.yml             # Development with hot reload (backend + redis only)
