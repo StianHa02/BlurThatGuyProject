@@ -61,8 +61,7 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 
 ### Option 2: Run with Docker _(without user integration)_
 
-**Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
-
+**Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose) 
 ```bash
 # Clone the repository
 git clone https://github.com/StianHa02/BlurThatGuyProject.git
@@ -125,25 +124,22 @@ Open [http://localhost:3000](http://localhost:3000)
 > **Note:** Local development runs in `DEV_MODE`, which disables API key authentication.
 
 ---
-
 ## Environment Configuration
+
 
 ### Local Development
 
-**Frontend** (`.env.local` in project root):
-```bash
-API_URL=http://localhost:8000
-API_KEY=""
-```
+Create a single `.env.local` in the **project root** (both Next.js and the backend load from here):
 
-**Backend** (`backend/.env.local`):
 ```bash
+# Backend
 DEV_MODE=true
 ALLOWED_ORIGINS=http://localhost:3000
 REDIS_URL=redis://localhost:6379
 
-#Optional: API key for production testing. Can be left blank in development.
-#API_KEY=""
+# Frontend
+API_URL=http://localhost:8000
+API_KEY=""
 
 # Optional: limit upload size in MB. Omit for no limit.
 # MAX_UPLOAD_SIZE_MB=500
@@ -154,20 +150,16 @@ REDIS_URL=redis://localhost:6379
 
 ### Production Deployment
 
-> **Note:** Remove the environment section in docker-compose.yml for production and point environment variables to the .env files.
+Use `docker-compose.prod.yml` with a `.env.prod` file in the project root:
 
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
 
-**Frontend** (`.env.prod`):
-
+**`.env.prod`:**
 ```bash
 API_URL=http://backend:8000
 API_KEY=your-secure-random-api-key-here
-BACKEND_URL=http://backend:8000
-```
-
-**Backend** (`.env.prod`):
-```bash
-API_KEY=same-api-key-as-frontend
 ALLOWED_ORIGINS=https://your-domain.com
 REDIS_URL=redis://redis:6379
 
