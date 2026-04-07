@@ -54,11 +54,19 @@ export async function POST(
         getSignedUrl(s3, new GetObjectCommand({ Bucket: BUCKET, Key: project.tracks_s3_key }),   { expiresIn: 300 }),
     ]);
 
-    // Ask the backend to download the original video directly from S3
+    // Fetch tracks from S3 so we can send them to the backend alongside the video
+    const tracksRes = await fetch(tracksSignedUrl);
+    if (!tracksRes.ok) {
+        return NextResponse.json({ error: 'Failed to load tracks from storage' }, { status: 502 });
+    }
+    const tracks = await tracksRes.json();
+
+    // Ask the backend to download the original video directly from S3,
+    // and include the tracks so they're available for export without re-running detection
     const backendRes = await fetch(`${BACKEND_URL}/reupload-from-url`, {
         method: 'POST',
         headers: backendHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ url: originalDownloadUrl }),
+        body: JSON.stringify({ url: originalDownloadUrl, tracks }),
     });
 
     if (!backendRes.ok) {

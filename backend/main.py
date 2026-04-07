@@ -42,7 +42,7 @@ from config import (
     validate_video_file,
 )
 from pipeline.processor import ENCODER_ARGS, apply_job_thread_budget, get_encoder, process_detection
-from storage import get_job_result, get_tracks, store_job_result
+from storage import get_job_result, get_tracks, store_job_result, store_tracks
 from jobs.stream_generators import detect_stream_generator, export_stream_generator
 from pipeline.tracker import _precompute_track_lookups
 
@@ -335,6 +335,7 @@ async def reupload_from_url(body: dict, _: bool = Depends(verify_api_key)):
     """Download a video from a signed S3 URL and store it as a new videoId.
     Used when re-editing a saved project — avoids routing the large file through the browser."""
     url = body.get("url", "")
+    tracks = body.get("tracks")  # Optional: restored tracks from a saved project
     # Only allow downloads from AWS S3 to prevent SSRF
     from urllib.parse import urlparse
     parsed = urlparse(url)
@@ -363,6 +364,11 @@ async def reupload_from_url(body: dict, _: bool = Depends(verify_api_key)):
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
+
+        # If tracks were provided (project restore), store them so export works immediately
+        if tracks and isinstance(tracks, list):
+            store_tracks(video_id, tracks)
+            logger.info(f"Restored {len(tracks)} tracks for video {video_id}")
 
         logger.info(f"Re-uploaded project video as {video_id}")
         return {
