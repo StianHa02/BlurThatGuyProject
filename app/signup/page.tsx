@@ -43,10 +43,17 @@ export default function SignupPage() {
         }
 
         const supabase = createClient();
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
             email, password, options: { data: { display_name: username } },
         });
         if (error) { setError(error.message); setLoading(false); return; }
+        // Supabase silently "succeeds" for existing emails (security feature).
+        // An empty identities array is the signal that this email is already registered.
+        if (data.user?.identities?.length === 0) {
+            setError('Email is already in use.');
+            setLoading(false);
+            return;
+        }
         setSuccess(true);
         setLoading(false);
     }

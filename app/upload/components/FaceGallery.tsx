@@ -34,20 +34,11 @@ export function FaceGallery({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    setThumbnails(new Map());
     if (tracks.length === 0) return;
 
-    const waitForVisible = (): Promise<void> => {
-      if (!document.hidden) return Promise.resolve();
-      return new Promise((resolve) => {
-        const handler = () => {
-          if (!document.hidden) {
-            document.removeEventListener('visibilitychange', handler);
-            resolve();
-          }
-        };
-        document.addEventListener('visibilitychange', handler);
-      });
-    };
+    const controller = new AbortController();
+    const { signal } = controller;
 
     const isBlackFrame = (ctx: CanvasRenderingContext2D, size: number): boolean => {
       const data = ctx.getImageData(0, 0, size, size).data;
@@ -59,29 +50,45 @@ export function FaceGallery({
 
     const extractThumbnails = async () => {
       setLoading(true);
-      await waitForVisible();
       const video = document.createElement('video');
       video.src = videoUrl;
       video.crossOrigin = 'anonymous';
       video.muted = true;
       video.preload = 'auto';
 
+      const cleanupVideo = () => {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      };
+
+      // Phase 1: Wait for metadata (fast — just HTTP headers for dimensions/duration)
       await new Promise<void>((resolve, reject) => {
-        video.addEventListener('canplaythrough', () => resolve(), { once: true });
+        if (video.readyState >= 1) { resolve(); return; }
+        video.addEventListener('loadedmetadata', () => resolve(), { once: true });
         video.addEventListener('error', () => reject(new Error('Video load error')), { once: true });
-        setTimeout(resolve, 8000);
+        setTimeout(resolve, 5000);
         video.load();
       });
+      if (signal.aborted) { cleanupVideo(); return; }
+
+      // Phase 2: Wait for first frame to be decodable (needed before seeking works)
+      await new Promise<void>((resolve) => {
+        if (video.readyState >= 2) { resolve(); return; }
+        video.addEventListener('canplay', () => resolve(), { once: true });
+        setTimeout(resolve, 15000);
+      });
+      if (signal.aborted) { cleanupVideo(); return; }
 
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      if (!ctx) { cleanupVideo(); return; }
 
       const newThumbnails = new Map<number, string>();
 
       const seekTo = (time: number): Promise<void> =>
         new Promise<void>((resolve) => {
-          const TIMEOUT_MS = 3000;
+          const TIMEOUT_MS = 8000;
           let settled = false;
 
           const settle = () => {
@@ -89,24 +96,54 @@ export function FaceGallery({
             settled = true;
             clearTimeout(timer);
             video.removeEventListener('seeked', onSeeked);
-            video.removeEventListener('error', onSeeked);
+            video.removeEventListener('error', onError);
             resolve();
           };
 
-          const onSeeked = () => settle();
-          const timer = setTimeout(settle, TIMEOUT_MS);
+          const onError = () => settle();
 
+          const onSeeked = () => {
+            // After seek completes, verify frame data is available
+            if (video.readyState >= 2) {
+              settle();
+            } else {
+              const dataTimer = setTimeout(settle, 5000);
+              video.addEventListener('canplay', () => {
+                clearTimeout(dataTimer);
+                settle();
+              }, { once: true });
+            }
+          };
+
+          const timer = setTimeout(settle, TIMEOUT_MS);
           video.addEventListener('seeked', onSeeked, { once: true });
-          video.addEventListener('error', onSeeked, { once: true });
+          video.addEventListener('error', onError, { once: true });
 
           if (Math.abs(video.currentTime - time) < 0.001) {
-            settle();
+            if (video.readyState >= 2) {
+              settle();
+            } else {
+              const dataTimer = setTimeout(settle, 5000);
+              video.addEventListener('canplay', () => {
+                clearTimeout(dataTimer);
+                settle();
+              }, { once: true });
+            }
           } else {
             video.currentTime = time;
           }
         });
 
-      for (const track of tracks) {
+      // Sort by seek time for sequential access (reduces HTTP range request thrashing)
+      const sortedTracks = [...tracks].sort((a, b) => {
+        const aMid = a.frames[Math.floor(a.frames.length / 2)]?.frameIndex ?? 0;
+        const bMid = b.frames[Math.floor(b.frames.length / 2)]?.frameIndex ?? 0;
+        return aMid - bMid;
+      });
+
+      for (const track of sortedTracks) {
+        if (signal.aborted) break;
+
         const middleIndex = Math.floor(track.frames.length / 2);
         const frame = track.frames[middleIndex];
         if (!frame) continue;
@@ -114,6 +151,7 @@ export function FaceGallery({
         const videoFps = fps > 0 ? fps : 30;
         const frameTime = frame.frameIndex / videoFps;
         await seekTo(frameTime);
+        if (signal.aborted) break;
 
         const [x, y, w, h] = frame.bbox;
         const padding = 0.3;
@@ -128,24 +166,40 @@ export function FaceGallery({
 
         ctx.drawImage(video, paddedX, paddedY, paddedW, paddedH, 0, 0, thumbSize, thumbSize);
 
+        // Retry up to 2 times if we got a black frame (likely unbuffered)
         if (isBlackFrame(ctx, thumbSize)) {
-          await waitForVisible();
-          await seekTo(frameTime);
-          ctx.drawImage(video, paddedX, paddedY, paddedW, paddedH, 0, 0, thumbSize, thumbSize);
+          for (let retry = 0; retry < 2; retry++) {
+            if (signal.aborted) break;
+            await new Promise<void>((resolve) => {
+              if (video.readyState >= 2) {
+                setTimeout(resolve, 300);
+              } else {
+                const t = setTimeout(resolve, 2000);
+                video.addEventListener('canplay', () => { clearTimeout(t); setTimeout(resolve, 100); }, { once: true });
+              }
+            });
+            await seekTo(frameTime);
+            ctx.drawImage(video, paddedX, paddedY, paddedW, paddedH, 0, 0, thumbSize, thumbSize);
+            if (!isBlackFrame(ctx, thumbSize)) break;
+          }
         }
 
         const dataUrl = canvas.toDataURL('image/jpeg', 0.6);
         newThumbnails.set(track.id, dataUrl);
-        setThumbnails(new Map(newThumbnails));
+        if (!signal.aborted) setThumbnails(new Map(newThumbnails));
       }
 
-      setLoading(false);
+      cleanupVideo();
+      if (!signal.aborted) setLoading(false);
     };
 
     extractThumbnails().catch(err => {
+      if (signal.aborted) return;
       console.error('Thumbnail extraction failed:', err);
       setLoading(false);
     });
+
+    return () => { controller.abort(); };
   }, [tracks, videoUrl, fps]);
 
   return (

@@ -103,6 +103,7 @@ export default function PlayerWithMask({
   const [visibleFaces, setVisibleFaces] = useState<{trackId: number, bbox: BBox, isSelected: boolean}[]>([]);
   const [videoScale, setVideoScale] = useState<{ scaleX: number; scaleY: number } | null>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [buffering, setBuffering] = useState(true);
 
   // Memoize tracks map
   const tracksMap = useMemo(() => {
@@ -132,14 +133,27 @@ export default function PlayerWithMask({
         scaleY: rect.height / video.videoHeight,
       });
       setVideoReady(true);
+      setBuffering(false);
     };
+
+    const onWaiting = () => setBuffering(true);
+    const onCanPlay = () => setBuffering(false);
+    const onPlaying = () => setBuffering(false);
+    const onSeeking = () => setBuffering(true);
+    const onSeeked = () => { if (video.readyState >= 2) setBuffering(false); };
 
     video.addEventListener('loadedmetadata', syncCanvasSize);
     video.addEventListener('resize', syncCanvasSize);
     video.addEventListener('canplay', syncCanvasSize);
     window.addEventListener('resize', syncCanvasSize);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('seeking', onSeeking);
+    video.addEventListener('seeked', onSeeked);
 
     if (video.readyState >= 1) syncCanvasSize();
+    if (video.readyState >= 3) setBuffering(false);
 
     function draw() {
       const video = videoRef.current;
@@ -245,6 +259,11 @@ export default function PlayerWithMask({
       video.removeEventListener('resize', syncCanvasSize);
       video.removeEventListener('canplay', syncCanvasSize);
       window.removeEventListener('resize', syncCanvasSize);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('seeking', onSeeking);
+      video.removeEventListener('seeked', onSeeked);
     };
   }, [tracksMap, selectedSet, blurMode, sampleRate, fps, padding, targetBlocks]);
 
@@ -254,6 +273,8 @@ export default function PlayerWithMask({
         ref={videoRef}
         src={videoUrl}
         controls
+        crossOrigin="anonymous"
+        preload="auto"
         className="w-full block"
         playsInline
       />
@@ -268,6 +289,17 @@ export default function PlayerWithMask({
           height: '100%'
         }}
       />
+
+      {/* Buffering overlay */}
+      {buffering && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-20 pointer-events-none">
+          <div className="relative flex items-center justify-center w-12 h-12 mb-3">
+            <div className="absolute inset-0 rounded-full border-2 border-blue-500/20" />
+            <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-500 animate-spin" />
+          </div>
+          <p className="text-sm text-slate-300 font-medium">Loading video...</p>
+        </div>
+      )}
 
       {/* Clickable face overlays */}
       {videoReady && videoScale && visibleFaces.map((face, i) => {
