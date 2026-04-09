@@ -21,15 +21,15 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 ---
 
 ## Learning Outcomes
-- ***Cloud Architecture:*** Implemented a "shared-nothing" design where each node runs its own local Redis and storage. (To comply with the requirements)
+- ***Cloud Architecture:*** Architected a scalable, multi-node system on AWS EC2 with load balancing and session persistence.
 
 - ***Full-Stack Integration:*** Connected a containerized Next.js frontend to a FastAPI backend.
 
 - ***AWS Scaling:*** Scaled the app across multiple EC2 nodes to handle more users simultaneously.
 
-- ***Traffic Management:*** Used an AWS Load Balancer with Sticky Sessions to keep user data synced to specific nodes.
+- ***User Integration:*** Integrated user accounts and project storage with Supabase and AWS S3.
 
-
+- ***CI/CD:*** Automated deployments with GitHub Actions.
 ---
 
 ## Table of Contents
@@ -68,7 +68,7 @@ git clone https://github.com/StianHa02/BlurThatGuyProject.git
 cd BlurThatGuyProject
 ```
 
-> **Recommended:** For better ReID accuracy, download the full `w600k_r50.onnx` model from HuggingFace and place it in `backend/models/`:
+> **Recommended (but not necessary):** For better ReID accuracy, download the full `w600k_r50.onnx` model from HuggingFace and place it in `backend/models/`:
 > [https://huggingface.co/maze/faceX/blob/main/w600k_r50.onnx](https://huggingface.co/maze/faceX/blob/main/w600k_r50.onnx)
 
 ```bash
@@ -189,32 +189,23 @@ REDIS_URL=redis://redis:6379
 
 **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS, Framer Motion, Lucide React <br/>
 **Backend:** Python, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis (via redis-py)<br/>
-**Infrastructure:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD)
+**Infrastructure:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD), Supabase (auth + database)
 
 ---
 
 ## Design Rationale
 
-This system uses a shared-nothing architecture with sticky sessions.
+ The system uses a shared-nothing architecture with sticky sessions, a deliberate choice driven by the constraint of running entirely locally without external services.                                                                                            
+                                                                                                                                                                                                                                                                      
+  Each node is self-contained with its own Redis instance and storage, which means:                                                                                                                                                                                   
+  - The system works fully offline with no external dependencies                                                                                                                                                                                                  
+  - Horizontal scaling is as simple as adding more nodes
 
-This choice was intentional due to the challenge constraints:
-- The system must run locally without external services
-- It must be portable across environments
-- It should scale across multiple machines if needed
+  The main tradeoffs of this approach are fault isolation and routing blindness: jobs tied to a node are lost if that node fails, and the load balancer has no visibility into per-node queue depths, so it cannot steer traffic toward less-loaded nodes.
 
-By keeping each node self-contained (local Redis + storage), the system:
-- Remains fully offline-compatible
-- Avoids external dependencies
-- Supports horizontal scaling by simply adding more nodes
+  In a production environment, these tradeoffs would be resolved by moving to shared infrastructure; object storage (e.g., S3), stateless workers, and a centralized queue (e.g., ElastiCache),  but that would reintroduce the external dependencies this design
+  intentionally avoids.
 
-Tradeoff:
-- Node-local state means jobs are not fault-tolerant across node failures
-- The load balancer cannot see per-node queue lengths, so it cannot route users to the node with the shortest queue
-
-In a production cloud system, this would likely be replaced with:
-- Shared object storage (e.g., AWS S3 bucket)
-- Stateless workers
-- Centralized queue in a shared cache (e.g., AWS ElastiCache)
 ---
 
 ## Backend Features
@@ -226,11 +217,12 @@ Uses **SCRFD-2.5G** (`scrfd_2.5g.onnx`), A lightweight ONNX model optimised for 
 Builds continuous face tracks across frames using IoU-based assignment with a fallback to normalised centre-distance and appearance similarity for occluded or briefly-missing faces.
 
 **MAD Scene Cut Detection**
-Each sampled frame is downscaled to a 64×36 thumbnail and converted to grayscale. The mean absolute difference (MAD) between consecutive thumbnails is computed. If the MAD exceeds a threshold (45.0) and at least 8 sampled frames have passed since the last detected cut, the frame is recorded as a scene boundary. These cut frames are handed to the tracker, which blocks IoU assignment across a cut boundary (`cut_mask`). Without this gate, a face visible in the last frame of one scene could be incorrectly linked to a similar-looking face in the opening frame of the next scene, causing identity bleed and wrong blurs.
-
+Each sampled frame is downscaled to a 64×36 grayscale thumbnail. The mean absolute difference (MAD) between consecutive thumbnails is computed; if it exceeds 45.0 and at least 8 frames have passed since the last cut, the frame is recorded as a scene boundary. 
+                                                                                                                                                                                                                                                                      
+  These cut points are passed to the tracker, which blocks IoU assignment across boundaries (cut_mask). Without this gate, a face from the last frame of one scene could be incorrectly linked to a similar face in the next, causing identity bleed and wrong blurs. 
 ### Re-Identification (ReID)
-Uses **ArcFace** (`w600k_r50.onnx` preferred, `w600k_mbf.onnx` as fallback) to generate 512-dimensional L2-normalised identity vectors per face crop. Merges fragmented tracks across scene cuts by cosine similarity with a union-find algorithm. Includes quality gates: blur rejection (Laplacian variance), profile angle rejection (landmark geometry), and an incremental drift-aware centroid that rejects embeddings inconsistent with the track's running identity.
-
+Uses ArcFace to generate 512-d identity embeddings per face crop (w600k_r50.onnx, falling back to w600k_mbf.onnx). Fragmented tracks across scene cuts are re-linked by cosine similarity using union-find. Low-quality embeddings are filtered out, blurry crops, 
+  profile angles, and faces that drift from the track's established identity are all rejected before updating the centroid.
 ### Job Queue
 Built on **Redis** with a 2-concurrent-job limit. A third user uploading while two jobs are running is placed in a FIFO waiting queue and shown their position in the UI. When a slot frees, either naturally on completion or immediately on cancel, the next waiter is promoted and begins processing. Thread budget is split evenly across active jobs so two concurrent users each get half the available CPU rather than competing.
 
@@ -271,8 +263,6 @@ The application runs on two independent EC2 instances situated behind an **Appli
 ### Scalability & Architecture
 * **Shared-Nothing Design:** Each node operates as a self-contained "island" with its own local Redis instance and dedicated storage. This architectural choice ensures that there is no centralized database bottleneck or network storage latency.
 * **Linear Scaling:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
-* **CI/CD Pipeline:** Automated deployments are managed via **GitHub Actions**. The pipeline performs health checks on the frontend and backend containers before using SSH to remotely deploy the application.
-
 ---
 
 ## User Integration
@@ -340,30 +330,18 @@ Private S3 bucket. All files scoped to the authenticated user.
 
 ## CI/CD Pipeline
 
-Every push and pull request triggers a GitHub Actions workflow (`.github/workflows/ci.yml`)
+Every push and pull request runs the GitHub Actions workflow in `.github/workflows/ci.yml`, with six parallel jobs:
 
 | Job | What it does |
 |---|---|
-| **Frontend Lint** | Runs ESLint with zero-warning policy |
-| **Frontend Tests** | Runs Vitest unit tests (format utils, API client) |
-| **Backend Tests** | Runs pytest suite (config validation, storage, tracker, API endpoints) |
-| **Backend Health** | Starts the backend with Redis and verifies `/health` responds |
-| **Frontend Health** | Spins up both backend + frontend and verifies the Next.js API proxy (`/api/health`) works end-to-end |
-| **Build Smoke** | Runs `next build` production build + backend import check |
+| **Frontend Lint** | ESLint with zero-warning policy |
+| **Frontend Tests** | Vitest unit tests |
+| **Backend Tests** | pytest suite |
+| **Backend Health** | Starts backend + Redis, hits `/health` |
+| **Frontend Health** | Starts full stack, verifies Next.js proxy at `/api/health` |
+| **Build Smoke** | `next build` + backend import check |
 
-The pipeline uses `concurrency` groups to cancel in-progress runs on the same branch, keeping CI fast. Redis is provided as a service container for jobs that need it.
-
-```
-Push / PR
-  ├── ESLint ──────────────────────► ✓
-  │     ├── Frontend Tests ────────► ✓
-  │     ├── Frontend Health ───────► ✓
-  │     └── Build Smoke ───────────► ✓
-  ├── Backend Tests ───────────────► ✓
-  └── Backend Health ──────────────► ✓
-```
-
-For production deployment, the live environment runs on **AWS EC2** behind an Application Load Balancer. Deploys are triggered via GitHub Actions after CI passes, building Docker images and rolling them out to the target instances.
+For production, the app runs on AWS EC2 behind an ALB. After CI passes, GitHub Actions builds Docker images and rolls them out to the target instances.
 
 ---
 
@@ -382,10 +360,8 @@ BlurThatGuyProject/
 │   │   └── hooks/                     # Hook for syncing URL hash with scroll position
 │   ├── upload/                        # Core blurring workflow (3-step single page)
 │   │   ├── page.tsx                   # Upload → Detect → Select/Export wizard
-│   │   └── hooks/
-│   │       ├── useVideoUpload.ts      # File validation, upload to backend, metadata extraction
-│   │       ├── useFaceDetection.ts    # Detection polling, queue status, track state
-│   │       └── useVideoExport.ts      # Export progress streaming and download trigger
+│   │   └── hooks/                     # Custom hook for managing upload page
+│   │   └── utils/                     # Utility functions for upload page
 │   ├── login/page.tsx                 # Supabase email/password login
 │   ├── signup/page.tsx                # Account creation with username
 │   ├── settings/page.tsx              # Account management and deletion
@@ -436,17 +412,10 @@ BlurThatGuyProject/
 │   │   ├── tracker.py                 # IoU-based frame-to-frame track building
 │   │   ├── reid.py                    # ArcFace ReID + cross-scene identity merge
 │   │   ├── blur.py                    # Pixelation and blackout rendering
-│   │   └── processor.py              # Full detection pipeline orchestrator
-│   ├── jobs/
-│   │   ├── job_runner.py              # Async job execution with thread budget splitting
-│   │   ├── queue_manager.py           # Redis-backed FIFO queue + admission control
-│   │   └── stream_generators.py       # NDJSON generators for detect/export progress
-│   ├── tests/
-│   │   ├── test_config.py             # Config validation & path traversal tests
-│   │   ├── test_storage.py            # In-memory store CRUD tests
-│   │   ├── test_tracker.py            # IoU, geometry, tracking & interpolation tests
-│   │   └── test_api.py                # API endpoint tests (FastAPI TestClient)
-│   ├── models/                        # 
+│   │   └── processor.py               # Full detection pipeline orchestrator
+│   ├── jobs/                          # Long-running job management and Redis queue interface
+│   ├── tests/                         # pytest suite for config, storage, pipeline, and API
+│   ├── models/                         
 │   └── requirements.txt
 ├── docker-compose.yml                 # Local development setup
 ├── docker-compose.dev.yml             # Development with hot reload (backend + redis only)

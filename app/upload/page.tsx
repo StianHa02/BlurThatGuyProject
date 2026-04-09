@@ -2,30 +2,21 @@
    Supports restoring a saved project via ?projectId= URL param, which jumps directly to the select step. */
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { Eye, EyeOff, Users, Info, Download, Loader2, Upload as UploadIcon, Save, CheckCircle, Lock } from 'lucide-react';
-import { useVideoUpload, useFaceDetection, useVideoExport } from './hooks';
+import { useVideoUpload, useFaceDetection, useVideoExport, useProjectRestore, useUserAuth } from './hooks';
+import type { RestoreData } from './hooks';
 import { DropZone, ProgressBar, ErrorAlert, FaceGallery, Bentobox, LoadingState } from './components';
-import type { BlurMode, Track } from '@/types';
+import type { BlurMode } from '@/types';
 import { BackgroundBlobs, Header } from '@/components';
 import { formatFileSize, formatDuration } from '@/lib/utils';
-import type { User } from '@supabase/supabase-js';
 
 const PlayerWithMask = dynamic(() => import('./components/PlayerWithMask'), { ssr: false });
 import PlayerErrorBoundary from './components/PlayerErrorBoundary';
 
 type Step = 'upload' | 'detect' | 'select';
-
-interface RestoreData {
-  videoId: string;
-  fileUrl: string;
-  fileName: string;
-  metadata: { fps: number; width: number; height: number; frameCount: number };
-  tracks: Track[];
-  sampleRate: number;
-}
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Outer component: reads ?projectId, runs restore, then mounts Inner.
@@ -35,42 +26,7 @@ function UploadPageOuter() {
   const searchParams = useSearchParams();
   const projectId = searchParams.get('projectId');
 
-  const [restoreData, setRestoreData] = useState<RestoreData | null>(null);
-  const [restoring, setRestoring] = useState(!!projectId);
-  const [restoreError, setRestoreError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!projectId) return;
-
-    fetch(`/api/projects/${projectId}/restore`, { method: 'POST' })
-      .then(async (res) => {
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || 'Failed to restore project');
-        }
-        return res.json();
-      })
-      .then(async ({ videoId, metadata, tracksSignedUrl, originalSignedUrl, filename, sampleRate }) => {
-        const tracksRes = await fetch(tracksSignedUrl);
-        if (!tracksRes.ok) throw new Error('Failed to load face tracks');
-        const tracks: Track[] = await tracksRes.json();
-
-        setRestoreData({
-          videoId,
-          fileUrl: originalSignedUrl,
-          fileName: filename || '',
-          metadata,
-          tracks,
-          sampleRate: sampleRate ?? 3,
-        });
-        setRestoring(false);
-      })
-      .catch((err) => {
-        console.error('Restore failed:', err);
-        setRestoreError(err.message);
-        setRestoring(false);
-      });
-  }, [projectId]);
+  const { restoreData, restoring, restoreError } = useProjectRestore(projectId);
 
   if (restoring) {
     return (
@@ -106,20 +62,8 @@ function UploadPageInner({ restoreData, restoreError }: { restoreData: RestoreDa
   const [projectSaved, setProjectSaved] = useState(false);
 
   const userIntegration = process.env.NEXT_PUBLIC_USER_INTEGRATION === '1';
-  const [user, setUser] = useState<User | null>(null);
+  const user = useUserAuth();
   const canSave = userIntegration && !!user;
-
-  useEffect(() => {
-    if (!userIntegration) return;
-    import('@/lib/supabase/client').then(({ createClient }) => {
-      const supabase = createClient();
-      supabase.auth.getUser().then(({ data }) => setUser(data.user));
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-        setUser(session?.user ?? null);
-      });
-      return () => subscription.unsubscribe();
-    });
-  }, [userIntegration]);
 
   const upload = useVideoUpload({
     initialVideoId: restoreData?.videoId,

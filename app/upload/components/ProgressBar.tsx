@@ -1,3 +1,4 @@
+/* Progress bar component used during video upload. */
 'use client';
 
 import { Loader2 } from 'lucide-react';

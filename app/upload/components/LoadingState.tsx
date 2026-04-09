@@ -1,3 +1,5 @@
+/* Loading state component used during video upload. */
+'use client';
 import { Upload } from 'lucide-react';
 
 interface LoadingStateProps {

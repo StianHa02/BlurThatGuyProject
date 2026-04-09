@@ -2,7 +2,9 @@
 'use client';
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import type { BBox, Detection, Track } from '@/types';
+import type { BBox, Track } from '@/types';
+import { findDetectionForFrame } from '../utils/detectionUtils';
+import { padBBox } from '../utils/videoUtils';
 
 interface Props {
   videoUrl: string;
@@ -14,74 +16,6 @@ interface Props {
   fps: number;
   padding?: number;
   targetBlocks?: number;
-}
-
-/**
- * Find detection for frame - with interpolation for smoother playback
- */
-function findDetectionForFrame(
-  frames: Detection[],
-  frameIndex: number
-): { bbox: BBox; score: number } | null {
-  if (!frames || frames.length === 0) return null;
-
-  // Binary search for the interval containing frameIndex
-  let left = 0;
-  let right = frames.length - 1;
-
-  if (frameIndex < frames[0].frameIndex - 20) return null;
-  if (frameIndex > frames[frames.length - 1].frameIndex + 20) return null;
-
-  while (left <= right) {
-    const mid = Math.floor((left + right) / 2);
-    if (frames[mid].frameIndex === frameIndex) {
-      return { bbox: frames[mid].bbox, score: frames[mid].score };
-    }
-    if (frames[mid].frameIndex < frameIndex) {
-      left = mid + 1;
-    } else {
-      right = mid - 1;
-    }
-  }
-
-  // If not found, left is the index of the first element greater than frameIndex
-  const prev = frames[left - 1];
-  const next = frames[left];
-
-  const maxGap = 20; // Match tracker maxMisses
-
-  // No padding for first/last detections as per user request to avoid "ghost" masks.
-  const padding = 0;
-
-  if (prev && !next) {
-    return (frameIndex - prev.frameIndex <= padding) ? { bbox: prev.bbox, score: prev.score } : null;
-  }
-  if (!prev && next) {
-    return (next.frameIndex - frameIndex <= padding) ? { bbox: next.bbox, score: next.score } : null;
-  }
-
-  if (prev && next) {
-    const gap = next.frameIndex - prev.frameIndex;
-    if (gap > maxGap) {
-      if (frameIndex === prev.frameIndex) return { bbox: prev.bbox, score: prev.score };
-      if (frameIndex === next.frameIndex) return { bbox: next.bbox, score: next.score };
-      return null;
-    }
-
-    // Interpolate
-    const t = (frameIndex - prev.frameIndex) / gap;
-    return {
-      bbox: [
-        prev.bbox[0] + (next.bbox[0] - prev.bbox[0]) * t,
-        prev.bbox[1] + (next.bbox[1] - prev.bbox[1]) * t,
-        prev.bbox[2] + (next.bbox[2] - prev.bbox[2]) * t,
-        prev.bbox[3] + (next.bbox[3] - prev.bbox[3]) * t,
-      ],
-      score: prev.score * (1 - t) + next.score * t
-    };
-  }
-
-  return null;
 }
 
 export default function PlayerWithMask({
@@ -185,11 +119,7 @@ export default function PlayerWithMask({
         if (!det) continue;
 
         const isSelected = selectedSet.has(trackId);
-        const [ox, oy, ow, oh] = det.bbox;
-        const x = Math.max(0, ox - ow * padding);
-        const y = Math.max(0, oy - oh * padding);
-        const w = Math.min(ow * (1 + padding * 2), canvas.width - x);
-        const h = Math.min(oh * (1 + padding * 2), canvas.height - y);
+        const { x, y, w, h } = padBBox(det.bbox, padding, canvas.width, canvas.height);
 
         currentVisibleFaces.push({ trackId, bbox: [x, y, w, h], isSelected });
 
