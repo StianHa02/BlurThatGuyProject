@@ -153,7 +153,6 @@ export default function PlayerWithMask({
     video.addEventListener('seeked', onSeeked);
 
     if (video.readyState >= 1) syncCanvasSize();
-    if (video.readyState >= 3) setBuffering(false);
 
     function draw() {
       const video = videoRef.current;

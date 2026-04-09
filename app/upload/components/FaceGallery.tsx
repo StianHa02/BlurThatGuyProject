@@ -34,9 +34,6 @@ export function FaceGallery({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setThumbnails(new Map());
-    if (tracks.length === 0) return;
-
     const controller = new AbortController();
     const { signal } = controller;
 
@@ -49,6 +46,8 @@ export function FaceGallery({
     };
 
     const extractThumbnails = async () => {
+      setThumbnails(new Map());
+      if (tracks.length === 0) return;
       setLoading(true);
       const video = document.createElement('video');
       video.src = videoUrl;
