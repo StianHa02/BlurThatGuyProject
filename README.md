@@ -127,7 +127,9 @@ Open [http://localhost:3000](http://localhost:3000)
 ## Environment Configuration
 
 
-### Local Development
+### Local Development 
+
+> See .env.example for a template of required variables.
 
 Create a single `.env.local` in the **project root** (both Next.js and the backend load from here):
 
@@ -189,7 +191,7 @@ REDIS_URL=redis://redis:6379
 
 **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS, Framer Motion, Lucide React <br/>
 **Backend:** Python, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis (via redis-py)<br/>
-**Infrastructure:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD), Supabase (auth + database)
+**Infrastructure:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD), Supabase (auth + database), S3 (video and face track storage)
 
 ---
 
@@ -249,7 +251,6 @@ Built with **FastAPI + Uvicorn**. Detection results stream as NDJSON for real-ti
 The production environment is architected for high-performance video processing and both vertical and horizontal scalability, utilizing a multi-node AWS EC2 footprint.
 
 ### Infrastructure Overview
-The application runs on two independent EC2 instances situated behind an **Application Load Balancer (ALB)**:
 
 | Node | Instance Type | Role | Key Specifications |
 | :--- | :--- | :--- | :--- |
@@ -262,7 +263,7 @@ The application runs on two independent EC2 instances situated behind an **Appli
 
 ### Scalability & Architecture
 * **Shared-Nothing Design:** Each node operates as a self-contained "island" with its own local Redis instance and dedicated storage. This architectural choice ensures that there is no centralized database bottleneck or network storage latency.
-* **Linear Scaling:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
+* **Linear Scalability:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
 ---
 
 ## User Integration
