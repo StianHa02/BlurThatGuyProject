@@ -21,15 +21,15 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 ---
 
 ## Learning Outcomes
-- ***Cloud Architecture:*** Architected a scalable, multi-node system on AWS EC2 with load balancing and session persistence.
+- ***Cloud Architecture:*** Architected a scalable, multi-node system on Amazon Web Services (AWS).
 
 - ***Full-Stack Integration:*** Connected a containerized Next.js frontend to a FastAPI backend.
 
-- ***AWS Scaling:*** Scaled the app across multiple EC2 nodes to handle more users simultaneously.
+- ***AWS Scaling:*** Scaled the app across multiple EC2 nodes to handle more traffic simultaneously.
 
-- ***User Integration:*** Integrated user accounts and project storage with Supabase and AWS S3.
+- ***User Integration:*** Integrated user accounts and project storage.
 
-- ***CI/CD:*** Automated deployments with GitHub Actions.
+- ***CI/CD:*** Automated testing and deployment with GitHub Actions.
 ---
 
 ## Table of Contents
@@ -189,9 +189,9 @@ REDIS_URL=redis://redis:6379
 
 ## Tech Stack
 
-**Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS, Framer Motion, Lucide React <br/>
-**Backend:** Python, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis (via redis-py)<br/>
-**Infrastructure:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD), Supabase (auth + database), S3 (video and face track storage)
+**Frontend:** Next.js, React, TypeScript, Tailwind CSS, Framer Motion, Lucide React <br/>
+**Backend:** Python, FastAPI, Uvicorn, OpenCV, NumPy, ONNX Runtime, Redis <br/>
+**Infrastructure:** Docker + Docker Compose, AWS EC2 , nginx (reverse proxy), GitHub Actions (CI/CD), Supabase (auth + database), AWS S3 (video and face track storage)
 
 ---
 
