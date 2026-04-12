@@ -331,7 +331,7 @@ Private S3 bucket. All files scoped to the authenticated user.
 
 ## CI/CD Pipeline
 
-Every push and pull request runs the GitHub Actions workflow in `.github/workflows/ci.yml`, with six parallel jobs:
+Every push and pull request runs the GitHub Actions workflow in `.github/workflows/ci.yml`, with six jobs:
 
 | Job | What it does |
 |---|---|
@@ -342,7 +342,8 @@ Every push and pull request runs the GitHub Actions workflow in `.github/workflo
 | **Frontend Health** | Starts full stack, verifies Next.js proxy at `/api/health` |
 | **Build Smoke** | `next build` + backend import check |
 
-For production, the app runs on AWS EC2 behind an ALB. After CI passes, GitHub Actions builds Docker images and rolls them out to the target instances.
+After successful CI, the GitHub Actions workflow deploys the app to AWS EC2 using the `docker-compose.prod.yml` configuration. The workflow  ssh's into the EC2 instance, pulls the latest code, builds the Docker images, and restarts the containers. 
+
 
 ---
 
