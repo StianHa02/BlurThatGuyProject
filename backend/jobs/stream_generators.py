@@ -234,6 +234,9 @@ def export_stream_generator(
             fi, frame = item
 
             if not any(fi in lu for lu in track_lookup_dicts):
+                if chunk:
+                    yield flush_chunk(chunk)
+                    chunk = []
                 write_frame(frame)
                 if frames_written % 30 == 0:
                     progress = min(70, round(5 + frames_written / total_frames * 65, 1))
