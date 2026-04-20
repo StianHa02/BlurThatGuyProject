@@ -1,7 +1,6 @@
 /* Proxies face detection and ReID to the backend and streams NDJSON results back. Accepts optional ?sample_rate query param. Forwards X-Job-Id header for cancellation. Timeout is 30 minutes. */
 import { NextRequest, NextResponse } from 'next/server';
 import { BACKEND_URL, backendHeaders } from '@/lib/server/backendProxy';
-import { requireAuth } from '@/lib/server/auth';
 
 const DETECT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -9,9 +8,6 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
 ) {
-  const auth = await requireAuth();
-  if (auth.response) return auth.response;
-
   try {
     const { videoId } = await params;
     const { searchParams } = new URL(request.url);
