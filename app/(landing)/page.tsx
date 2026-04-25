@@ -125,7 +125,7 @@ export default function Home() {
 										className="group inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 transition-all font-semibold text-white shadow-lg shadow-blue-600/30 hover:shadow-blue-500/40">
 
 										<Upload className="w-4 h-4 group-hover:scale-110 transition-transform" />
-										Start Blurring
+										Get Started
 									</Link>
 									<Link
 										href="/#how-it-works"
