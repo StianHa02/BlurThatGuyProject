@@ -252,10 +252,18 @@ The production environment is architected for high-performance video processing 
 
 ### Infrastructure Overview
 
-| Node | Instance Type | Role | Key Specifications |
-| :--- | :--- | :--- | :--- |
-| **Primary** | `c7i` | Primary Compute | High vCPU count, Intel Sapphire Rapids |
-| **Secondary** | `c7i` | Burst Overflow | Lower vCPU count, cost-optimized |
+| Node | Instance Type | Role | Key Specifications                     |
+| :--- |:--------------| :--- |:---------------------------------------|
+| **Primary** | `c7a`         | Primary Compute | Main node always running               |
+| **Secondary** | `c7a`         | Burst Overflow | Lower vCPU count, spins up when needed |
+
+### Custom Autoscaling
+
+The deployment uses a lightweight custom autoscaler built around the existing AWS footprint rather than a full Auto Scaling Group. EC2 runs the Docker Compose application nodes, the Application Load Balancer exposes the public endpoint, and the target group controls which instances are allowed to receive traffic. CloudWatch provides the CPU metrics used for scaling decisions, EventBridge Scheduler invokes the control loop on a fixed interval, and Lambda performs the actual orchestration by starting/stopping EC2 instances and registering/deregistering ALB targets through an IAM-scoped role.
+
+Operationally, the primary EC2 instance acts as the stable entry point and master switch for the environment. During normal low-traffic periods, only the primary is registered in the ALB and the secondary remains stopped. If sustained primary CPU crosses the configured threshold, Lambda starts the secondary and registers it once it can serve traffic. If load drops for long enough, Lambda drains the secondary from the target group and stops it again.
+
+This setup is optimized for demo usage and controlled cost. Manually stopping the primary is treated as an intentional full shutdown: Lambda removes both targets from the ALB and stops the secondary if necessary. Starting the primary brings the app back online, after which the secondary remains off until extra capacity is needed. The tradeoff is that each node still owns local Redis/job/video state, so sticky sessions are required and scale-down remains intentionally conservative. Full setup details are documented in [`docs/aws-ec2-custom-autoscaler.md`](docs/aws-ec2-custom-autoscaler.md).
 
 ### Traffic Orchestration
 * **Routing Algorithm:** The ALB utilizes the **Least Outstanding Requests** algorithm. This ensures that new jobs are automatically sent to the node with the lowest active workload. Due to the high core count of the Primary node, it naturally absorbs the majority of traffic by completing jobs faster.
