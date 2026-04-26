@@ -280,6 +280,8 @@ The deployed architecture is intentionally pragmatic for a coding challenge: it 
 
 The first change would be replacing the hard-coded primary/secondary EC2 setup with an EC2 Auto Scaling Group behind the Application Load Balancer. Every node should be disposable, able to start from the same image, register automatically, drain safely, and scale in or out based on queue depth, CPU usage, or active processing jobs.
 
+I would also replace the hard-coded GitHub Actions SSH deployment to fixed public IP addresses with an AWS-native deployment path. A production setup should target instances by Auto Scaling Group, tags, or service identity using tools such as AWS CodeDeploy, Systems Manager Run Command, or an AMI-based Auto Scaling Group instance refresh, with IAM roles handling access instead of long-lived SSH keys and public IPs.
+
 I would also move node-local state out of each instance. Uploaded videos and generated outputs would live in shared object storage such as S3, job state would move to a centralized queue such as SQS, Redis, or ElastiCache, and worker nodes would pull jobs independently instead of relying on sticky sessions. This would make instance failure easier to recover from and remove the need for special-case logic around one overflow node.
 
 ---
