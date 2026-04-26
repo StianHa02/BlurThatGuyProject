@@ -40,6 +40,7 @@ As part of this coding challenge, I wanted to specialize in **frontend** and **i
 - [Design Rationale](#design-rationale)
 - [Backend Features](#backend-features)
 - [Deployment](#deployment)
+- [What I Would Refactor in a Real Production Environment](#what-i-would-refactor-in-a-real-production-environment)
 - [User Integration](#user-integration)
 - [Architecture Diagram](#architecture-diagram)
 - [CI/CD Pipeline](#cicd-pipeline)
@@ -263,8 +264,6 @@ The deployment uses a lightweight custom autoscaler built around the existing AW
 
 Operationally, the primary EC2 instance acts as the stable entry point and master switch for the environment. During normal low-traffic periods, only the primary is registered in the ALB and the secondary remains stopped. If sustained primary CPU crosses the configured threshold, Lambda starts the secondary and registers it once it can serve traffic. If load drops for long enough, Lambda drains the secondary from the target group and stops it again.
 
-This setup is optimized for demo usage and controlled cost. Manually stopping the primary is treated as an intentional full shutdown: Lambda removes both targets from the ALB and stops the secondary if necessary. Starting the primary brings the app back online, after which the secondary remains off until extra capacity is needed. The tradeoff is that each node still owns local Redis/job/video state, so sticky sessions are required and scale-down remains intentionally conservative. Full setup details are documented in [`docs/aws-ec2-custom-autoscaler.md`](docs/aws-ec2-custom-autoscaler.md).
-
 ### Traffic Orchestration
 * **Routing Algorithm:** The ALB utilizes the **Least Outstanding Requests** algorithm. This ensures that new jobs are automatically sent to the node with the lowest active workload. Due to the high core count of the Primary node, it naturally absorbs the majority of traffic by completing jobs faster.
 * **Session Persistence (Sticky Sessions):** To maintain the integrity of local state, **Sticky Sessions** are enabled at the ALB level. This ensures that once a user starts an upload, all subsequent requests for detection and blurring are pinned to the specific node holding their local video files and Redis task state.
@@ -272,13 +271,22 @@ This setup is optimized for demo usage and controlled cost. Manually stopping th
 ### Scalability & Architecture
 * **Shared-Nothing Design:** Each node operates as a self-contained "island" with its own local Redis instance and dedicated storage. This architectural choice ensures that there is no centralized database bottleneck or network storage latency.
 * **Linear Scalability:** Because nodes are independent, the system supports near-linear horizontal scaling. Doubling capacity is as simple as launching a new EC2 instance and adding it to the ALB target group with zero code changes required.
+
+---
+
+## What I Would Refactor in a Real Production Environment
+
+The deployed architecture is intentionally pragmatic for a coding challenge: it demonstrates horizontal scaling, AWS orchestration, CI/CD, and a working multi-node video-processing system without turning the project into a larger platform build. In a real production environment, I would refactor the infrastructure around stateless application nodes and shared managed services.
+
+The first change would be replacing the hard-coded primary/secondary EC2 setup with an EC2 Auto Scaling Group behind the Application Load Balancer. Every node should be disposable, able to start from the same image, register automatically, drain safely, and scale in or out based on queue depth, CPU usage, or active processing jobs.
+
+I would also move node-local state out of each instance. Uploaded videos and generated outputs would live in shared object storage such as S3, job state would move to a centralized queue such as SQS, Redis, or ElastiCache, and worker nodes would pull jobs independently instead of relying on sticky sessions. This would make instance failure easier to recover from and remove the need for special-case logic around one overflow node.
+
 ---
 
 ## User Integration
 
 Optional feature. Controlled by `NEXT_PUBLIC_USER_INTEGRATION`. Set to `1` to enable accounts and project storage. Set to `0` or omit to run as a public tool with no sign-up.
-
-Full setup: [`docs/user-integration.md`](docs/user-integration.md)
 
 ### What It Adds
 
