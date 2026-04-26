@@ -16,7 +16,7 @@
 
 ## Preface
 
-As part of this coding challenge, I wanted to specialize in **frontend** and **infrastructure** using React/Next.js and deploying AWS EC2.
+As part of this coding challenge, I wanted to specialize in **frontend** and **infrastructure** using React/Next.js and deploying using AWS EC2.
 
 ---
 
